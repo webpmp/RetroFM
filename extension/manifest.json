@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Retro FM YouTube Bridge",
+  "version": "1.0.2",
+  "description": "Permitted browser bridge for Retro FM Proof of Concept to detect and control YouTube music playback and audio ducking.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwttdlZxh2jTkC4UaWVDwegBWNq3/xD3JHg7goyHrJ72AybEcX5HDYyz/DCNWJBaMCaqfqBs6+vXpc/7/P15AO0v4adpDOvgzOBpQ5RUCTk0L7V1TR09DrTxk72ivdDOQmdrNiHM1CMz3r8K/yhsZ7gmpEApRt/nvY2vXgBMvWHehkewC/RE9j7+09SqRoSyIAvaas8/5DgQkg2pMITNdttYxLfEnE+jqpvQtsS1BkmTEOmkRV20BEaSnW0vk2PXbjhTKnbKC2AVkjKzHwBd1pnG3/qvlT4D2rgO5UVzy+zwC9ikTFyNrz2ZZpRFO75LSJ/NI0STq3Xsh9Rdn63kAIwIDAQAB",
+  "permissions": [
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "<all_urls>"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "*://localhost/*",
+      "*://127.0.0.1/*",
+      "*://*.run.app/*",
+      "https://*.google.com/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content_youtube.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_retrofm.js"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Retro FM YouTube Bridge"
+  }
+}

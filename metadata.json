@@ -1,0 +1,6 @@
+{
+  "name": "Retro FM: YouTube + Gemini Flash TTS Proof of Concept",
+  "description": "Audio proof of concept testing YouTube tab control, Gemini Flash TTS voice generation, and real-time audio ducking for Retro FM radio experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
