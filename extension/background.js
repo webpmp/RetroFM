@@ -1,4 +1,4 @@
-// Retro FM Extension Background Service Worker (v1.0.2)
+// Retro FM Extension Background Service Worker (v1.0.3)
 
 let activeConnectedTabId = null;
 
@@ -81,7 +81,7 @@ function handleIncomingRequest(request, sendResponse) {
   (async () => {
     try {
       if (type === 'PING') {
-        sendResponse({ success: true, type: 'PONG', version: '1.0.2' });
+        sendResponse({ success: true, type: 'PONG', version: '1.0.3' });
         return;
       }
 
@@ -150,15 +150,90 @@ function handleIncomingRequest(request, sendResponse) {
           return;
         }
 
-        const targetUrl = payload?.url || (payload?.videoId ? `https://www.youtube.com/watch?v=${payload.videoId}` : null);
+        const videoId = payload?.videoId;
+        const targetUrl = payload?.url || (videoId ? ('https://www.youtube.com/watch?v=' + videoId) : null);
         if (!targetUrl) {
-          sendResponse({ success: false, error: 'No url or videoId provided for navigation.' });
+          sendResponse({ success: false, error: 'No YouTube video ID or URL provided for navigation.' });
           return;
         }
 
         activeConnectedTabId = tabId;
-        await chrome.tabs.update(tabId, { url: targetUrl });
-        sendResponse({ success: true, data: { tabId, url: targetUrl } });
+
+        try {
+          // 1. Navigate connected YouTube tab to the target video URL
+          await chrome.tabs.update(tabId, { url: targetUrl });
+
+          // 2. Wait for tab to complete navigation/loading
+          await new Promise((resolve) => {
+            let timer = null;
+            const onUpdatedListener = (updatedTabId, changeInfo) => {
+              if (updatedTabId === tabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+                if (timer) clearTimeout(timer);
+                resolve(true);
+              }
+            };
+            chrome.tabs.onUpdated.addListener(onUpdatedListener);
+            timer = setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+              resolve(false);
+            }, 6000);
+          });
+
+          // Ensure content script is injected into the newly loaded page
+          await ensureYouTubeScriptInjected(tabId);
+
+          // 3. Start playback using the same message pattern as PLAY command
+          let playResult = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            await new Promise((r) => setTimeout(r, 400));
+            try {
+              playResult = await chrome.tabs.sendMessage(tabId, { action: 'PLAY' });
+              if (playResult && playResult.success) {
+                break;
+              }
+            } catch (msgErr) {
+              await ensureYouTubeScriptInjected(tabId);
+            }
+          }
+
+          if (playResult && playResult.success) {
+            sendResponse({
+              success: true,
+              data: {
+                tabId,
+                url: targetUrl,
+                status: playResult.status
+              }
+            });
+          } else {
+            // Retrieve current status if playback command completed or autoplay triggered
+            try {
+              const currentStatus = await chrome.tabs.sendMessage(tabId, { action: 'GET_STATUS' });
+              sendResponse({
+                success: true,
+                data: {
+                  tabId,
+                  url: targetUrl,
+                  status: currentStatus
+                }
+              });
+            } catch (err) {
+              sendResponse({
+                success: true,
+                data: {
+                  tabId,
+                  url: targetUrl
+                }
+              });
+            }
+          }
+        } catch (navErr) {
+          sendResponse({
+            success: false,
+            error: 'Failed to navigate YouTube tab: ' + navErr.message
+          });
+        }
         return;
       }
 

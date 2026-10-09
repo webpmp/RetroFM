@@ -4,7 +4,7 @@ export const EXTENSION_FILES: Record<string, string> = {
   'manifest.json': `{
   "manifest_version": 3,
   "name": "Retro FM YouTube Bridge",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Permitted browser bridge for Retro FM Proof of Concept to detect and control YouTube music playback and audio ducking.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwttdlZxh2jTkC4UaWVDwegBWNq3/xD3JHg7goyHrJ72AybEcX5HDYyz/DCNWJBaMCaqfqBs6+vXpc/7/P15AO0v4adpDOvgzOBpQ5RUCTk0L7V1TR09DrTxk72ivdDOQmdrNiHM1CMz3r8K/yhsZ7gmpEApRt/nvY2vXgBMvWHehkewC/RE9j7+09SqRoSyIAvaas8/5DgQkg2pMITNdttYxLfEnE+jqpvQtsS1BkmTEOmkRV20BEaSnW0vk2PXbjhTKnbKC2AVkjKzHwBd1pnG3/qvlT4D2rgO5UVzy+zwC9ikTFyNrz2ZZpRFO75LSJ/NI0STq3Xsh9Rdn63kAIwIDAQAB",
   "permissions": [
@@ -55,7 +55,7 @@ export const EXTENSION_FILES: Record<string, string> = {
 }
 `,
 
-  'background.js': `// Retro FM Extension Background Service Worker (v1.0.2)
+  'background.js': `// Retro FM Extension Background Service Worker (v1.0.3)
 
 let activeConnectedTabId = null;
 
@@ -138,7 +138,7 @@ function handleIncomingRequest(request, sendResponse) {
   (async () => {
     try {
       if (type === 'PING') {
-        sendResponse({ success: true, type: 'PONG', version: '1.0.2' });
+        sendResponse({ success: true, type: 'PONG', version: '1.0.3' });
         return;
       }
 
@@ -196,6 +196,100 @@ function handleIncomingRequest(request, sendResponse) {
           } catch (retryErr) {
             sendResponse({ success: false, error: 'Failed communicating with YouTube tab: ' + retryErr.message });
           }
+        }
+        return;
+      }
+
+      if (type === 'NAVIGATE_YOUTUBE') {
+        const tabId = await resolveYouTubeTab(payload?.tabId);
+        if (!tabId) {
+          sendResponse({ success: false, error: 'No YouTube tab connected. Please open youtube.com in another tab.' });
+          return;
+        }
+
+        const videoId = payload?.videoId;
+        const targetUrl = payload?.url || (videoId ? ('https://www.youtube.com/watch?v=' + videoId) : null);
+        if (!targetUrl) {
+          sendResponse({ success: false, error: 'No YouTube video ID or URL provided for navigation.' });
+          return;
+        }
+
+        activeConnectedTabId = tabId;
+
+        try {
+          // 1. Navigate connected YouTube tab to the target video URL
+          await chrome.tabs.update(tabId, { url: targetUrl });
+
+          // 2. Wait for tab to complete navigation/loading
+          await new Promise((resolve) => {
+            let timer = null;
+            const onUpdatedListener = (updatedTabId, changeInfo) => {
+              if (updatedTabId === tabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+                if (timer) clearTimeout(timer);
+                resolve(true);
+              }
+            };
+            chrome.tabs.onUpdated.addListener(onUpdatedListener);
+            timer = setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+              resolve(false);
+            }, 6000);
+          });
+
+          // Ensure content script is injected into the newly loaded page
+          await ensureYouTubeScriptInjected(tabId);
+
+          // 3. Start playback using the same message pattern as PLAY command
+          let playResult = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            await new Promise((r) => setTimeout(r, 400));
+            try {
+              playResult = await chrome.tabs.sendMessage(tabId, { action: 'PLAY' });
+              if (playResult && playResult.success) {
+                break;
+              }
+            } catch (msgErr) {
+              await ensureYouTubeScriptInjected(tabId);
+            }
+          }
+
+          if (playResult && playResult.success) {
+            sendResponse({
+              success: true,
+              data: {
+                tabId,
+                url: targetUrl,
+                status: playResult.status
+              }
+            });
+          } else {
+            // Retrieve current status if playback command completed or autoplay triggered
+            try {
+              const currentStatus = await chrome.tabs.sendMessage(tabId, { action: 'GET_STATUS' });
+              sendResponse({
+                success: true,
+                data: {
+                  tabId,
+                  url: targetUrl,
+                  status: currentStatus
+                }
+              });
+            } catch (err) {
+              sendResponse({
+                success: true,
+                data: {
+                  tabId,
+                  url: targetUrl
+                }
+              });
+            }
+          }
+        } catch (navErr) {
+          sendResponse({
+            success: false,
+            error: 'Failed to navigate YouTube tab: ' + navErr.message
+          });
         }
         return;
       }
@@ -386,7 +480,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const payload = {
       source: SOURCE_EXT,
       type: 'EXTENSION_READY',
-      version: '1.0.2',
+      version: '1.0.3',
       isIframe: window !== window.top
     };
 
@@ -419,14 +513,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.2'
+          version: '1.0.3'
         }, '*');
       } catch (e) {
         window.postMessage({
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.2'
+          version: '1.0.3'
         }, '*');
       }
       return;
@@ -494,12 +588,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 <body>
   <h3>Retro FM Bridge</h3>
   <p>Permitted tab controller bridge for the Retro FM proof-of-concept experiment.</p>
-  <div class="status">● Bridge Active (v1.0.2)</div>
+  <div class="status">● Bridge Active (v1.0.3)</div>
 </body>
 </html>
 `,
 
-  'README.md': `# Retro FM Chrome Extension Bridge (v1.0.2)
+  'README.md': `# Retro FM Chrome Extension Bridge (v1.0.3)
 
 This extension provides the permitted communication bridge between the Retro FM Test Page and your YouTube tab.
 
@@ -509,7 +603,8 @@ This extension provides the permitted communication bridge between the Retro FM 
 2. Enable **Developer mode** toggle in the top-right corner.
 3. Click **Load unpacked** (or click the **Reload icon ↻** on the existing card) and select the unzipped \`extension\` folder.
 
-## Key Features in v1.0.2
+## Key Features in v1.0.3
+- **NAVIGATE_YOUTUBE Command**: Directly navigates the connected YouTube tab to a requested video ID or URL and starts playback.
 - **Direct Web Messaging (\`externally_connectable\`)**: Communicates directly with Retro FM without depending on DOM content script injection.
 - **Fixed Extension ID**: \`hjphfmcilldbipolljlbjnnadeogocab\`
 - **Dynamic Script Injection**: Automatically connects to active YouTube tabs even if opened before the extension was installed.

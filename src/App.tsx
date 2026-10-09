@@ -946,7 +946,7 @@ export default function App() {
               title="Download unpacked Chrome extension ZIP"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Download Extension (v1.0.2)</span>
+              <span>Download Extension (v1.0.3)</span>
             </button>
 
             {/* Extension Setup Guide Modal Trigger */}

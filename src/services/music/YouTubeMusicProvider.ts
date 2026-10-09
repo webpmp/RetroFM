@@ -98,7 +98,7 @@ export class YouTubeMusicProvider implements MusicProvider {
 
       timer = setTimeout(() => {
         window.removeEventListener('message', handler);
-        reject(new Error(`Extension request '${type}' timed out after ${timeoutMs}ms. Please ensure the extension (v1.0.2) is loaded with 'all_frames: true'.`));
+        reject(new Error(`Extension request '${type}' timed out after ${timeoutMs}ms. Please ensure the extension (v1.0.3) is loaded with 'all_frames: true'.`));
       }, timeoutMs);
     });
   }
