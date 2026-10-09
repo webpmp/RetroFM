@@ -20,6 +20,7 @@ import {
   scoreCandidateVideo,
   loadOverrides,
   formatDuration,
+  clearSearchCache,
   CandidateVideo,
 } from '../src/services/music/songSearch.js';
 
@@ -112,6 +113,8 @@ async function runTest() {
   console.log('==================================================================================================\n');
 
   const overrides = loadOverrides();
+  clearSearchCache();
+  console.log('✓ In-memory search cache cleared.');
 
   for (let i = 0; i < TEST_CASES.length; i++) {
     const { artist, song, year } = TEST_CASES[i];
@@ -122,12 +125,12 @@ async function runTest() {
     console.log(`--------------------------------------------------------------------------------------------------`);
 
     // 1. MusicBrainz Lookup
-    process.stdout.write(`Fetching MusicBrainz canonical data for "${artist} - ${song}"... `);
-    const mbInfo = await lookupMusicBrainz(artist, song);
+    process.stdout.write(`Fetching MusicBrainz canonical data for "${artist} - ${song}" (${year})... `);
+    const mbInfo = await lookupMusicBrainz(artist, song, year);
     if (mbInfo && mbInfo.canonicalLengthSec) {
       console.log(`✓ Found! Canonical Year: ${mbInfo.canonicalYear || 'N/A'}, Canonical Length: ${formatDuration(mbInfo.canonicalLengthSec)} (${mbInfo.canonicalLengthSec}s)`);
     } else {
-      console.log(`(No exact MusicBrainz duration found, using 2:00 - 9:00 window constraint)`);
+      console.log(`(No exact MusicBrainz duration found within +/-1 yr, using 2:00 - 9:00 window constraint)`);
     }
 
     // 2. Overrides check
@@ -138,22 +141,68 @@ async function runTest() {
     // 3. Candidates Gathering & Scoring
     let topCandidates: CandidateVideo[] = [];
     let chosenVideo: CandidateVideo | null = null;
+    let notFoundMessage: string | null = null;
 
     if (hasApiKey) {
       // Execute live YouTube Data API search (bypassing overrides to test the search algorithm directly)
       const searchRes = await searchYouTubeForSong(artist, song, year, { skipOverrides: true, skipCache: true });
-      if (searchRes.success && searchRes.candidates) {
-        topCandidates = searchRes.candidates;
+      if (searchRes.success && searchRes.selected) {
+        chosenVideo = {
+          ...searchRes.selected,
+          score: (searchRes.selected as any).confidenceScore ?? 1200,
+        } as any;
+        topCandidates = searchRes.candidates && searchRes.candidates.length > 0 ? [...searchRes.candidates] : [];
         if (searchRes.rejectedCandidates && topCandidates.length < 5) {
           topCandidates = [...topCandidates, ...searchRes.rejectedCandidates].slice(0, 5);
         }
-        if (searchRes.selected) {
-          chosenVideo = topCandidates.find((c) => c.videoId === searchRes.selected?.videoId) || topCandidates[0];
+      } else if (searchRes.status === 'error' && (searchRes.error?.includes('429') || searchRes.error?.includes('Quota exceeded'))) {
+        console.log(`YouTube Data API quota exceeded (HTTP 429). Evaluating fixture candidates to demonstrate rule enforcement...`);
+        const fixtures = CANDIDATE_FIXTURES[key] || [];
+        const scoredList = fixtures.map((v) =>
+          scoreCandidateVideo(
+            {
+              videoId: v.videoId,
+              title: v.title,
+              channel: v.channel,
+              durationSec: v.durationSec,
+              durationStr: formatDuration(v.durationSec),
+            },
+            artist,
+            song,
+            mbInfo,
+            year
+          )
+        );
+
+        const survivors = scoredList.filter((c) => c.isPassed).sort((a, b) => b.score - a.score);
+        const rejected = scoredList.filter((c) => !c.isPassed);
+        const officialSurvivors = survivors.filter(
+          (c) => c.rankCategory === 'TOPIC' || c.rankCategory === 'OFFICIAL_CHANNEL_OR_VEVO'
+        );
+
+        if (officialSurvivors.length === 0) {
+          const lowerTierRejected: CandidateVideo[] = survivors.map((c) => ({
+            ...c,
+            isPassed: false,
+            rejectionReason: `Lower-tier upload (${c.rankCategory}); only Tier 1 (Topic) and Tier 2 (Official / VEVO) qualify for automatic selection`,
+            reason: `Rejected: Channel "${c.channel}" is a lower-tier upload (${c.rankCategory}). Only Tier 1 (Topic) and Tier 2 (Official / VEVO) qualify for automatic selection.`,
+          }));
+          const allRejected = [...rejected, ...lowerTierRejected];
+          topCandidates = allRejected.slice(0, 5);
+          chosenVideo = null;
+          notFoundMessage = `No trustworthy recording found for ${artist} - ${song}. Nothing was played.`;
+        } else {
+          chosenVideo = officialSurvivors[0];
+          topCandidates = [...officialSurvivors, ...rejected].slice(0, 5);
         }
       } else {
-        console.log(`Search result notice: ${searchRes.error}`);
-        if (searchRes.rejectedCandidates) {
+        notFoundMessage = searchRes.error || `No trustworthy recording found for ${artist} - ${song}. Nothing was played.`;
+        console.log(`Search result status: ${searchRes.status.toUpperCase()}`);
+        console.log(`Notice: ${notFoundMessage}`);
+        if (searchRes.rejectedCandidates && searchRes.rejectedCandidates.length > 0) {
           topCandidates = searchRes.rejectedCandidates.slice(0, 5);
+        } else if (searchRes.candidates) {
+          topCandidates = searchRes.candidates.slice(0, 5);
         }
       }
     } else {
@@ -192,7 +241,7 @@ async function runTest() {
     for (let cIdx = 0; cIdx < topCandidates.length; cIdx++) {
       const c = topCandidates[cIdx];
       const isChosen = chosenVideo && chosenVideo.videoId === c.videoId;
-      const statusStr = isChosen ? '★ CHOSEN' : c.isPassed ? `#${cIdx + 1} PASS` : 'REJECTED';
+      const statusStr = isChosen ? '★ CHOSEN' : (c.isPassed && chosenVideo) ? `#${cIdx + 1} PASS` : 'REJECTED';
 
       console.log(
         `${padRight(statusStr, 10)} | ${padRight(c.title, 38)} | ${padRight(c.channel, 24)} | ${padRight(c.duration || '--:--', 6)} | ${padLeft(c.score.toString(), 6)} | ${truncate(c.reason, 36)}`
@@ -203,6 +252,7 @@ async function runTest() {
     // 5. Print Result Summary
     if (chosenVideo) {
       console.log(`\nRESULT FOR ${artist} — "${song}":`);
+      console.log(`  ▶ Status         : VERIFIED CHOSEN`);
       console.log(`  ▶ Selected Title : "${chosenVideo.title}"`);
       console.log(`  ▶ Channel        : "${chosenVideo.channel}"`);
       console.log(`  ▶ Video ID       : ${chosenVideo.videoId}`);
@@ -210,7 +260,9 @@ async function runTest() {
       console.log(`  ▶ Score          : ${chosenVideo.score}`);
       console.log(`  ▶ Full Reason    : ${chosenVideo.reason}`);
     } else {
-      console.log(`\nRESULT: Unable to select song. All candidates rejected by verification rules.`);
+      console.log(`\nRESULT FOR ${artist} — "${song}":`);
+      console.log(`  ▶ Status         : NOT FOUND`);
+      console.log(`  ▶ Notice         : ${notFoundMessage || `No trustworthy recording found for ${artist} - ${song}. Nothing was played.`}`);
     }
 
     // Delay between iterations to respect MusicBrainz 1 req/sec rate limit

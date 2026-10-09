@@ -6,7 +6,11 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GeminiTTSProvider } from './src/services/tts/GeminiTTSProvider.js';
 import { createZipFromDirectory } from './src/server/zipUtil.js';
-import { searchYouTubeForSong } from './src/services/music/songSearch.js';
+import {
+  searchYouTubeForSong,
+  clearSearchCache,
+  getSessionQuota,
+} from './src/services/music/songSearch.js';
 
 dotenv.config();
 
@@ -61,10 +65,19 @@ async function startServer() {
     }
   });
 
+  // Canonical 5-Song Verification Suite
+  const CANONICAL_TEST_CASES = [
+    { artist: 'a-ha', song: 'Take on Me', year: '1985' },
+    { artist: 'Michael Jackson', song: 'Billie Jean', year: '1983' },
+    { artist: 'Prince', song: 'When Doves Cry', year: '1984' },
+    { artist: 'U2', song: 'With or Without You', year: '1987' },
+    { artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986' },
+  ];
+
   // API Route: Program song search & selection
   app.post('/api/music/search', async (req, res) => {
     try {
-      const { artist, song, year } = req.body;
+      const { artist, song, year, forceFresh } = req.body;
       if (!artist || !song) {
         return res.status(400).json({
           success: false,
@@ -72,27 +85,106 @@ async function startServer() {
         });
       }
 
-      console.log(`[API /api/music/search] Query: "${artist} - ${song}" (${year || 'any year'})`);
-      const result = await searchYouTubeForSong(artist, song, year);
-      return res.json(result);
+      console.log(`[API /api/music/search] Query: "${artist} - ${song}" (${year || 'any year'})${forceFresh ? ' [Force Fresh]' : ''}`);
+      const result = await searchYouTubeForSong(artist, song, year, {
+        forceFresh: Boolean(forceFresh),
+      });
+      return res.json({
+        ...result,
+        quota: getSessionQuota(),
+      });
     } catch (err: any) {
       console.error('[API /api/music/search] Error:', err);
       return res.status(500).json({
         success: false,
         error: err?.message || 'Failed to search YouTube for song',
+        quota: getSessionQuota(),
       });
     }
   });
 
-  // API Route: Check music status and API key presence
+  // API Route: Check music status, API key presence, and session quota
   app.get('/api/music/status', (req, res) => {
     const hasKey = Boolean(process.env.YOUTUBE_API_KEY);
     return res.json({
       success: true,
       hasYouTubeApiKey: hasKey,
       keyLength: hasKey ? (process.env.YOUTUBE_API_KEY as string).length : 0,
+      quota: getSessionQuota(),
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // API Route: Test one individual song
+  app.post('/api/music/test-song', async (req, res) => {
+    const hasKey = Boolean(process.env.YOUTUBE_API_KEY);
+    if (!hasKey) {
+      return res.status(400).json({
+        success: false,
+        hasYouTubeApiKey: false,
+        error:
+          'YouTube Data API key is missing (YOUTUBE_API_KEY environment variable is not set). Please provide a valid YouTube Data API v3 key to run searches.',
+        quota: getSessionQuota(),
+      });
+    }
+
+    try {
+      const { songIndex, artist, song, year, forceFresh } = req.body;
+      let targetItem = { artist: '', song: '', year: '' };
+
+      if (typeof songIndex === 'number' && songIndex >= 0 && songIndex < CANONICAL_TEST_CASES.length) {
+        targetItem = CANONICAL_TEST_CASES[songIndex];
+      } else if (artist && song) {
+        targetItem = { artist, song, year: year || '' };
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'Valid songIndex (0-4) or artist & song are required.',
+        });
+      }
+
+      console.log(
+        `[API /api/music/test-song] Running single song test: ${targetItem.artist} - ${targetItem.song} (${targetItem.year || 'N/A'})${
+          forceFresh ? ' [Force Fresh Search]' : ' [Cache Allowed]'
+        }`
+      );
+
+      // Skip overrides to prove that the official search algorithm is being tested
+      const searchResult = await searchYouTubeForSong(targetItem.artist, targetItem.song, targetItem.year, {
+        skipOverrides: true,
+        forceFresh: Boolean(forceFresh),
+      });
+
+      let allCandidates = searchResult.candidates && searchResult.candidates.length > 0 ? [...searchResult.candidates] : [];
+      if (searchResult.rejectedCandidates && allCandidates.length < 5) {
+        allCandidates = [...allCandidates, ...searchResult.rejectedCandidates];
+      }
+
+      const formattedResult = {
+        song: targetItem,
+        songIndex: typeof songIndex === 'number' ? songIndex : undefined,
+        success: searchResult.success,
+        status: searchResult.status || (searchResult.success ? 'ok' : 'not_found'),
+        selected: searchResult.selected || null,
+        candidates: allCandidates.slice(0, 5),
+        canonicalInfo: searchResult.canonicalInfo || null,
+        error: searchResult.error || null,
+      };
+
+      return res.json({
+        success: true,
+        hasYouTubeApiKey: true,
+        result: formattedResult,
+        quota: getSessionQuota(),
+      });
+    } catch (err: any) {
+      console.error('[API /api/music/test-song] Error:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Error occurred while testing song.',
+        quota: getSessionQuota(),
+      });
+    }
   });
 
   // API Route: Run 5-song test suite through YouTube Data API v3 and ranking algorithm
@@ -102,63 +194,72 @@ async function startServer() {
       return res.status(400).json({
         success: false,
         hasYouTubeApiKey: false,
-        error: 'YouTube Data API key is missing (YOUTUBE_API_KEY environment variable is not set). Please provide a valid YouTube Data API v3 key to run live searches.',
+        error:
+          'YouTube Data API key is missing (YOUTUBE_API_KEY environment variable is not set). Please provide a valid YouTube Data API v3 key to run live searches.',
+        quota: getSessionQuota(),
       });
     }
 
-    const testCases = [
-      { artist: 'a-ha', song: 'Take on Me', year: '1985' },
-      { artist: 'Michael Jackson', song: 'Billie Jean', year: '1983' },
-      { artist: 'Prince', song: 'When Doves Cry', year: '1984' },
-      { artist: 'U2', song: 'With or Without You', year: '1987' },
-      { artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986' },
-    ];
+    const forceFresh = Boolean(req.body?.forceFresh);
 
     try {
-      console.log('[API /api/music/test-suite] Starting 5-song verification suite...');
+      console.log(
+        `[API /api/music/test-suite] Starting 5-song verification suite${
+          forceFresh ? ' (FORCE FRESH: bypassing disk cache)' : ' (USING CACHE BY DEFAULT)'
+        }...`
+      );
+
+      if (forceFresh) {
+        clearSearchCache(false);
+      }
+
       const results = [];
 
-      for (let i = 0; i < testCases.length; i++) {
-        const item = testCases[i];
+      for (let i = 0; i < CANONICAL_TEST_CASES.length; i++) {
+        const item = CANONICAL_TEST_CASES[i];
         console.log(`[API /api/music/test-suite] Processing #${i + 1}: ${item.artist} - ${item.song} (${item.year})`);
 
         // Skip overrides to prove that the official search algorithm is being tested
         const searchResult = await searchYouTubeForSong(item.artist, item.song, item.year, {
           skipOverrides: true,
-          skipCache: true,
+          forceFresh,
         });
 
-        let allCandidates = searchResult.candidates ? [...searchResult.candidates] : [];
+        let allCandidates = searchResult.candidates && searchResult.candidates.length > 0 ? [...searchResult.candidates] : [];
         if (searchResult.rejectedCandidates && allCandidates.length < 5) {
-          allCandidates = [...allCandidates, ...searchResult.rejectedCandidates].slice(0, 5);
+          allCandidates = [...allCandidates, ...searchResult.rejectedCandidates];
         }
 
         results.push({
           song: item,
+          songIndex: i,
           success: searchResult.success,
+          status: searchResult.status || (searchResult.success ? 'ok' : 'not_found'),
           selected: searchResult.selected || null,
           candidates: allCandidates.slice(0, 5),
           canonicalInfo: searchResult.canonicalInfo || null,
           error: searchResult.error || null,
         });
 
-        // Respect MusicBrainz rate limit
-        if (i < testCases.length - 1) {
+        // Respect MusicBrainz rate limit if doing fresh lookups
+        if (i < CANONICAL_TEST_CASES.length - 1 && forceFresh) {
           await new Promise((r) => setTimeout(r, 1100));
         }
       }
 
-      console.log('[API /api/music/test-suite] Completed all 5 tests successfully.');
+      console.log('[API /api/music/test-suite] Completed all 5 tests.');
       return res.json({
         success: true,
         hasYouTubeApiKey: true,
         results,
+        quota: getSessionQuota(),
       });
     } catch (err: any) {
       console.error('[API /api/music/test-suite] Error executing test suite:', err);
       return res.status(500).json({
         success: false,
         error: err?.message || 'Error occurred while executing test suite.',
+        quota: getSessionQuota(),
       });
     }
   });

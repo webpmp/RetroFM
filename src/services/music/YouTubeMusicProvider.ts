@@ -294,12 +294,12 @@ export class YouTubeMusicProvider implements MusicProvider {
       });
 
       const data = await response.json();
-      if (!data.success || !data.selected) {
+      if (data.status === 'not_found' || !data.success || !data.selected) {
         return {
           success: false,
           requested: requestedStr,
-          status: 'Unable to reliably select requested song',
-          error: data.error || 'No suitable YouTube recording could be identified.',
+          status: 'not_found',
+          error: data.error || `No trustworthy recording found for ${cleanArtist} - ${cleanSong}. Nothing was played.`,
         };
       }
 

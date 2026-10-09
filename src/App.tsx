@@ -30,7 +30,9 @@ import {
   Disc,
   Search,
   Music,
-  Check
+  Check,
+  Database,
+  Cpu
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
@@ -99,7 +101,7 @@ export default function App() {
   const [programYear, setProgramYear] = useState<string>('1985');
   const [isProgrammingSong, setIsProgrammingSong] = useState<boolean>(false);
   const [programSongResult, setProgramSongResult] = useState<{
-    status: 'IDLE' | 'SEARCHING' | 'NAVIGATING' | 'PLAYING' | 'ERROR';
+    status: 'IDLE' | 'SEARCHING' | 'NAVIGATING' | 'PLAYING' | 'NOT_FOUND' | 'API_ERROR' | 'ERROR';
     requested: string;
     selectedTitle?: string;
     selectedChannel?: string;
@@ -112,12 +114,33 @@ export default function App() {
     canonicalLength?: string;
     error?: string;
   } | null>(null);
+  const [songPlaybackNotice, setSongPlaybackNotice] = useState<{
+    message: string;
+    artist?: string;
+    song?: string;
+    type?: 'not_found' | 'api_error';
+  } | null>(null);
 
   // --- 5-Song On-Screen Verification Suite State ---
   const [hasYouTubeApiKey, setHasYouTubeApiKey] = useState<boolean | null>(null);
   const [isSongTestRunning, setIsSongTestRunning] = useState<boolean>(false);
+  const [testingSongIndex, setTestingSongIndex] = useState<number | null>(null);
+  const [forceFreshSearch, setForceFreshSearch] = useState<boolean>(false);
   const [songTestSuiteResults, setSongTestSuiteResults] = useState<any[] | null>(null);
   const [songTestError, setSongTestError] = useState<string | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<{
+    searchCalls: number;
+    detailsCalls: number;
+    totalUnitsUsed: number;
+    cacheHits: number;
+    estimatedRemainingDaily: number;
+  }>({
+    searchCalls: 0,
+    detailsCalls: 0,
+    totalUnitsUsed: 0,
+    cacheHits: 0,
+    estimatedRemainingDaily: 10000,
+  });
 
   // --- DJ Script & TTS State ---
   const [voiceEngine, setVoiceEngine] = useState<'GEMINI' | 'BROWSER'>('BROWSER');
@@ -209,6 +232,9 @@ export default function App() {
       .then((data) => {
         if (data.success) {
           setHasYouTubeApiKey(Boolean(data.hasYouTubeApiKey));
+          if (data.quota) {
+            setQuotaInfo(data.quota);
+          }
         }
       })
       .catch(() => setHasYouTubeApiKey(false));
@@ -357,6 +383,7 @@ export default function App() {
     }
 
     setIsProgrammingSong(true);
+    setSongPlaybackNotice(null);
     setProgramSongResult({
       status: 'SEARCHING',
       requested: requestedStr,
@@ -371,13 +398,41 @@ export default function App() {
       });
 
       const data = await res.json();
-      if (!data.success || !data.selected) {
-        const errMsg = data.error || 'Unable to reliably select requested song. No valid official recording passed validation.';
-        logMessage(`[Program Song] ${errMsg}`);
+      if (data.quota) {
+        setQuotaInfo(data.quota);
+      }
+
+      if (data.status === 'api_error') {
+        const quotaMsg = data.error || 'YouTube API daily quota exceeded. It resets at midnight Pacific time.';
+        logMessage(`[Program Song Quota Error] ${quotaMsg}`);
         setProgramSongResult({
-          status: 'ERROR',
+          status: 'API_ERROR',
           requested: requestedStr,
-          error: errMsg,
+          error: quotaMsg,
+        });
+        setSongPlaybackNotice({
+          message: quotaMsg,
+          artist,
+          song,
+          type: 'api_error',
+        });
+        setIsProgrammingSong(false);
+        return;
+      }
+
+      if (data.status === 'not_found' || !data.success || !data.selected) {
+        const notFoundMsg = data.error || `No trustworthy recording found for ${artist} - ${song}. Nothing was played.`;
+        logMessage(`[Program Song] ${notFoundMsg}`);
+        setProgramSongResult({
+          status: 'NOT_FOUND',
+          requested: requestedStr,
+          error: notFoundMsg,
+        });
+        setSongPlaybackNotice({
+          message: notFoundMsg,
+          artist,
+          song,
+          type: 'not_found',
         });
         setIsProgrammingSong(false);
         return;
@@ -438,15 +493,21 @@ export default function App() {
   const handleRunSongTestSuite = async () => {
     setIsSongTestRunning(true);
     setSongTestError(null);
-    logMessage('Running 5-Song Verification Test Suite (live search + candidate scoring evaluation)...');
+    logMessage(
+      `Running 5-Song Verification Test Suite (${forceFreshSearch ? 'Force Fresh Search' : 'Disk Cache Default'})...`
+    );
 
     try {
       const res = await fetch('/api/music/test-suite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceFresh: forceFreshSearch }),
       });
 
       const data = await res.json();
+      if (data.quota) {
+        setQuotaInfo(data.quota);
+      }
       if (!data.success) {
         setSongTestError(data.error || 'Failed to execute test suite.');
         if (data.hasYouTubeApiKey === false) {
@@ -463,6 +524,64 @@ export default function App() {
       logMessage(`[Test Suite Error] ${err.message}`);
     } finally {
       setIsSongTestRunning(false);
+    }
+  };
+
+  // --- Run Single Song Test Handler ---
+  const handleRunSingleSong = async (index: number) => {
+    const targetSong = CRITICAL_TEST_SONGS[index];
+    if (!targetSong) return;
+
+    setTestingSongIndex(index);
+    setSongTestError(null);
+    logMessage(
+      `Running individual test for [${targetSong.artist} - ${targetSong.song}] (${
+        forceFreshSearch ? 'Force Fresh Search' : 'Disk Cache Allowed'
+      })...`
+    );
+
+    try {
+      const res = await fetch('/api/music/test-song', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          songIndex: index,
+          artist: targetSong.artist,
+          song: targetSong.song,
+          year: targetSong.year,
+          forceFresh: forceFreshSearch,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.quota) {
+        setQuotaInfo(data.quota);
+      }
+
+      if (!data.success) {
+        setSongTestError(data.error || `Failed to test ${targetSong.artist} - ${targetSong.song}`);
+        if (data.hasYouTubeApiKey === false) {
+          setHasYouTubeApiKey(false);
+        }
+        logMessage(`[Single Song Error] ${data.error}`);
+      } else if (data.result) {
+        setHasYouTubeApiKey(true);
+        setSongTestSuiteResults((prev) => {
+          const current = prev ? [...prev] : CRITICAL_TEST_SONGS.map((cs) => ({ song: cs, unrun: true }));
+          // Ensure base array length is 5
+          while (current.length < 5) {
+            current.push({ song: CRITICAL_TEST_SONGS[current.length], unrun: true });
+          }
+          current[index] = data.result;
+          return current;
+        });
+        logMessage(`✓ Test completed for ${targetSong.artist} - ${targetSong.song}`);
+      }
+    } catch (err: any) {
+      setSongTestError(err.message || 'Network error running song test.');
+      logMessage(`[Single Song Exception] ${err.message}`);
+    } finally {
+      setTestingSongIndex(null);
     }
   };
 
@@ -888,6 +1007,53 @@ export default function App() {
     <div className="min-h-screen bg-[#0d0f14] text-zinc-200 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
 
+        {/* On-screen Banner: Recording Not Found / Playback Alert / API Error */}
+        {songPlaybackNotice && (
+          <div
+            className={`p-4 rounded-lg shadow-2xl flex items-start justify-between gap-3 font-mono text-xs animate-in fade-in duration-200 border-2 ${
+              songPlaybackNotice.type === 'api_error'
+                ? 'bg-amber-950/90 border-amber-500 text-amber-100'
+                : 'bg-rose-950/90 border-rose-600 text-rose-100'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle
+                className={`w-5 h-5 shrink-0 mt-0.5 ${
+                  songPlaybackNotice.type === 'api_error' ? 'text-amber-400' : 'text-rose-400'
+                }`}
+              />
+              <div>
+                <div
+                  className={`font-bold text-sm tracking-wide uppercase flex items-center gap-2 ${
+                    songPlaybackNotice.type === 'api_error' ? 'text-amber-300' : 'text-rose-300'
+                  }`}
+                >
+                  <span>{songPlaybackNotice.type === 'api_error' ? 'API / QUOTA NOTICE' : 'RECORDING NOT FOUND'}</span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded border font-normal ${
+                      songPlaybackNotice.type === 'api_error'
+                        ? 'bg-amber-900/60 border-amber-700 text-amber-200'
+                        : 'bg-rose-900/60 border-rose-700 text-rose-200'
+                    }`}
+                  >
+                    Nothing was played
+                  </span>
+                </div>
+                <div className="mt-1 text-zinc-100 text-xs leading-relaxed font-semibold">
+                  {songPlaybackNotice.message}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setSongPlaybackNotice(null)}
+              className="text-zinc-300 hover:text-white px-2.5 py-1 rounded bg-black/50 hover:bg-black/80 border border-zinc-700 text-xs font-bold transition-colors cursor-pointer shrink-0"
+              title="Dismiss notice"
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+        )}
+
         {/* --- Header & Concept Banner --- */}
         <header className="border-b border-zinc-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -1180,15 +1346,23 @@ export default function App() {
                     <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                       programSongResult.status === 'PLAYING'
                         ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                        : programSongResult.status === 'ERROR'
-                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                          : 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
+                        : programSongResult.status === 'API_ERROR'
+                          ? 'bg-amber-950 text-amber-300 border border-amber-600'
+                          : programSongResult.status === 'NOT_FOUND'
+                            ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                            : programSongResult.status === 'ERROR'
+                              ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                              : 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
                     }`}>
                       {programSongResult.status === 'PLAYING'
                         ? 'Playing'
-                        : programSongResult.status === 'ERROR'
-                          ? 'Unable to reliably select requested song'
-                          : programSongResult.status}
+                        : programSongResult.status === 'API_ERROR'
+                          ? 'API QUOTA ERROR'
+                          : programSongResult.status === 'NOT_FOUND'
+                            ? 'NOT FOUND'
+                            : programSongResult.status === 'ERROR'
+                              ? 'Unable to reliably select requested song'
+                              : programSongResult.status}
                     </span>
                   </div>
 
@@ -1248,11 +1422,33 @@ export default function App() {
                     )}
 
                     {programSongResult.error && (
-                      <div className="p-2 rounded bg-rose-950/40 border border-rose-800 text-rose-300 text-[11px] flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div
+                        className={`p-3 rounded text-xs flex items-start gap-2.5 border ${
+                          programSongResult.status === 'API_ERROR'
+                            ? 'bg-amber-950/60 border-amber-600 text-amber-200'
+                            : 'bg-rose-950/60 border-rose-700 text-rose-200'
+                        }`}
+                      >
+                        <AlertCircle
+                          className={`w-4 h-4 shrink-0 mt-0.5 ${
+                            programSongResult.status === 'API_ERROR' ? 'text-amber-400' : 'text-rose-400'
+                          }`}
+                        />
                         <div>
-                          <strong>Status:</strong> Unable to reliably select requested song
-                          <div className="mt-0.5 text-zinc-300">{programSongResult.error}</div>
+                          <strong
+                            className={`uppercase tracking-wide ${
+                              programSongResult.status === 'API_ERROR' ? 'text-amber-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {programSongResult.status === 'API_ERROR'
+                              ? 'API ERROR:'
+                              : programSongResult.status === 'NOT_FOUND'
+                                ? 'NOT FOUND:'
+                                : 'STATUS ERROR:'}
+                          </strong>{' '}
+                          <span className="text-zinc-200 leading-relaxed font-semibold">
+                            {programSongResult.error}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -1679,14 +1875,16 @@ export default function App() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold ${
-                hasYouTubeApiKey === true
-                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                  : hasYouTubeApiKey === false
-                    ? 'bg-rose-950 text-rose-400 border border-rose-800'
-                    : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
-              }`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold ${
+                  hasYouTubeApiKey === true
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                    : hasYouTubeApiKey === false
+                      ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                      : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                }`}
+              >
                 {hasYouTubeApiKey === true ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -1702,10 +1900,25 @@ export default function App() {
                 )}
               </span>
 
+              {/* Force Fresh Search Option */}
+              <label
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#0a0c10] border border-zinc-700 text-xs font-mono text-zinc-300 cursor-pointer hover:border-amber-500/50 transition-colors select-none"
+                title="When unchecked, searches reuse persistent disk-cached results. Check to force fresh YouTube API queries."
+              >
+                <input
+                  type="checkbox"
+                  checked={forceFreshSearch}
+                  onChange={(e) => setForceFreshSearch(e.target.checked)}
+                  className="rounded bg-zinc-900 border-zinc-600 text-amber-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-amber-500"
+                />
+                <span className="font-semibold text-amber-300">Force fresh search</span>
+              </label>
+
               <button
                 onClick={handleRunSongTestSuite}
-                disabled={isSongTestRunning}
+                disabled={isSongTestRunning || testingSongIndex !== null}
                 className="py-2 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow flex items-center gap-2 cursor-pointer"
+                title="Run all 5 canonical test songs sequentially"
               >
                 {isSongTestRunning ? (
                   <>
@@ -1715,10 +1928,72 @@ export default function App() {
                 ) : (
                   <>
                     <Play className="w-3.5 h-3.5" />
-                    <span>Run Song Test</span>
+                    <span>Run All</span>
                   </>
                 )}
               </button>
+            </div>
+          </div>
+
+          {/* Running API Quota Tracker & Session Meter */}
+          <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded-lg font-mono text-xs space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-900 pb-2">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-amber-400" />
+                <span className="font-bold text-zinc-200 uppercase tracking-wider text-[11px]">
+                  YouTube API Session Quota Meter
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+                  search.list: 100 units &bull; videos.list: 1 unit
+                </span>
+              </div>
+              <div className="text-[11px] text-zinc-300 flex items-center gap-2">
+                <span>
+                  Units Used This Session:{' '}
+                  <strong className="text-amber-400 font-bold">{quotaInfo.totalUnitsUsed}</strong>
+                </span>
+                <span className="text-zinc-600">&bull;</span>
+                <span className="text-emerald-400 font-semibold">
+                  Disk Cache Hits: {quotaInfo.cacheHits}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] text-zinc-400">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>
+                  Search Calls: <strong className="text-zinc-200">{quotaInfo.searchCalls}</strong> ({quotaInfo.searchCalls * 100} units)
+                </span>
+                <span>
+                  Details Calls: <strong className="text-zinc-200">{quotaInfo.detailsCalls}</strong> ({quotaInfo.detailsCalls * 1} units)
+                </span>
+                <span className="inline-flex items-center gap-1 text-zinc-400">
+                  <Database className="w-3 h-3 text-cyan-400" />
+                  <span>Persistent Cache: Active (keyed by artist|song)</span>
+                </span>
+              </div>
+              <div>
+                Approx. Remaining Daily:{' '}
+                <strong className="text-emerald-400 font-bold">
+                  ~{quotaInfo.estimatedRemainingDaily.toLocaleString()} / 10,000 units
+                </strong>
+              </div>
+            </div>
+
+            {/* Quota Progress Bar */}
+            <div className="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  quotaInfo.totalUnitsUsed > 8000
+                    ? 'bg-rose-500'
+                    : quotaInfo.totalUnitsUsed > 5000
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.max(1, (quotaInfo.totalUnitsUsed / 10000) * 100))}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -1772,8 +2047,25 @@ export default function App() {
                 Test Suite Ready
               </div>
               <p className="text-xs font-mono text-zinc-500 max-w-lg mx-auto">
-                Click <strong className="text-amber-400">"Run Song Test"</strong> above to run all 5 songs (a-ha, Michael Jackson, Prince, U2, Peter Gabriel) live through the official search engine and display the top 5 candidates table on screen.
+                Click <strong className="text-amber-400">"Run All"</strong> above or test individual songs one-at-a-time below to run canonical test songs through the official search engine. Uses persistent disk cache by default to protect API quota.
               </p>
+              <div className="pt-2 flex flex-wrap justify-center gap-2">
+                {CRITICAL_TEST_SONGS.map((cts, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleRunSingleSong(idx)}
+                    disabled={isSongTestRunning || testingSongIndex !== null}
+                    className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono font-bold text-zinc-200 hover:text-white flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {testingSongIndex === idx ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 text-amber-400" />
+                    )}
+                    <span>Run #{idx + 1}: {cts.artist} - {cts.song}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1783,7 +2075,12 @@ export default function App() {
               {songTestSuiteResults.map((result, songIdx) => {
                 const s = result.song;
                 const chosen = result.selected;
-                const candidates = result.candidates || [];
+                const candidates =
+                  result.candidates && result.candidates.length > 0
+                    ? result.candidates
+                    : result.rejectedCandidates || [];
+                const isApiError = result.status === 'api_error';
+                const isNotFound = !result.success || result.status === 'not_found';
 
                 return (
                   <div
@@ -1808,18 +2105,51 @@ export default function App() {
                           </span>
                         )}
 
-                        <span className={`px-2 py-0.5 rounded font-bold ${
-                          result.success
-                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                            : 'bg-rose-950 text-rose-400 border border-rose-800'
-                        }`}>
-                          {result.success ? '✓ VERIFIED CHOSEN' : '✗ ALL REJECTED'}
+                        {/* Status Badge: VERIFIED CHOSEN / QUOTA EXCEEDED / NOT FOUND / READY TO TEST */}
+                        <span
+                          className={`px-2 py-0.5 rounded font-bold ${
+                            result.unrun
+                              ? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                              : isApiError
+                                ? 'bg-amber-950 text-amber-300 border border-amber-600'
+                                : !isNotFound
+                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                  : 'bg-rose-950 text-rose-400 border border-rose-800'
+                          }`}
+                        >
+                          {result.unrun
+                            ? 'READY TO TEST'
+                            : isApiError
+                              ? 'QUOTA EXCEEDED'
+                              : !isNotFound
+                                ? '✓ VERIFIED CHOSEN'
+                                : 'NOT FOUND'}
                         </span>
+
+                        {/* Individual Song "Run" Button */}
+                        <button
+                          onClick={() => handleRunSingleSong(songIdx)}
+                          disabled={isSongTestRunning || testingSongIndex !== null}
+                          className="px-2.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-200 hover:text-white font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                          title={`Run search test for ${s.artist} - ${s.song} only`}
+                        >
+                          {testingSongIndex === songIdx ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                              <span>Testing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 text-amber-400" />
+                              <span>Run</span>
+                            </>
+                          )}
+                        </button>
 
                         <button
                           onClick={() => handleProgramSong({ artist: s.artist, song: s.song, year: s.year })}
-                          disabled={isProgrammingSong}
-                          className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                          disabled={isProgrammingSong || isNotFound || isApiError}
+                          className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
                           title="Load and play this song directly in the YouTube tab"
                         >
                           <Play className="w-3 h-3" />
@@ -1828,8 +2158,12 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Chosen Video Highlight Box */}
-                    {chosen ? (
+                    {/* Chosen Video Highlight Box, QUOTA EXCEEDED box, NOT FOUND box, or UNRUN state */}
+                    {result.unrun ? (
+                      <div className="p-3 bg-zinc-950/40 border-b border-zinc-800/80 font-mono text-xs text-zinc-400 flex items-center justify-between">
+                        <span>Song not evaluated yet. Click <strong>Run</strong> above or <strong>Run All</strong> to execute search.</span>
+                      </div>
+                    ) : chosen ? (
                       <div className="p-3 bg-amber-950/20 border-b border-zinc-800/80 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2">
@@ -1859,9 +2193,35 @@ export default function App() {
                           <ExternalLink className="w-3 h-3 text-amber-400" />
                         </a>
                       </div>
+                    ) : isApiError ? (
+                      <div className="p-3.5 bg-amber-950/30 border-b border-amber-900/50 font-mono text-xs text-amber-200 flex items-start gap-2.5">
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-bold text-amber-400 uppercase tracking-wide flex items-center gap-2">
+                            <span>QUOTA / API ERROR</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-amber-900/50 text-amber-200 rounded border border-amber-700 font-normal">
+                              API error occurred
+                            </span>
+                          </div>
+                          <div className="mt-1 text-zinc-200 font-semibold">
+                            {result.error || 'YouTube API daily quota exceeded. It resets at midnight Pacific time.'}
+                          </div>
+                        </div>
+                      </div>
                     ) : (
-                      <div className="p-3 bg-rose-950/20 border-b border-zinc-800/80 font-mono text-xs text-rose-300">
-                        <strong>Status:</strong> Unable to reliably select requested song. {result.error}
+                      <div className="p-3.5 bg-rose-950/25 border-b border-rose-900/40 font-mono text-xs text-rose-200 flex items-start gap-2.5">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-bold text-rose-400 uppercase tracking-wide flex items-center gap-2">
+                            <span>NOT FOUND</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-rose-900/40 text-rose-300 rounded border border-rose-800 font-normal">
+                              No Tier 1 (Topic) or Tier 2 (Official / VEVO) recording qualified
+                            </span>
+                          </div>
+                          <div className="mt-1 text-zinc-200 font-semibold">
+                            {result.error || `No trustworthy recording found for ${s.artist} - ${s.song}. Nothing was played.`}
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -1888,7 +2248,7 @@ export default function App() {
                           ) : (
                             candidates.map((cand: any, cIdx: number) => {
                               const isChosenCand = chosen && chosen.videoId === cand.videoId;
-                              const isPassed = cand.isPassed;
+                              const isPassed = Boolean(cand.isPassed && chosen);
 
                               return (
                                 <tr
