@@ -32,7 +32,8 @@ import {
   Music,
   Check,
   Database,
-  Cpu
+  Cpu,
+  Rocket
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
@@ -77,6 +78,8 @@ export default function App() {
   const [availableTabs, setAvailableTabs] = useState<TabInfo[]>([]);
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [isLaunchingGroup, setIsLaunchingGroup] = useState<boolean>(false);
+  const [launchMessage, setLaunchMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // --- YouTube Playback State ---
@@ -294,6 +297,46 @@ export default function App() {
     const timer = setInterval(poll, 1000);
     return () => clearInterval(timer);
   }, [playbackStatus.connectedTabId, isDuckingActive]);
+
+  // --- Launch Retro FM (Chrome Tab Group) Handler ---
+  const handleLaunchRetroFm = async () => {
+    setIsLaunchingGroup(true);
+    setLaunchMessage(null);
+    setConnectionError(null);
+    logMessage('Launching Retro FM Tab Group (opening YouTube + grouping in Chrome)...');
+
+    try {
+      const res = await musicProviderRef.current.launchRetroFmGroup();
+      if (res.success && res.connectedTabId) {
+        if (res.status) {
+          setPlaybackStatus(res.status);
+        }
+        setTestResults((prev) => ({
+          ...prev,
+          tabDetection: true,
+          playbackState: true,
+          volumeControl: true,
+          metadata: !!(res.status?.title && res.status.title !== 'Unknown Video'),
+        }));
+
+        const successNotice = res.createdNewTab
+          ? '✓ Launched: Created new YouTube tab and organized both tabs into "Retro FM" Chrome Tab Group.'
+          : '✓ Connected: Reused existing YouTube tab inside "Retro FM" Chrome Tab Group.';
+        setLaunchMessage({ text: successNotice, isError: false });
+        logMessage(successNotice);
+      } else {
+        const errorNotice = res.error || 'Failed to create Retro FM Tab Group. Ensure the Chrome Extension (v1.0.4) is loaded.';
+        setLaunchMessage({ text: errorNotice, isError: true });
+        logMessage(`[Launch Failed] ${errorNotice}`);
+      }
+    } catch (err: any) {
+      const errMsg = err.message || 'Error launching Retro FM tab group.';
+      setLaunchMessage({ text: errMsg, isError: true });
+      logMessage(`[Launch Error] ${errMsg}`);
+    } finally {
+      setIsLaunchingGroup(false);
+    }
+  };
 
   // --- Connect YouTube Tab Handler ---
   const handleConnectTab = async () => {
@@ -1083,6 +1126,17 @@ export default function App() {
               <span>SILENCE ALL AUDIO</span>
             </button>
 
+            {/* Launch Retro FM (Chrome Tab Group) Button */}
+            <button
+              onClick={handleLaunchRetroFm}
+              disabled={isLaunchingGroup}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow cursor-pointer"
+              title="Open YouTube in a new tab, connect it, and organize both tabs in a 'Retro FM' Chrome Tab Group"
+            >
+              <Rocket className={`w-3.5 h-3.5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
+              <span>{isLaunchingGroup ? 'Launching...' : 'Launch Retro FM'}</span>
+            </button>
+
             {/* Open in Dedicated Tab Button */}
             <a
               href={typeof window !== 'undefined' ? window.location.href : '#'}
@@ -1112,7 +1166,7 @@ export default function App() {
               title="Download unpacked Chrome extension ZIP"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Download Extension (v1.0.3)</span>
+              <span>Download Extension (v1.0.4)</span>
             </button>
 
             {/* Extension Setup Guide Modal Trigger */}
@@ -1174,14 +1228,51 @@ export default function App() {
 
                 <div className="flex flex-wrap gap-2">
                   <button
+                    onClick={handleLaunchRetroFm}
+                    disabled={isLaunchingGroup}
+                    className="flex-1 py-2.5 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
+                    title="Open YouTube in a new tab, connect it, and organize both tabs in a 'Retro FM' Chrome Tab Group"
+                  >
+                    <Rocket className={`w-3.5 h-3.5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
+                    <span>{isLaunchingGroup ? 'Launching Tab Group...' : 'Launch Retro FM (Tab Group)'}</span>
+                  </button>
+
+                  <button
                     onClick={handleConnectTab}
                     disabled={isConnecting}
-                    className="flex-1 py-2.5 px-4 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-black font-mono font-bold text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
+                    className="py-2.5 px-4 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 disabled:opacity-50 text-zinc-200 font-mono font-bold text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
+                    title="Scan for already open YouTube tabs and connect"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isConnecting ? 'animate-spin' : ''}`} />
-                    <span>{isConnecting ? 'Connecting...' : 'Connect YouTube Tab'}</span>
+                    <span>{isConnecting ? 'Connecting...' : 'Connect Existing Tab'}</span>
                   </button>
                 </div>
+
+                {/* Launch Success or Error Notice */}
+                {launchMessage && (
+                  <div
+                    className={`p-2.5 rounded text-xs font-mono flex items-start justify-between gap-2 border ${
+                      launchMessage.isError
+                        ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
+                        : 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {launchMessage.isError ? (
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                      )}
+                      <span>{launchMessage.text}</span>
+                    </div>
+                    <button
+                      onClick={() => setLaunchMessage(null)}
+                      className="text-zinc-400 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
 
                 {connectionError && (
                   <div className="p-2.5 rounded bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs font-mono flex items-start gap-2">
@@ -2593,10 +2684,10 @@ export default function App() {
                     Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
                   </li>
                   <li>
-                    Click <strong className="text-zinc-100">Load unpacked</strong> and select the unzipped extension directory.
+                    Click <strong className="text-zinc-100">Load unpacked</strong> and select the unzipped extension directory (or click the <strong className="text-amber-400">Reload icon ↻</strong> if updating).
                   </li>
                   <li>
-                    Open <strong className="text-red-400">youtube.com</strong> in another tab, start playing a video, and click <strong className="text-amber-400">Connect YouTube Tab</strong> on Retro FM!
+                    Click <strong className="text-amber-400">Launch Retro FM</strong> to automatically open YouTube next to Retro FM and group both tabs into an orange <strong>"Retro FM"</strong> Chrome Tab Group!
                   </li>
                 </ol>
 

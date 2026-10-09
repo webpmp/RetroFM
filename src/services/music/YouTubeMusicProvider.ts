@@ -122,6 +122,37 @@ export class YouTubeMusicProvider implements MusicProvider {
     return res?.tabs || [];
   }
 
+  /**
+   * Launch Retro FM: Opens YouTube next to the Retro FM tab, registers it as connected,
+   * creates/reuses a Chrome tab group titled "Retro FM" (orange), and returns the connection result.
+   */
+  public async launchRetroFmGroup(): Promise<{
+    success: boolean;
+    connectedTabId?: number;
+    groupId?: number;
+    createdNewTab?: boolean;
+    status?: MusicPlaybackStatus;
+    error?: string;
+  }> {
+    try {
+      const res = await this.sendExtensionMessage('LAUNCH_RETRO_FM', {}, 8000);
+      if (res?.connectedTabId) {
+        this.connectedTabId = res.connectedTabId;
+        const status = res.status || (await this.getStatus());
+        return {
+          success: true,
+          connectedTabId: res.connectedTabId,
+          groupId: res.groupId,
+          createdNewTab: res.createdNewTab,
+          status,
+        };
+      }
+      return { success: false, error: res?.error || 'Failed to initialize Retro FM tab group' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   public async connect(tabId?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     try {
       const res = await this.sendExtensionMessage('CONNECT_YOUTUBE_TAB', { tabId });

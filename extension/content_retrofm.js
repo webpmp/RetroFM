@@ -11,7 +11,7 @@
     const payload = {
       source: SOURCE_EXT,
       type: 'EXTENSION_READY',
-      version: '1.0.3',
+      version: '1.0.4',
       isIframe: window !== window.top
     };
 
@@ -44,14 +44,14 @@
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.3'
+          version: '1.0.4'
         }, '*');
       } catch (e) {
         window.postMessage({
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.3'
+          version: '1.0.4'
         }, '*');
       }
       return;
