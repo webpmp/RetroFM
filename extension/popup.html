@@ -33,11 +33,55 @@
       font-size: 11px;
       color: #10b981;
     }
+    footer {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #1f293d;
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.5;
+    }
+    footer a {
+      color: #f59e0b;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+    .footer-links {
+      margin-top: 4px;
+      display: flex;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
-  <h3>Retro FM Bridge</h3>
+  <h3 id="ext-title">Retro FM Bridge</h3>
   <p>Permitted tab controller bridge for the Retro FM proof-of-concept experiment.</p>
-  <div class="status">● Bridge Active (v1.0.4)</div>
+  <div class="status" id="ext-status">● Bridge Active</div>
+
+  <footer>
+    <div><strong id="ext-name">Retro FM Bridge</strong> <span id="ext-ver"></span> by Chris Adkins</div>
+    <div class="footer-links">
+      <a href="https://github.com/webpmp/RetroFM" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span>&bull;</span>
+      <a href="https://github.com/webpmp/RetroFM/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+    </div>
+  </footer>
+
+  <script>
+    try {
+      const manifest = chrome?.runtime?.getManifest?.();
+      const version = manifest?.version || '';
+      if (version) {
+        const verSpan = document.getElementById('ext-ver');
+        if (verSpan) verSpan.textContent = 'v' + version;
+        const statusDiv = document.getElementById('ext-status');
+        if (statusDiv) statusDiv.textContent = '● Bridge Active (v' + version + ')';
+      }
+    } catch (e) {
+      // Fallback
+    }
+  </script>
 </body>
 </html>

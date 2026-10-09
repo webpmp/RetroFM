@@ -272,9 +272,22 @@ async function startServer() {
         return res.status(404).send('Extension folder not found');
       }
 
-      const zipBuffer = createZipFromDirectory(extensionDir);
+      const manifestPath = path.join(extensionDir, 'manifest.json');
+      let version = '1.0.5';
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (m.version) version = m.version;
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      const folderName = `retro-fm-extension-v${version}`;
+      const zipFilename = `retro-fm-extension-v${version}.zip`;
+      const zipBuffer = createZipFromDirectory(extensionDir, folderName);
       res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', 'attachment; filename="retro-fm-extension.zip"');
+      res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
       res.setHeader('Content-Length', zipBuffer.length.toString());
       return res.end(zipBuffer);
     } catch (err: any) {
@@ -287,7 +300,7 @@ async function startServer() {
   app.get('/api/extension/files', (req, res) => {
     try {
       const extensionDir = path.resolve(__dirname, 'extension');
-      const fileNames = ['manifest.json', 'content_youtube.js', 'content_retrofm.js', 'background.js', 'popup.html', 'README.md'];
+      const fileNames = ['manifest.json', 'content_youtube.js', 'content_retrofm.js', 'background.js', 'popup.html', 'README.md', 'LICENSE'];
       const files: Record<string, string> = {};
 
       for (const name of fileNames) {

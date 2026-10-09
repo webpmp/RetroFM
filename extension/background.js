@@ -1,4 +1,5 @@
-// Retro FM Extension Background Service Worker (v1.0.4)
+// Retro FM Extension Background Service Worker
+// Reads version dynamically via chrome.runtime.getManifest().version
 
 let activeConnectedTabId = null;
 
@@ -93,7 +94,8 @@ function handleIncomingRequest(request, sender, sendResponse) {
   (async () => {
     try {
       if (type === 'PING') {
-        sendResponse({ success: true, type: 'PONG', version: '1.0.4' });
+        const extVersion = chrome.runtime?.getManifest?.()?.version || '1.0.0';
+        sendResponse({ success: true, type: 'PONG', version: extVersion });
         return;
       }
 

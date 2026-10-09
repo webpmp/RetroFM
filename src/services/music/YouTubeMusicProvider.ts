@@ -6,6 +6,7 @@ export class YouTubeMusicProvider implements MusicProvider {
   public readonly name = 'YouTubeMusicProvider';
   private connectedTabId: number | null = null;
   private isExtensionDetected = false;
+  private reportedExtensionVersion: string | null = null;
   private messageCounter = 0;
 
   constructor() {
@@ -13,6 +14,9 @@ export class YouTubeMusicProvider implements MusicProvider {
       window.addEventListener('message', (event) => {
         if (event.data && event.data.source === 'RETRO_FM_EXTENSION') {
           this.isExtensionDetected = true;
+          if (event.data.version) {
+            this.reportedExtensionVersion = event.data.version;
+          }
         }
       });
       // Send initial ping to check if extension is already active
@@ -70,6 +74,9 @@ export class YouTubeMusicProvider implements MusicProvider {
           clearTimeout(timer);
           window.removeEventListener('message', handler);
           this.isExtensionDetected = true;
+          if (event.data.version) {
+            this.reportedExtensionVersion = event.data.version;
+          }
           if (event.data.error) {
             reject(new Error(event.data.error));
           } else {
@@ -98,23 +105,32 @@ export class YouTubeMusicProvider implements MusicProvider {
 
       timer = setTimeout(() => {
         window.removeEventListener('message', handler);
-        reject(new Error(`Extension request '${type}' timed out after ${timeoutMs}ms. Please ensure the extension (v1.0.3) is loaded with 'all_frames: true'.`));
+        reject(new Error(`Extension request '${type}' timed out after ${timeoutMs}ms. Please ensure the extension is loaded with 'all_frames: true'.`));
       }, timeoutMs);
     });
   }
 
-  public async pingExtension(): Promise<boolean> {
+  public getReportedVersion(): string | null {
+    return this.reportedExtensionVersion;
+  }
+
+  public async pingExtension(): Promise<{ active: boolean; version?: string }> {
     try {
-      await this.sendExtensionMessage('PING', {}, 1000);
+      const res = await this.sendExtensionMessage('PING', {}, 1000);
       this.isExtensionDetected = true;
-      return true;
+      const ver = res?.version || this.reportedExtensionVersion || undefined;
+      if (ver) {
+        this.reportedExtensionVersion = ver;
+      }
+      return { active: true, version: ver };
     } catch {
-      return false;
+      return { active: false };
     }
   }
 
   public async isAvailable(): Promise<boolean> {
-    return this.pingExtension();
+    const res = await this.pingExtension();
+    return res.active;
   }
 
   public async listTabs(): Promise<TabInfo[]> {

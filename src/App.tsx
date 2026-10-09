@@ -1,6 +1,6 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -38,7 +38,24 @@ import {
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
 import { generateTTS } from './services/ttsClient.js';
-import { generateAndDownloadExtensionZip, EXTENSION_FILES } from './services/extensionBundle.js';
+import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
+import manifest from '../extension/manifest.json';
+
+// Minimum required Chrome extension version
+export const MIN_REQUIRED_EXTENSION_VERSION = manifest.version;
+
+function compareVersions(v1: string, v2: string): number {
+  const p1 = (v1 || '0.0.0').split('.').map((n) => parseInt(n, 10) || 0);
+  const p2 = (v2 || '0.0.0').split('.').map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(p1.length, p2.length);
+  for (let i = 0; i < len; i++) {
+    const a = p1[i] || 0;
+    const b = p2[i] || 0;
+    if (a > b) return 1;
+    if (a < b) return -1;
+  }
+  return 0;
+}
 
 // Pre-defined 5 critical validation test songs
 export const CRITICAL_TEST_SONGS = [
@@ -75,6 +92,7 @@ export default function App() {
 
   // --- Extension & Tab Connection State ---
   const [extensionDetected, setExtensionDetected] = useState<boolean>(false);
+  const [reportedExtensionVersion, setReportedExtensionVersion] = useState<string | null>(null);
   const [availableTabs, setAvailableTabs] = useState<TabInfo[]>([]);
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
@@ -250,9 +268,12 @@ export default function App() {
   // --- Extension Heartbeat / Detection Loop ---
   useEffect(() => {
     const checkExt = async () => {
-      const active = await musicProviderRef.current.pingExtension();
-      setExtensionDetected(active);
-      if (active) {
+      const pingResult = await musicProviderRef.current.pingExtension();
+      setExtensionDetected(pingResult.active);
+      const reportedVer = pingResult.version || musicProviderRef.current.getReportedVersion() || null;
+      setReportedExtensionVersion(reportedVer);
+
+      if (pingResult.active) {
         setTestResults((prev) => ({ ...prev, tabDetection: true }));
         try {
           const tabs = await musicProviderRef.current.listTabs();
@@ -325,7 +346,7 @@ export default function App() {
         setLaunchMessage({ text: successNotice, isError: false });
         logMessage(successNotice);
       } else {
-        const errorNotice = res.error || 'Failed to create Retro FM Tab Group. Ensure the Chrome Extension (v1.0.4) is loaded.';
+        const errorNotice = res.error || `Failed to create Retro FM Tab Group. Ensure the Chrome Extension (v${EXTENSION_VERSION}) is loaded.`;
         setLaunchMessage({ text: errorNotice, isError: true });
         logMessage(`[Launch Failed] ${errorNotice}`);
       }
@@ -1097,6 +1118,35 @@ export default function App() {
           </div>
         )}
 
+        {/* On-screen Banner: Old Extension Warning / Extension Required */}
+        {(!extensionDetected || (reportedExtensionVersion && compareVersions(reportedExtensionVersion, MIN_REQUIRED_EXTENSION_VERSION) < 0)) && (
+          <div className="p-4 rounded-lg shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-xs bg-amber-950/95 border-2 border-amber-500 text-amber-100 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+              <div>
+                <div className="font-bold text-sm tracking-wide uppercase text-amber-300 flex items-center gap-2">
+                  <span>EXTENSION UPDATE REQUIRED</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/70 border border-amber-700 text-amber-200 font-normal">
+                    v{reportedExtensionVersion || 'Unknown'} detected &bull; v{MIN_REQUIRED_EXTENSION_VERSION} required
+                  </span>
+                </div>
+                <p className="mt-1 text-zinc-100 text-xs leading-relaxed">
+                  Your Retro FM extension is {reportedExtensionVersion ? `v${reportedExtensionVersion}` : 'not detected or an older build'} but this app needs v{MIN_REQUIRED_EXTENSION_VERSION} or newer. Download the update, reload it at <code className="px-1.5 py-0.5 bg-black/40 rounded border border-amber-800 text-amber-300">chrome://extensions</code>, then refresh this page.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => generateAndDownloadExtensionZip()}
+                className="px-4 py-2 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase transition-colors flex items-center gap-2 cursor-pointer shadow"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Extension (v{EXTENSION_VERSION})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* --- Header & Concept Banner --- */}
         <header className="border-b border-zinc-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -1166,7 +1216,7 @@ export default function App() {
               title="Download unpacked Chrome extension ZIP"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Download Extension (v1.0.4)</span>
+              <span>Download Extension (v{EXTENSION_VERSION})</span>
             </button>
 
             {/* Extension Setup Guide Modal Trigger */}
@@ -2675,7 +2725,7 @@ export default function App() {
                     Click <strong className="text-amber-400">Download ZIP Now</strong> below (compliant, cross-platform archive generated with Adm-Zip).
                   </li>
                   <li>
-                    Uncompress/unzip <code className="text-zinc-200">retro-fm-extension.zip</code> to a folder on your computer.
+                    Uncompress/unzip <code className="text-zinc-200">retro-fm-extension-v{EXTENSION_VERSION}.zip</code> to a folder on your computer.
                   </li>
                   <li>
                     In Chrome, navigate to <code className="text-amber-300">chrome://extensions/</code>
@@ -2684,7 +2734,7 @@ export default function App() {
                     Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
                   </li>
                   <li>
-                    Click <strong className="text-zinc-100">Load unpacked</strong> and select the unzipped extension directory (or click the <strong className="text-amber-400">Reload icon ↻</strong> if updating).
+                    Click <strong className="text-zinc-100">Load unpacked</strong> and select the unzipped <code className="text-zinc-200">retro-fm-extension-v{EXTENSION_VERSION}</code> directory (or click the <strong className="text-amber-400">Reload icon ↻</strong> if updating).
                   </li>
                   <li>
                     Click <strong className="text-amber-400">Launch Retro FM</strong> to automatically open YouTube next to Retro FM and group both tabs into an orange <strong>"Retro FM"</strong> Chrome Tab Group!
@@ -2699,7 +2749,7 @@ export default function App() {
               <div className="space-y-3">
                 {/* File selector pill list */}
                 <div className="flex flex-wrap gap-1.5">
-                  {['manifest.json', 'content_youtube.js', 'content_retrofm.js', 'background.js', 'popup.html', 'README.md'].map((fileName) => (
+                  {Object.keys(extensionFiles).map((fileName) => (
                     <button
                       key={fileName}
                       onClick={() => setActiveFileKey(fileName)}
@@ -2737,7 +2787,7 @@ export default function App() {
                 onClick={() => generateAndDownloadExtensionZip()}
                 className="px-4 py-2 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase transition-colors cursor-pointer"
               >
-                Download ZIP Now
+                Download Extension (v{EXTENSION_VERSION})
               </button>
               <button
                 onClick={() => setShowExtensionModal(false)}

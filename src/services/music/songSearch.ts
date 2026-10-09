@@ -1,11 +1,12 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import manifest from '../../../extension/manifest.json';
 
 export interface CandidateVideo {
   videoId: string;
@@ -299,7 +300,7 @@ export async function lookupMusicBrainz(
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'RetroFM/1.0.0 ( retrofm-applet@google-aistudio.build )',
+        'User-Agent': `RetroFM/${manifest.version} ( https://github.com/webpmp/RetroFM/issues )`,
         Accept: 'application/json',
       },
     });

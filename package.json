@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "test:music": "tsx scripts/test-music-search.ts",
+    "bump-extension": "tsx scripts/bump-extension.ts --bump",
+    "sync-extension": "tsx scripts/bump-extension.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

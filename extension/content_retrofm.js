@@ -6,12 +6,20 @@
   const SOURCE_PAGE = 'RETRO_FM_PAGE';
   const SOURCE_EXT = 'RETRO_FM_EXTENSION';
 
+  function getExtVersion() {
+    try {
+      return chrome?.runtime?.getManifest?.()?.version || '1.0.0';
+    } catch (e) {
+      return '1.0.0';
+    }
+  }
+
   // Announce presence to current window and top window if in iframe
   function announceReady() {
     const payload = {
       source: SOURCE_EXT,
       type: 'EXTENSION_READY',
-      version: '1.0.4',
+      version: getExtVersion(),
       isIframe: window !== window.top
     };
 
@@ -44,14 +52,14 @@
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.4'
+          version: getExtVersion()
         }, '*');
       } catch (e) {
         window.postMessage({
           source: SOURCE_EXT,
           id,
           type: 'PONG',
-          version: '1.0.4'
+          version: getExtVersion()
         }, '*');
       }
       return;
