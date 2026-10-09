@@ -39,6 +39,7 @@ import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
 import { generateTTS } from './services/ttsClient.js';
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
+import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import manifest from '../extension/manifest.json';
 
 // Minimum required Chrome extension version
@@ -2531,6 +2532,9 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* --- SECTION: HISTORICAL FACT PACKET TEST --- */}
+        <HistoricalFactPacketTest onLogEvent={logMessage} />
 
         {/* --- SECTION 7: LIVE SYSTEM CONSOLE / LOG --- */}
         <div className="bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-2">

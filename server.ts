@@ -11,6 +11,11 @@ import {
   clearSearchCache,
   getSessionQuota,
 } from './src/services/music/songSearch.js';
+import {
+  buildFactPacket,
+  getProviderConfigStatus,
+  getNewsSessionStats,
+} from './src/services/news/factPacketService.js';
 
 dotenv.config();
 
@@ -313,6 +318,47 @@ async function startServer() {
       return res.json({ success: true, files });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // API Route: Get news providers configuration status & session call statistics
+  app.get('/api/news/status', (req, res) => {
+    try {
+      const providers = getProviderConfigStatus();
+      const stats = getNewsSessionStats();
+      return res.json({
+        success: true,
+        providers,
+        stats,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // API Route: Build Historical Fact Packet for targetDate
+  app.post('/api/news/facts', async (req, res) => {
+    try {
+      const { targetDate, forceFresh } = req.body;
+      if (!targetDate || typeof targetDate !== 'string') {
+        return res.status(400).json({ success: false, error: 'targetDate string (YYYY-MM-DD) is required.' });
+      }
+
+      console.log(`[API /api/news/facts] Generating fact packet for date: ${targetDate} (forceFresh=${Boolean(forceFresh)})`);
+      const packet = await buildFactPacket(targetDate, Boolean(forceFresh));
+      const stats = getNewsSessionStats();
+
+      return res.json({
+        success: true,
+        packet,
+        stats,
+      });
+    } catch (err: any) {
+      console.error('[API /api/news/facts] Error:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed generating historical fact packet',
+      });
     }
   });
 
