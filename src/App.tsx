@@ -27,12 +27,24 @@ import {
   Activity,
   Layers,
   HelpCircle,
-  Disc
+  Disc,
+  Search,
+  Music,
+  Check
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
 import { generateTTS } from './services/ttsClient.js';
 import { generateAndDownloadExtensionZip, EXTENSION_FILES } from './services/extensionBundle.js';
+
+// Pre-defined 5 critical validation test songs
+export const CRITICAL_TEST_SONGS = [
+  { artist: 'a-ha', song: 'Take on Me', year: '1985' },
+  { artist: 'Michael Jackson', song: 'Billie Jean', year: '1983' },
+  { artist: 'Prince', song: 'When Doves Cry', year: '1984' },
+  { artist: 'U2', song: 'With or Without You', year: '1987' },
+  { artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986' },
+];
 
 // Pre-defined DJ script templates
 const SCRIPT_PRESETS = [
@@ -80,6 +92,32 @@ export default function App() {
 
   // Local volume slider state
   const [targetMusicVolume, setTargetMusicVolume] = useState<number>(100);
+
+  // --- PROGRAM SONG Test State ---
+  const [programArtist, setProgramArtist] = useState<string>('a-ha');
+  const [programSongTitle, setProgramSongTitle] = useState<string>('Take on Me');
+  const [programYear, setProgramYear] = useState<string>('1985');
+  const [isProgrammingSong, setIsProgrammingSong] = useState<boolean>(false);
+  const [programSongResult, setProgramSongResult] = useState<{
+    status: 'IDLE' | 'SEARCHING' | 'NAVIGATING' | 'PLAYING' | 'ERROR';
+    requested: string;
+    selectedTitle?: string;
+    selectedChannel?: string;
+    selectedDuration?: string;
+    selectedVideoId?: string;
+    selectedUrl?: string;
+    confidenceScore?: number;
+    reason?: string;
+    canonicalYear?: string;
+    canonicalLength?: string;
+    error?: string;
+  } | null>(null);
+
+  // --- 5-Song On-Screen Verification Suite State ---
+  const [hasYouTubeApiKey, setHasYouTubeApiKey] = useState<boolean | null>(null);
+  const [isSongTestRunning, setIsSongTestRunning] = useState<boolean>(false);
+  const [songTestSuiteResults, setSongTestSuiteResults] = useState<any[] | null>(null);
+  const [songTestError, setSongTestError] = useState<string | null>(null);
 
   // --- DJ Script & TTS State ---
   const [voiceEngine, setVoiceEngine] = useState<'GEMINI' | 'BROWSER'>('BROWSER');
@@ -165,6 +203,16 @@ export default function App() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
+    // Query API key status
+    fetch('/api/music/status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setHasYouTubeApiKey(Boolean(data.hasYouTubeApiKey));
+        }
+      })
+      .catch(() => setHasYouTubeApiKey(false));
+
     return () => {
       killAllAudio();
     };
@@ -282,6 +330,139 @@ export default function App() {
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
     } else {
       logMessage('Failed to trigger Stop on YouTube tab.');
+    }
+  };
+
+  // --- PROGRAM SONG Handler ---
+  const handleProgramSong = async (customOverride?: { artist: string; song: string; year: string }) => {
+    const artist = (customOverride ? customOverride.artist : programArtist).trim();
+    const song = (customOverride ? customOverride.song : programSongTitle).trim();
+    const year = (customOverride ? customOverride.year : programYear).trim();
+
+    if (customOverride) {
+      setProgramArtist(customOverride.artist);
+      setProgramSongTitle(customOverride.song);
+      setProgramYear(customOverride.year);
+    }
+
+    const requestedStr = `${artist} — ${song}${year ? ` (${year})` : ''}`;
+
+    if (!artist || !song) {
+      setProgramSongResult({
+        status: 'ERROR',
+        requested: requestedStr,
+        error: 'Artist and song title are required.',
+      });
+      return;
+    }
+
+    setIsProgrammingSong(true);
+    setProgramSongResult({
+      status: 'SEARCHING',
+      requested: requestedStr,
+    });
+    logMessage(`[Program Song] Searching YouTube Data API for "${artist} - ${song}" (${year})...`);
+
+    try {
+      const res = await fetch('/api/music/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist, song, year }),
+      });
+
+      const data = await res.json();
+      if (!data.success || !data.selected) {
+        const errMsg = data.error || 'Unable to reliably select requested song. No valid official recording passed validation.';
+        logMessage(`[Program Song] ${errMsg}`);
+        setProgramSongResult({
+          status: 'ERROR',
+          requested: requestedStr,
+          error: errMsg,
+        });
+        setIsProgrammingSong(false);
+        return;
+      }
+
+      const sel = data.selected;
+      logMessage(`[Program Song] Selected: "${sel.title}" on "${sel.channel}" (Score: ${sel.confidenceScore}). Navigating tab...`);
+
+      setProgramSongResult({
+        status: 'NAVIGATING',
+        requested: requestedStr,
+        selectedTitle: sel.title,
+        selectedChannel: sel.channel,
+        selectedDuration: sel.duration,
+        selectedVideoId: sel.videoId,
+        selectedUrl: sel.url,
+        confidenceScore: sel.confidenceScore,
+        reason: sel.reason,
+        canonicalYear: data.canonicalInfo?.year,
+        canonicalLength: data.canonicalInfo?.formattedLength,
+      });
+
+      // Instruct connected YouTube tab to navigate
+      const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId);
+      if (!navOk) {
+        logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
+      }
+
+      // Allow YouTube player to mount and start playback
+      await new Promise((r) => setTimeout(r, 1500));
+      const playOk = await musicProviderRef.current.play();
+
+      setProgramSongResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'PLAYING',
+            }
+          : null
+      );
+      if (playOk) {
+        setTestResults((prev) => ({ ...prev, playbackControl: true }));
+      }
+      logMessage(`[Program Song] Playing: "${sel.title}". YouTube playback started.`);
+    } catch (err: any) {
+      logMessage(`[Program Song] Exception: ${err.message}`);
+      setProgramSongResult({
+        status: 'ERROR',
+        requested: requestedStr,
+        error: err.message || 'Programming failed due to network error.',
+      });
+    } finally {
+      setIsProgrammingSong(false);
+    }
+  };
+
+  // --- Run 5-Song On-Screen Test Suite Handler ---
+  const handleRunSongTestSuite = async () => {
+    setIsSongTestRunning(true);
+    setSongTestError(null);
+    logMessage('Running 5-Song Verification Test Suite (live search + candidate scoring evaluation)...');
+
+    try {
+      const res = await fetch('/api/music/test-suite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        setSongTestError(data.error || 'Failed to execute test suite.');
+        if (data.hasYouTubeApiKey === false) {
+          setHasYouTubeApiKey(false);
+        }
+        logMessage(`[Test Suite Error] ${data.error}`);
+      } else {
+        setSongTestSuiteResults(data.results);
+        setHasYouTubeApiKey(true);
+        logMessage('✓ 5-Song Verification Test Suite finished successfully. Results table updated on screen.');
+      }
+    } catch (err: any) {
+      setSongTestError(err.message || 'Network error running test suite.');
+      logMessage(`[Test Suite Error] ${err.message}`);
+    } finally {
+      setIsSongTestRunning(false);
     }
   };
 
@@ -894,6 +1075,192 @@ export default function App() {
               </div>
             </div>
 
+            {/* SECTION: PROGRAM SONG (TECHNICAL PROOF-OF-CONCEPT) */}
+            <div className="bg-[#13161f] border border-amber-500/40 rounded-lg p-5 shadow-xl space-y-4 relative overflow-hidden">
+              <div className="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Music className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-sm font-bold font-mono tracking-wider text-zinc-100 uppercase">
+                    PROGRAM SONG
+                  </h2>
+                </div>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-amber-400">
+                  YouTube Data API v3
+                </span>
+              </div>
+
+              {/* Three Input Fields: Artist, Song, Year */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-5">
+                  <label className="text-xs font-mono text-zinc-400 block mb-1">
+                    Artist:
+                  </label>
+                  <input
+                    type="text"
+                    value={programArtist}
+                    onChange={(e) => setProgramArtist(e.target.value)}
+                    placeholder="e.g. a-ha"
+                    className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-3 py-2 text-xs font-mono text-zinc-100 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-5">
+                  <label className="text-xs font-mono text-zinc-400 block mb-1">
+                    Song:
+                  </label>
+                  <input
+                    type="text"
+                    value={programSongTitle}
+                    onChange={(e) => setProgramSongTitle(e.target.value)}
+                    placeholder="e.g. Take on Me"
+                    className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-3 py-2 text-xs font-mono text-zinc-100 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-mono text-zinc-400 block mb-1">
+                    Year:
+                  </label>
+                  <input
+                    type="text"
+                    value={programYear}
+                    onChange={(e) => setProgramYear(e.target.value)}
+                    placeholder="1985"
+                    className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-2 text-xs font-mono text-zinc-100 focus:outline-none focus:border-amber-500 text-center"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Test Presets for Critical Songs */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-mono text-zinc-400">Critical Test Presets:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CRITICAL_TEST_SONGS.map((songItem, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setProgramArtist(songItem.artist);
+                        setProgramSongTitle(songItem.song);
+                        setProgramYear(songItem.year);
+                      }}
+                      className="text-[11px] font-mono px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:border-amber-500/50 transition-colors"
+                    >
+                      {songItem.artist} - {songItem.song} ({songItem.year})
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Button: [ PLAY SONG ] */}
+              <div>
+                <button
+                  onClick={() => handleProgramSong()}
+                  disabled={isProgrammingSong}
+                  className="w-full py-3 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isProgrammingSong ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>SEARCHING &amp; PROGRAMMING YOUTUBE TAB...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      <span>PLAY SONG</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Result Information Panel */}
+              {programSongResult && (
+                <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-2.5 font-mono text-xs">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                    <span className="text-zinc-400 uppercase text-[11px] font-bold">Programming Result</span>
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                      programSongResult.status === 'PLAYING'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                        : programSongResult.status === 'ERROR'
+                          ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                          : 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
+                    }`}>
+                      {programSongResult.status === 'PLAYING'
+                        ? 'Playing'
+                        : programSongResult.status === 'ERROR'
+                          ? 'Unable to reliably select requested song'
+                          : programSongResult.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-zinc-500">Requested:</span>
+                      <span className="text-zinc-200 text-right font-semibold">
+                        {programSongResult.requested}
+                      </span>
+                    </div>
+
+                    {programSongResult.selectedTitle && (
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-zinc-500">Selected:</span>
+                        <span className="text-amber-300 text-right font-bold truncate max-w-[280px]">
+                          {programSongResult.selectedTitle}
+                        </span>
+                      </div>
+                    )}
+
+                    {programSongResult.selectedChannel && (
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">Channel:</span>
+                        <span className="text-zinc-300">{programSongResult.selectedChannel}</span>
+                      </div>
+                    )}
+
+                    {programSongResult.selectedDuration && (
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">Duration:</span>
+                        <span className="text-zinc-300">
+                          {programSongResult.selectedDuration}
+                          {programSongResult.canonicalLength ? ` (Canonical: ${programSongResult.canonicalLength})` : ''}
+                        </span>
+                      </div>
+                    )}
+
+                    {programSongResult.selectedVideoId && (
+                      <div className="flex justify-between items-center gap-2 pt-1 border-t border-zinc-900">
+                        <span className="text-zinc-500">YouTube Video:</span>
+                        <a
+                          href={programSongResult.selectedUrl || `https://www.youtube.com/watch?v=${programSongResult.selectedVideoId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-amber-400 hover:underline flex items-center gap-1 text-[11px]"
+                        >
+                          <span>ID: {programSongResult.selectedVideoId}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+
+                    {programSongResult.reason && (
+                      <div className="pt-1.5 border-t border-zinc-900 text-[11px] text-zinc-400 leading-normal">
+                        <strong className="text-zinc-300">Selection Reason:</strong> {programSongResult.reason}
+                      </div>
+                    )}
+
+                    {programSongResult.error && (
+                      <div className="p-2 rounded bg-rose-950/40 border border-rose-800 text-rose-300 text-[11px] flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Status:</strong> Unable to reliably select requested song
+                          <div className="mt-0.5 text-zinc-300">{programSongResult.error}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* SECTION 2: MUSIC CONTROL */}
             <div className="bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-4">
               <div className="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
@@ -1295,6 +1662,298 @@ export default function App() {
             </div>
 
           </div>
+        </div>
+
+        {/* --- SECTION: 5-SONG HISTORICAL SONG PROGRAMMING TEST SUITE --- */}
+        <div className="bg-[#13161f] border border-amber-500/30 rounded-lg p-5 sm:p-6 shadow-xl space-y-5">
+          <div className="border-b border-zinc-800/80 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Search className="w-5 h-5 text-amber-400" />
+                <h2 className="text-base font-bold font-mono tracking-wider text-zinc-100 uppercase">
+                  HISTORICAL SONG PROGRAMMING TEST (5 CANONICAL SONGS)
+                </h2>
+              </div>
+              <p className="text-xs font-mono text-zinc-400 mt-1">
+                Evaluates candidate selection, MusicBrainz duration validation, and hard rejection rules with zero overrides.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono font-bold ${
+                hasYouTubeApiKey === true
+                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                  : hasYouTubeApiKey === false
+                    ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                    : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+              }`}>
+                {hasYouTubeApiKey === true ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>YouTube API Key: Configured</span>
+                  </>
+                ) : hasYouTubeApiKey === false ? (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>YouTube API Key: Missing</span>
+                  </>
+                ) : (
+                  <span>Checking API Key...</span>
+                )}
+              </span>
+
+              <button
+                onClick={handleRunSongTestSuite}
+                disabled={isSongTestRunning}
+                className="py-2 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow flex items-center gap-2 cursor-pointer"
+              >
+                {isSongTestRunning ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Testing 5 Songs...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Run Song Test</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Missing YouTube API Key Clear Warning on Screen */}
+          {hasYouTubeApiKey === false && (
+            <div className="p-4 rounded bg-rose-950/50 border border-rose-700/80 text-rose-200 text-xs font-mono space-y-1.5">
+              <div className="flex items-center gap-2 font-bold text-rose-300">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>YOUTUBE DATA API KEY IS MISSING</span>
+              </div>
+              <p className="text-zinc-300 leading-relaxed">
+                The official YouTube Data API v3 search requires an API key in your environment.
+                Please ensure <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono">YOUTUBE_API_KEY</code> is set in your <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono">.env</code> file.
+              </p>
+              {songTestError && (
+                <div className="text-rose-400 text-[11px] pt-1">
+                  <strong>Server Response:</strong> {songTestError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Test Error Display if any */}
+          {songTestError && hasYouTubeApiKey !== false && (
+            <div className="p-3.5 rounded bg-rose-950/50 border border-rose-800 text-rose-300 text-xs font-mono flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <strong>Test Suite Execution Notice:</strong> {songTestError}
+              </div>
+            </div>
+          )}
+
+          {/* Active Testing Spinner Notice */}
+          {isSongTestRunning && (
+            <div className="p-6 bg-[#0a0c10] border border-amber-500/30 rounded text-center space-y-2">
+              <RefreshCw className="w-6 h-6 text-amber-400 animate-spin mx-auto" />
+              <div className="text-xs font-mono text-amber-300 font-bold uppercase tracking-wider">
+                Querying YouTube Data API v3 and MusicBrainz for 5 Canonical Test Songs...
+              </div>
+              <div className="text-[11px] font-mono text-zinc-400">
+                Enforcing whole-word artist matching, duration bounds, keyword rejection, and channel tier ranking.
+              </div>
+            </div>
+          )}
+
+          {/* Empty Prompt when test hasn't been run yet */}
+          {!isSongTestRunning && !songTestSuiteResults && (
+            <div className="p-6 bg-[#0a0c10] border border-zinc-800 rounded text-center space-y-2">
+              <Disc className="w-8 h-8 text-zinc-600 mx-auto" />
+              <div className="text-xs font-mono text-zinc-300 font-bold uppercase tracking-wider">
+                Test Suite Ready
+              </div>
+              <p className="text-xs font-mono text-zinc-500 max-w-lg mx-auto">
+                Click <strong className="text-amber-400">"Run Song Test"</strong> above to run all 5 songs (a-ha, Michael Jackson, Prince, U2, Peter Gabriel) live through the official search engine and display the top 5 candidates table on screen.
+              </p>
+            </div>
+          )}
+
+          {/* Render 5 Test Songs Results Table */}
+          {songTestSuiteResults && songTestSuiteResults.length > 0 && (
+            <div className="space-y-6">
+              {songTestSuiteResults.map((result, songIdx) => {
+                const s = result.song;
+                const chosen = result.selected;
+                const candidates = result.candidates || [];
+
+                return (
+                  <div
+                    key={songIdx}
+                    className="bg-[#0a0c10] border border-zinc-800 rounded-lg overflow-hidden space-y-0"
+                  >
+                    {/* Song Header */}
+                    <div className="p-3.5 bg-zinc-900/60 border-b border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-2 font-mono text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[11px] shrink-0">
+                          {songIdx + 1}
+                        </span>
+                        <span className="font-bold text-zinc-100 text-sm">
+                          {s.artist} — "{s.song}" ({s.year})
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        {result.canonicalInfo && (
+                          <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                            Canonical Year: <strong className="text-amber-400">{result.canonicalInfo.year || 'N/A'}</strong> | Length: <strong className="text-amber-400">{result.canonicalInfo.formattedLength || 'N/A'}</strong>
+                          </span>
+                        )}
+
+                        <span className={`px-2 py-0.5 rounded font-bold ${
+                          result.success
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                            : 'bg-rose-950 text-rose-400 border border-rose-800'
+                        }`}>
+                          {result.success ? '✓ VERIFIED CHOSEN' : '✗ ALL REJECTED'}
+                        </span>
+
+                        <button
+                          onClick={() => handleProgramSong({ artist: s.artist, song: s.song, year: s.year })}
+                          disabled={isProgrammingSong}
+                          className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Load and play this song directly in the YouTube tab"
+                        >
+                          <Play className="w-3 h-3" />
+                          <span>Play in Tab</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Chosen Video Highlight Box */}
+                    {chosen ? (
+                      <div className="p-3 bg-amber-950/20 border-b border-zinc-800/80 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-black font-black text-[10px]">
+                              ★ CHOSEN RECORDING
+                            </span>
+                            <span className="font-bold text-amber-200">{chosen.title}</span>
+                          </div>
+                          <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap gap-x-3">
+                            <span>Channel: <strong className="text-zinc-200">{chosen.channel}</strong></span>
+                            <span>Duration: <strong className="text-zinc-200">{chosen.duration}</strong></span>
+                            <span>Score: <strong className="text-amber-400">{chosen.confidenceScore}</strong></span>
+                            <span>Video ID: <code className="text-amber-300">{chosen.videoId}</code></span>
+                          </div>
+                          <div className="text-[11px] text-zinc-400 mt-1 italic">
+                            {chosen.reason}
+                          </div>
+                        </div>
+
+                        <a
+                          href={chosen.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs flex items-center gap-1.5 shrink-0 self-start sm:self-center transition-colors"
+                        >
+                          <span>Open on YouTube</span>
+                          <ExternalLink className="w-3 h-3 text-amber-400" />
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-rose-950/20 border-b border-zinc-800/80 font-mono text-xs text-rose-300">
+                        <strong>Status:</strong> Unable to reliably select requested song. {result.error}
+                      </div>
+                    )}
+
+                    {/* Top 5 Candidates Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-zinc-950 text-zinc-400 text-[11px] uppercase border-b border-zinc-800">
+                            <th className="py-2.5 px-3 w-28">Status</th>
+                            <th className="py-2.5 px-3 min-w-[200px]">Candidate Title</th>
+                            <th className="py-2.5 px-3 min-w-[140px]">Channel</th>
+                            <th className="py-2.5 px-3 w-16 text-center">Dur</th>
+                            <th className="py-2.5 px-3 w-16 text-right">Score</th>
+                            <th className="py-2.5 px-3 min-w-[280px]">Evaluation Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-900">
+                          {candidates.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="py-4 px-3 text-center text-zinc-500">
+                                No candidates returned by YouTube search.
+                              </td>
+                            </tr>
+                          ) : (
+                            candidates.map((cand: any, cIdx: number) => {
+                              const isChosenCand = chosen && chosen.videoId === cand.videoId;
+                              const isPassed = cand.isPassed;
+
+                              return (
+                                <tr
+                                  key={cIdx}
+                                  className={`transition-colors ${
+                                    isChosenCand
+                                      ? 'bg-amber-500/10 hover:bg-amber-500/15'
+                                      : isPassed
+                                        ? 'hover:bg-zinc-900/50'
+                                        : 'opacity-70 hover:opacity-100 hover:bg-rose-950/10'
+                                  }`}
+                                >
+                                  {/* Status Column */}
+                                  <td className="py-2 px-3 whitespace-nowrap">
+                                    {isChosenCand ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-black">
+                                        ★ CHOSEN
+                                      </span>
+                                    ) : isPassed ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                                        #{cIdx + 1} PASS
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-400 border border-rose-800">
+                                        REJECTED
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Title Column */}
+                                  <td className="py-2 px-3 font-semibold text-zinc-200 max-w-[240px] truncate" title={cand.title}>
+                                    {cand.title}
+                                  </td>
+
+                                  {/* Channel Column */}
+                                  <td className="py-2 px-3 text-zinc-300 max-w-[150px] truncate" title={cand.channel}>
+                                    {cand.channel}
+                                  </td>
+
+                                  {/* Duration Column */}
+                                  <td className="py-2 px-3 text-center text-zinc-400 whitespace-nowrap">
+                                    {cand.duration || '--:--'}
+                                  </td>
+
+                                  {/* Score Column */}
+                                  <td className="py-2 px-3 text-right whitespace-nowrap font-bold text-amber-400">
+                                    {cand.score}
+                                  </td>
+
+                                  {/* Reason Column */}
+                                  <td className="py-2 px-3 text-[11px] text-zinc-400 leading-tight">
+                                    {cand.reason}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* --- SECTION 6: TEST RESULTS TABLE (All 11 Requirements) --- */}

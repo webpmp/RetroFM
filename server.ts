@@ -84,6 +84,85 @@ async function startServer() {
     }
   });
 
+  // API Route: Check music status and API key presence
+  app.get('/api/music/status', (req, res) => {
+    const hasKey = Boolean(process.env.YOUTUBE_API_KEY);
+    return res.json({
+      success: true,
+      hasYouTubeApiKey: hasKey,
+      keyLength: hasKey ? (process.env.YOUTUBE_API_KEY as string).length : 0,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // API Route: Run 5-song test suite through YouTube Data API v3 and ranking algorithm
+  app.post('/api/music/test-suite', async (req, res) => {
+    const hasKey = Boolean(process.env.YOUTUBE_API_KEY);
+    if (!hasKey) {
+      return res.status(400).json({
+        success: false,
+        hasYouTubeApiKey: false,
+        error: 'YouTube Data API key is missing (YOUTUBE_API_KEY environment variable is not set). Please provide a valid YouTube Data API v3 key to run live searches.',
+      });
+    }
+
+    const testCases = [
+      { artist: 'a-ha', song: 'Take on Me', year: '1985' },
+      { artist: 'Michael Jackson', song: 'Billie Jean', year: '1983' },
+      { artist: 'Prince', song: 'When Doves Cry', year: '1984' },
+      { artist: 'U2', song: 'With or Without You', year: '1987' },
+      { artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986' },
+    ];
+
+    try {
+      console.log('[API /api/music/test-suite] Starting 5-song verification suite...');
+      const results = [];
+
+      for (let i = 0; i < testCases.length; i++) {
+        const item = testCases[i];
+        console.log(`[API /api/music/test-suite] Processing #${i + 1}: ${item.artist} - ${item.song} (${item.year})`);
+
+        // Skip overrides to prove that the official search algorithm is being tested
+        const searchResult = await searchYouTubeForSong(item.artist, item.song, item.year, {
+          skipOverrides: true,
+          skipCache: true,
+        });
+
+        let allCandidates = searchResult.candidates ? [...searchResult.candidates] : [];
+        if (searchResult.rejectedCandidates && allCandidates.length < 5) {
+          allCandidates = [...allCandidates, ...searchResult.rejectedCandidates].slice(0, 5);
+        }
+
+        results.push({
+          song: item,
+          success: searchResult.success,
+          selected: searchResult.selected || null,
+          candidates: allCandidates.slice(0, 5),
+          canonicalInfo: searchResult.canonicalInfo || null,
+          error: searchResult.error || null,
+        });
+
+        // Respect MusicBrainz rate limit
+        if (i < testCases.length - 1) {
+          await new Promise((r) => setTimeout(r, 1100));
+        }
+      }
+
+      console.log('[API /api/music/test-suite] Completed all 5 tests successfully.');
+      return res.json({
+        success: true,
+        hasYouTubeApiKey: true,
+        results,
+      });
+    } catch (err: any) {
+      console.error('[API /api/music/test-suite] Error executing test suite:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Error occurred while executing test suite.',
+      });
+    }
+  });
+
   // API Route: Download Extension ZIP package
   app.get('/api/extension/download', (req, res) => {
     try {

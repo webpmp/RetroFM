@@ -1,4 +1,4 @@
-import { MusicPlaybackStatus, MusicProvider, TabInfo } from './types.js';
+import { MusicPlaybackStatus, MusicProvider, SongProgramRequest, SongProgramResult, TabInfo } from './types.js';
 
 export const FIXED_EXTENSION_ID = 'hjphfmcilldbipolljlbjnnadeogocab';
 
@@ -258,5 +258,79 @@ export class YouTubeMusicProvider implements MusicProvider {
       command: { action: 'RAMP_VOLUME', targetVolume, durationMs },
     });
     return !!res?.success;
+  }
+
+  public async navigate(url: string, videoId?: string): Promise<boolean> {
+    const tabId = await this.ensureConnected();
+    if (!tabId) return false;
+    const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
+      tabId,
+      url,
+      videoId,
+    });
+    return !!res?.success;
+  }
+
+  public async programSong(request: SongProgramRequest): Promise<SongProgramResult> {
+    const cleanArtist = (request.artist || '').trim();
+    const cleanSong = (request.song || '').trim();
+    const cleanYear = (request.year || '').trim();
+    const requestedStr = `${cleanArtist} — ${cleanSong}${cleanYear ? ` (${cleanYear})` : ''}`;
+
+    if (!cleanArtist || !cleanSong) {
+      return {
+        success: false,
+        requested: requestedStr,
+        status: 'Unable to reliably select requested song',
+        error: 'Artist and song title are required.',
+      };
+    }
+
+    try {
+      const response = await fetch('/api/music/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artist: cleanArtist, song: cleanSong, year: cleanYear }),
+      });
+
+      const data = await response.json();
+      if (!data.success || !data.selected) {
+        return {
+          success: false,
+          requested: requestedStr,
+          status: 'Unable to reliably select requested song',
+          error: data.error || 'No suitable YouTube recording could be identified.',
+        };
+      }
+
+      const navSuccess = await this.navigate(data.selected.url, data.selected.videoId);
+      if (!navSuccess) {
+        return {
+          success: false,
+          requested: requestedStr,
+          selected: data.selected,
+          status: 'Unable to navigate YouTube tab',
+          error: 'Failed to instruct YouTube tab to navigate to the selected video.',
+        };
+      }
+
+      // Wait briefly for player initialization then command play
+      await new Promise((r) => setTimeout(r, 1200));
+      await this.play();
+
+      return {
+        success: true,
+        requested: requestedStr,
+        selected: data.selected,
+        status: 'Playing',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        requested: requestedStr,
+        status: 'Unable to reliably select requested song',
+        error: err.message || 'Error occurred while programming song.',
+      };
+    }
   }
 }

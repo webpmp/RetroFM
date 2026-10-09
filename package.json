@@ -9,6 +9,7 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "test:music": "tsx scripts/test-music-search.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
