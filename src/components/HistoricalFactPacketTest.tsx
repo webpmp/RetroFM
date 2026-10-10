@@ -21,14 +21,16 @@ import {
   Eye,
   RefreshCw,
   Clock,
-  Sparkles
+  Sparkles,
+  Filter,
 } from 'lucide-react';
 import {
   FactPacket,
   ProviderFactResult,
   ProviderStatus,
   FactItem,
-  FactSessionStats
+  ExcludedFactItem,
+  FactSessionStats,
 } from '../services/news/types.js';
 
 export const HISTORICAL_PRESET_DATES = [
@@ -64,6 +66,7 @@ interface HistoricalFactPacketTestProps {
 export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTestProps) {
   const [selectedDate, setSelectedDate] = useState<string>('1985-07-13');
   const [forceFresh, setForceFresh] = useState<boolean>(false);
+  const [nationalFocus, setNationalFocus] = useState<boolean>(true); // ON by default
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [factPacket, setFactPacket] = useState<FactPacket | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -82,6 +85,9 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
     newsdata: false,
     nyt: false,
   });
+
+  // Show excluded items accordion state
+  const [showExcludedTable, setShowExcludedTable] = useState<boolean>(true);
 
   // Fetch initial configuration & session stats on mount
   const fetchStatus = async () => {
@@ -107,7 +113,9 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
 
     setIsRunning(true);
     setTestError(null);
-    onLogEvent?.(`[NEWS] Running Historical Fact Packet query for ${target} (forceFresh=${forceFresh})...`);
+    onLogEvent?.(
+      `[NEWS] Running Historical Fact Packet query for ${target} (nationalFocus=${nationalFocus}, forceFresh=${forceFresh})...`
+    );
 
     try {
       const res = await fetch('/api/news/facts', {
@@ -116,6 +124,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
         body: JSON.stringify({
           targetDate: target,
           forceFresh,
+          nationalFocus,
         }),
       });
 
@@ -146,7 +155,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
       }
 
       onLogEvent?.(
-        `[NEWS] Fact Packet complete for ${target}: Total ${data.packet?.totalCount} items across providers.`
+        `[NEWS] Fact Packet complete for ${target}: Kept ${data.packet?.keptCount ?? data.packet?.totalCount} items, Excluded ${data.packet?.excludedCount ?? 0} items (National focus: ${nationalFocus}).`
       );
     } catch (err: any) {
       const errMsg = err?.message || 'Error executing historical fact packet query';
@@ -232,39 +241,31 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
               HISTORICAL FACT PACKET TEST
             </h2>
             <p className="text-[11px] text-zinc-400">
-              Evaluates real historical events across NewsAPI.org, NewsData.io, and NYT Archive API.
+              Evaluates real historical events from the New York Times Archive API with national focus filtering.
             </p>
           </div>
         </div>
 
         {/* Running API Call Counter Pill */}
         <div className="flex items-center gap-3 bg-[#0a0c10] border border-zinc-800 rounded px-3 py-1.5 text-[11px]">
-          <span className="text-zinc-500 uppercase font-semibold">Session API Calls:</span>
+          <span className="text-zinc-500 uppercase font-semibold">Active Provider Calls:</span>
           <div className="flex items-center gap-2">
-            <span title="NewsAPI.org Calls" className="text-zinc-300">
-              NewsAPI: <strong className="text-amber-400">{sessionStats.apiCalls.newsapi || 0}</strong>
-            </span>
-            <span className="text-zinc-700">&bull;</span>
-            <span title="NewsData.io Calls" className="text-zinc-300">
-              NewsData: <strong className="text-amber-400">{sessionStats.apiCalls.newsdata || 0}</strong>
-            </span>
-            <span className="text-zinc-700">&bull;</span>
             <span title="NYT Archive API Calls" className="text-zinc-300">
-              NYT: <strong className="text-amber-400">{sessionStats.apiCalls.nyt || 0}</strong>
+              NYT Archive API: <strong className="text-amber-400">{sessionStats.apiCalls.nyt || 0}</strong>
             </span>
           </div>
         </div>
       </div>
 
-      {/* Summary Grid across 5 Dates & 3 Providers */}
+      {/* Summary Grid for NYT Archive across 5 Dates */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
             <Table className="w-3.5 h-3.5 text-amber-400" />
-            SUMMARY MATRIX (DATES &times; PROVIDERS)
+            SUMMARY MATRIX (HISTORICAL DATES &times; NYT ARCHIVE)
           </span>
           <span className="text-[10px] text-zinc-500">
-            Matrix populates as preset dates are tested
+            (NewsAPI.org &amp; NewsData.io paused; NYT is the active historical news source)
           </span>
         </div>
 
@@ -273,9 +274,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/60 text-zinc-400 uppercase tracking-wider text-[10px]">
                 <th className="p-2.5 font-bold">Historical Date</th>
-                <th className="p-2.5 font-bold">NewsAPI.org</th>
-                <th className="p-2.5 font-bold">NewsData.io</th>
-                <th className="p-2.5 font-bold">NYT Archive</th>
+                <th className="p-2.5 font-bold">Active News Source (NYT Archive)</th>
                 <th className="p-2.5 font-bold text-right">Quick Run</th>
               </tr>
             </thead>
@@ -293,34 +292,10 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                     <td className="p-2.5 font-semibold text-zinc-200">
                       <div className="flex items-center gap-1.5">
                         <span className="text-amber-400">{preset.date}</span>
-                        <span className="text-zinc-500 text-[10px] truncate max-w-[200px]">
+                        <span className="text-zinc-500 text-[10px] truncate max-w-[280px]">
                           ({preset.label.split('(')[1]?.replace(')', '') || ''})
                         </span>
                       </div>
-                    </td>
-
-                    {/* NewsAPI cell */}
-                    <td className="p-2.5">
-                      {row?.newsapi ? (
-                        <div className="flex items-center gap-1.5">
-                          {getStatusBadge(row.newsapi.status)}
-                          <span className="text-zinc-400 font-bold">({row.newsapi.count})</span>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-600">—</span>
-                      )}
-                    </td>
-
-                    {/* NewsData cell */}
-                    <td className="p-2.5">
-                      {row?.newsdata ? (
-                        <div className="flex items-center gap-1.5">
-                          {getStatusBadge(row.newsdata.status)}
-                          <span className="text-zinc-400 font-bold">({row.newsdata.count})</span>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-600">—</span>
-                      )}
                     </td>
 
                     {/* NYT Archive cell */}
@@ -328,7 +303,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                       {row?.nyt ? (
                         <div className="flex items-center gap-1.5">
                           {getStatusBadge(row.nyt.status)}
-                          <span className="text-zinc-400 font-bold">({row.nyt.count})</span>
+                          <span className="text-zinc-400 font-bold">({row.nyt.count} items)</span>
                         </div>
                       ) : (
                         <span className="text-zinc-600">—</span>
@@ -356,10 +331,10 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
         </div>
       </div>
 
-      {/* Input Controls & Date Presets */}
+      {/* Input Controls, National Focus Checkbox, & Date Presets */}
       <div className="p-4 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <div>
               <label className="text-[11px] text-zinc-400 block mb-1 font-semibold uppercase">
                 Target Date (YYYY-MM-DD):
@@ -373,16 +348,32 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
               />
             </div>
 
+            {/* National Focus Checkbox (ON by default) */}
+            <div className="pt-4">
+              <label className="flex items-center gap-2 cursor-pointer text-zinc-200 select-none bg-zinc-900/80 px-2.5 py-1.5 rounded border border-zinc-700 hover:border-amber-500 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={nationalFocus}
+                  onChange={(e) => setNationalFocus(e.target.checked)}
+                  className="rounded bg-black border-zinc-600 text-amber-500 focus:ring-0 cursor-pointer w-4 h-4"
+                />
+                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5" />
+                  National focus (exclude NYC-local)
+                </span>
+              </label>
+            </div>
+
             {/* Force Fresh Toggle */}
-            <div className="flex items-center gap-2 pt-5">
-              <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300 select-none">
+            <div className="pt-4">
+              <label className="flex items-center gap-1.5 cursor-pointer text-zinc-400 select-none text-[11px]">
                 <input
                   type="checkbox"
                   checked={forceFresh}
                   onChange={(e) => setForceFresh(e.target.checked)}
                   className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 cursor-pointer"
                 />
-                <span>Force fresh (bypass disk cache)</span>
+                <span>Force fresh API query</span>
               </label>
             </div>
           </div>
@@ -393,7 +384,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
             className="px-5 py-2.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-bold text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
           >
             <Play className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
-            <span>{isRunning ? 'Querying Providers...' : 'Run Fact Packet Query'}</span>
+            <span>{isRunning ? 'Querying Cache...' : 'Run Fact Packet Query'}</span>
           </button>
         </div>
 
@@ -435,9 +426,9 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
         </div>
       )}
 
-      {/* Fact Packet Category Breakdown Banner */}
+      {/* Fact Packet Summary & Filter Tally Banner */}
       {factPacket && (
-        <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-2">
+        <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-2">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-400" />
@@ -445,13 +436,22 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                 FACT PACKET SUMMARY FOR {factPacket.targetDate}
               </span>
             </div>
-            <span className="text-amber-400 font-bold text-xs">
-              Total Valid Items: {factPacket.totalCount}
-            </span>
+
+            {/* Filter Tally Badges */}
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-300 font-bold text-xs">
+                Kept: {factPacket.keptCount ?? factPacket.totalCount} items
+              </span>
+              {factPacket.nationalFocusEnabled && (
+                <span className="px-2 py-0.5 rounded bg-rose-950/70 border border-rose-800 text-rose-300 font-bold text-xs">
+                  Excluded (NYC-local): {factPacket.excludedCount ?? 0} items
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
-            <span className="text-zinc-400">Categories:</span>
+            <span className="text-zinc-400">Categories (Kept):</span>
             {Object.entries(factPacket.countsPerCategory).map(([cat, count]) => (
               <span
                 key={cat}
@@ -469,7 +469,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
 
       {/* Provider Details & Result Tables */}
       <div className="space-y-4">
-        {(['newsapi', 'newsdata', 'nyt'] as const).map((pKey) => {
+        {(['nyt'] as const).map((pKey) => {
           const info = PROVIDER_INFO[pKey];
           const result = factPacket?.results?.[pKey];
           const isConfigured = providerConfig[pKey]?.configured;
@@ -478,7 +478,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
           return (
             <div
               key={pKey}
-              className="p-4 bg-[#0a0c10] border border-zinc-800 rounded-lg space-y-3"
+              className="p-4 bg-[#0a0c10] border border-zinc-800 rounded-lg space-y-4"
             >
               {/* Provider Header Card */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/60 pb-2">
@@ -490,6 +490,11 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                     <code className="text-[10px] text-zinc-500 px-1 py-0.5 bg-black/40 rounded border border-zinc-800">
                       {info.keyName}
                     </code>
+                    {result?.nationalFocusEnabled && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/40 text-amber-300 text-[10px] font-bold">
+                        National Focus Active
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] text-zinc-400 leading-normal max-w-2xl">
                     {info.note}
@@ -503,7 +508,12 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                   </div>
 
                   <div className="text-zinc-300 text-xs">
-                    Items: <strong className="text-amber-400">{result?.itemCount ?? 0}</strong>
+                    Kept: <strong className="text-emerald-400">{result?.itemCount ?? 0}</strong>
+                    {result?.excludedCount !== undefined && (
+                      <span className="text-zinc-400 ml-1.5">
+                        | Excluded: <strong className="text-rose-400">{result.excludedCount}</strong>
+                      </span>
+                    )}
                   </div>
 
                   {result && (
@@ -542,15 +552,15 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                 </div>
               )}
 
-              {/* Table of First 15 Normalized Items */}
+              {/* Table of First 15 Kept Items */}
               {result && result.items && result.items.length > 0 ? (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                    <span>
-                      Normalized Fact Items (showing first {Math.min(15, result.items.length)} of {result.items.length}):
+                    <span className="font-bold text-zinc-300">
+                      Kept Items (showing first {Math.min(15, result.items.length)} of {result.items.length}):
                     </span>
                     <span className="text-[10px] text-zinc-500">
-                      Filtered to target date &le; {factPacket?.targetDate}
+                      Target date &le; {factPacket?.targetDate} (3-day window)
                     </span>
                   </div>
 
@@ -562,7 +572,7 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                           <th className="p-2 font-bold w-28">Category</th>
                           <th className="p-2 font-bold">Headline &amp; Summary</th>
                           <th className="p-2 font-bold w-24">Date</th>
-                          <th className="p-2 font-bold w-36">Source</th>
+                          <th className="p-2 font-bold w-48">Keep Rule / Reason</th>
                           <th className="p-2 font-bold w-16 text-right">Link</th>
                         </tr>
                       </thead>
@@ -584,8 +594,8 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                             <td className="p-2 text-zinc-400 whitespace-nowrap font-mono">
                               {item.publishedDate}
                             </td>
-                            <td className="p-2 text-zinc-300 truncate max-w-[140px]" title={item.source}>
-                              {item.source}
+                            <td className="p-2 text-emerald-400 text-[10px] leading-tight">
+                              {item.nationalFocusReason || item.desk || 'Qualified for national packet'}
                             </td>
                             <td className="p-2 text-right">
                               {item.url ? (
@@ -613,6 +623,69 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                   {result
                     ? 'No normalized items returned for this date from this provider.'
                     : 'Click "Run Fact Packet Query" or a preset date above to test this provider.'}
+                </div>
+              )}
+
+              {/* Table of Excluded Items with Reason Review */}
+              {result && result.excludedItems && result.excludedItems.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-zinc-800">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setShowExcludedTable(!showExcludedTable)}
+                      className="text-xs font-bold uppercase tracking-wider text-rose-400 hover:text-rose-300 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Filter className="w-3.5 h-3.5" />
+                      <span>
+                        Excluded Items Review ({result.excludedItems.length} items filtered out)
+                      </span>
+                      {showExcludedTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                    <span className="text-[10px] text-zinc-500">
+                      Review exclusion reasons against the rules
+                    </span>
+                  </div>
+
+                  {showExcludedTable && (
+                    <div className="overflow-x-auto border border-rose-950/70 rounded bg-[#08090d]">
+                      <table className="w-full text-left border-collapse text-[11px]">
+                        <thead>
+                          <tr className="border-b border-zinc-800 bg-rose-950/20 text-zinc-400 text-[10px] uppercase">
+                            <th className="p-2 font-bold w-12">#</th>
+                            <th className="p-2 font-bold w-28">Category</th>
+                            <th className="p-2 font-bold">Excluded Headline</th>
+                            <th className="p-2 font-bold w-24">Date</th>
+                            <th className="p-2 font-bold w-36">Desk / Section</th>
+                            <th className="p-2 font-bold text-rose-300">Exclusion Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-850">
+                          {result.excludedItems.slice(0, 30).map((ex: ExcludedFactItem, idx: number) => (
+                            <tr key={idx} className="hover:bg-rose-950/10 transition-colors">
+                              <td className="p-2 text-zinc-500 font-mono">{idx + 1}</td>
+                              <td className="p-2">{getCategoryBadge(ex.category)}</td>
+                              <td className="p-2 text-zinc-300 font-semibold leading-snug">
+                                {ex.headline}
+                              </td>
+                              <td className="p-2 text-zinc-400 whitespace-nowrap font-mono">
+                                {ex.publishedDate}
+                              </td>
+                              <td className="p-2 text-zinc-400 text-[10px]">
+                                {ex.desk || ex.section || '—'}
+                              </td>
+                              <td className="p-2 text-rose-400 text-[10px] font-mono leading-tight">
+                                {ex.reason}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {result.excludedItems.length > 30 && (
+                        <div className="p-2 text-center text-zinc-500 text-[10px] bg-zinc-950 border-t border-zinc-850">
+                          Showing first 30 of {result.excludedItems.length} excluded items.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

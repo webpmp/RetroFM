@@ -16,17 +16,24 @@ export const providers: Record<'newsapi' | 'newsdata' | 'nyt', NewsProvider> = {
 };
 
 /**
- * Builds a normalized FactPacket across all three providers for a given target date.
+ * Builds a normalized FactPacket for a given target date.
+ * NewsAPI.org and NewsData.io are stopped by default; NYT is the active news source.
+ * nationalFocus: When true, filters out NYC-local stories and keeps national/front-page/national-desk items.
  */
-export async function buildFactPacket(targetDate: string, forceFresh = false): Promise<FactPacket> {
-  const providerKeys: ('newsapi' | 'newsdata' | 'nyt')[] = ['newsapi', 'newsdata', 'nyt'];
+export async function buildFactPacket(
+  targetDate: string,
+  forceFresh = false,
+  providersToQuery: ('newsapi' | 'newsdata' | 'nyt')[] = ['nyt'],
+  nationalFocus = true
+): Promise<FactPacket> {
+  const providerKeys: ('newsapi' | 'newsdata' | 'nyt')[] = providersToQuery;
 
-  // Run each provider
+  // Run each requested provider
   const resultsArr = await Promise.all(
     providerKeys.map(async (key) => {
       const provider = providers[key];
       try {
-        return await provider.fetchFacts(targetDate, forceFresh);
+        return await provider.fetchFacts(targetDate, forceFresh, nationalFocus);
       } catch (err: any) {
         const errorResult: ProviderFactResult = {
           provider: key,
@@ -42,9 +49,27 @@ export async function buildFactPacket(targetDate: string, forceFresh = false): P
   );
 
   const results: Record<'newsapi' | 'newsdata' | 'nyt', ProviderFactResult> = {
-    newsapi: resultsArr[0],
-    newsdata: resultsArr[1],
-    nyt: resultsArr[2],
+    newsapi: resultsArr.find((r) => r.provider === 'newsapi') || {
+      provider: 'newsapi',
+      providerName: providers.newsapi.name,
+      status: 'NOT CONFIGURED',
+      itemCount: 0,
+      items: [],
+    },
+    newsdata: resultsArr.find((r) => r.provider === 'newsdata') || {
+      provider: 'newsdata',
+      providerName: providers.newsdata.name,
+      status: 'NOT CONFIGURED',
+      itemCount: 0,
+      items: [],
+    },
+    nyt: resultsArr.find((r) => r.provider === 'nyt') || {
+      provider: 'nyt',
+      providerName: providers.nyt.name,
+      status: 'NOT CONFIGURED',
+      itemCount: 0,
+      items: [],
+    },
   };
 
   const countsPerCategory: Record<FactCategory, number> = {
@@ -57,8 +82,17 @@ export async function buildFactPacket(targetDate: string, forceFresh = false): P
   };
 
   let totalCount = 0;
+  let totalKept = 0;
+  let totalExcluded = 0;
+  const allExcludedItems: any[] = [];
 
   for (const res of resultsArr) {
+    if (res.excludedItems) {
+      allExcludedItems.push(...res.excludedItems);
+    }
+    totalKept += res.keptCount ?? res.itemCount;
+    totalExcluded += res.excludedCount ?? 0;
+
     for (const item of res.items) {
       if (countsPerCategory[item.category] !== undefined) {
         countsPerCategory[item.category]++;
@@ -75,6 +109,10 @@ export async function buildFactPacket(targetDate: string, forceFresh = false): P
     countsPerCategory,
     totalCount,
     results,
+    nationalFocusEnabled: nationalFocus,
+    keptCount: totalKept,
+    excludedCount: totalExcluded,
+    excludedItems: allExcludedItems,
     generatedAt: new Date().toISOString(),
   };
 }

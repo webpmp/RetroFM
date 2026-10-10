@@ -16,6 +16,10 @@ import {
   getProviderConfigStatus,
   getNewsSessionStats,
 } from './src/services/news/factPacketService.js';
+import {
+  generateDJBreaksService,
+  getDJBreakSessionStats,
+} from './src/services/djBreak/djBreakService.js';
 
 dotenv.config();
 
@@ -339,13 +343,14 @@ async function startServer() {
   // API Route: Build Historical Fact Packet for targetDate
   app.post('/api/news/facts', async (req, res) => {
     try {
-      const { targetDate, forceFresh } = req.body;
+      const { targetDate, forceFresh, nationalFocus } = req.body;
       if (!targetDate || typeof targetDate !== 'string') {
         return res.status(400).json({ success: false, error: 'targetDate string (YYYY-MM-DD) is required.' });
       }
 
-      console.log(`[API /api/news/facts] Generating fact packet for date: ${targetDate} (forceFresh=${Boolean(forceFresh)})`);
-      const packet = await buildFactPacket(targetDate, Boolean(forceFresh));
+      const isNationalFocus = nationalFocus !== false;
+      console.log(`[API /api/news/facts] Generating fact packet for date: ${targetDate} (forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
+      const packet = await buildFactPacket(targetDate, Boolean(forceFresh), ['nyt'], isNationalFocus);
       const stats = getNewsSessionStats();
 
       return res.json({
@@ -358,6 +363,72 @@ async function startServer() {
       return res.status(500).json({
         success: false,
         error: err?.message || 'Failed generating historical fact packet',
+      });
+    }
+  });
+
+  // API Route: Get DJ Break generator session metrics
+  app.get('/api/dj-break/stats', (req, res) => {
+    try {
+      const stats = getDJBreakSessionStats();
+      return res.json({ success: true, stats });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // API Route: Generate 3 DJ Breaks with anachronism check
+  app.post('/api/dj-break/generate', async (req, res) => {
+    try {
+      const {
+        targetDate,
+        personality,
+        timeOfDay,
+        format,
+        songPlayed,
+        songNext,
+        secondsAvailable,
+        forceFresh,
+        nationalFocus,
+      } = req.body;
+
+      if (!targetDate || typeof targetDate !== 'string') {
+        return res.status(400).json({ success: false, error: 'targetDate is required.' });
+      }
+
+      const isNationalFocus = nationalFocus !== false;
+      console.log(`[API /api/dj-break/generate] Generating breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
+
+      const result = await generateDJBreaksService({
+        targetDate,
+        personality: personality || 'mike',
+        timeOfDay: timeOfDay || 'afternoon',
+        format: format || 'Top 40',
+        songPlayed: songPlayed || 'a-ha - Take on Me',
+        songNext: songNext || 'Michael Jackson - Billie Jean',
+        secondsAvailable: Number(secondsAvailable) || 12,
+        forceFresh: Boolean(forceFresh),
+        nationalFocus: isNationalFocus,
+      });
+
+      const stats = getDJBreakSessionStats();
+
+      return res.json({
+        ...result,
+        stats,
+      });
+    } catch (err: any) {
+      console.error('[API /api/dj-break/generate] Error:', err);
+      const isQuota =
+        err?.message?.includes('429') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED') ||
+        err?.message?.includes('quota');
+
+      return res.status(isQuota ? 429 : 500).json({
+        success: false,
+        quotaExceeded: isQuota,
+        error: err?.message || 'Failed generating DJ breaks',
+        stats: getDJBreakSessionStats(),
       });
     }
   });

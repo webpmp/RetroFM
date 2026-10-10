@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { NewsProvider, ProviderFactResult, FactItem } from './types.js';
+import { NewsProvider, ProviderFactResult, FactItem, ExcludedFactItem } from './types.js';
 import { readNewsCache, writeNewsCache, recordNewsApiCall, recordNewsCacheHit } from './newsCache.js';
 import { normalizeCategory, extractDateString } from './categoryNormalizer.js';
+import { evaluateNYTNationalFocus } from './nationalFocusFilter.js';
 
 // Rate-limiting queue for NYT: 5 requests/minute allowed (12s spacing safe baseline, min 6s)
 let lastNytCallTimestamp = 0;
@@ -37,6 +38,7 @@ function getDateNDaysBefore(dateStr: string, n: number): string {
  * Uses the New York Times Archive API (monthly endpoints: https://api.nytimes.com/svc/archive/v1/{year}/{month}.json).
  * Then filters down to the target date plus the 2 days before it (targetDate, targetDate - 1, targetDate - 2).
  * Caches monthly responses on disk to respect the NYT rate limit.
+ * Supports national focus filtering (exclude NYC-local coverage).
  */
 export class NYTArchiveProvider implements NewsProvider {
   readonly id = 'nyt' as const;
@@ -46,7 +48,11 @@ export class NYTArchiveProvider implements NewsProvider {
     return Boolean(process.env.NYT_API_KEY && process.env.NYT_API_KEY.trim());
   }
 
-  async fetchFacts(targetDate: string, forceFresh = false): Promise<ProviderFactResult> {
+  async fetchFacts(
+    targetDate: string,
+    forceFresh = false,
+    nationalFocus = true
+  ): Promise<ProviderFactResult> {
     if (!this.isConfigured()) {
       return {
         provider: this.id,
@@ -153,6 +159,7 @@ export class NYTArchiveProvider implements NewsProvider {
     }
 
     const items: FactItem[] = [];
+    const excludedItems: ExcludedFactItem[] = [];
 
     for (const doc of rawDocs) {
       const pubDate = extractDateString(doc.pub_date);
@@ -174,16 +181,48 @@ export class NYTArchiveProvider implements NewsProvider {
       if (!headline && !summary) continue;
 
       const rawCategory = `${doc.section_name || ''} ${doc.news_desk || ''} ${doc.subsection_name || ''}`;
+      const category = normalizeCategory(rawCategory, `${headline} ${summary}`);
 
-      items.push({
-        headline: headline || 'New York Times Report',
-        summary,
-        category: normalizeCategory(rawCategory, `${headline} ${summary}`),
-        publishedDate: pubDate,
-        source: 'The New York Times',
-        url: doc.web_url || '',
-        provider: this.id,
-      });
+      // National Focus filter evaluation
+      if (nationalFocus) {
+        const evalResult = evaluateNYTNationalFocus(doc);
+        if (!evalResult.keep) {
+          excludedItems.push({
+            headline: headline || 'Untitled NYT Item',
+            publishedDate: pubDate,
+            category,
+            reason: evalResult.reason,
+            desk: doc.news_desk,
+            section: doc.section_name,
+          });
+          continue; // Exclude from kept items
+        }
+
+        items.push({
+          headline: headline || 'New York Times Report',
+          summary,
+          category,
+          publishedDate: pubDate,
+          source: 'The New York Times',
+          url: doc.web_url || '',
+          provider: this.id,
+          nationalFocusReason: evalResult.reason,
+          isFrontPage: evalResult.isFrontPage,
+          desk: doc.news_desk,
+        });
+      } else {
+        // Without national focus filter
+        items.push({
+          headline: headline || 'New York Times Report',
+          summary,
+          category,
+          publishedDate: pubDate,
+          source: 'The New York Times',
+          url: doc.web_url || '',
+          provider: this.id,
+          desk: doc.news_desk,
+        });
+      }
     }
 
     // Sort items by date descending, then headline
@@ -194,16 +233,25 @@ export class NYTArchiveProvider implements NewsProvider {
       return a.headline.localeCompare(b.headline);
     });
 
+    const keptCount = items.length;
+    const excludedCount = excludedItems.length;
+
     return {
       provider: this.id,
       providerName: this.name,
       status: items.length > 0 ? 'OK' : 'EMPTY',
       itemCount: items.length,
       items,
+      excludedItems,
+      keptCount,
+      excludedCount,
+      nationalFocusEnabled: nationalFocus,
       rawResponse: {
         totalMonthDocs: rawDocs.length,
         filteredDocsCount: items.length,
+        excludedDocsCount: excludedItems.length,
         filterWindow: Array.from(validDates),
+        nationalFocus,
         sampleDocs: rawDocs.slice(0, 3),
       },
       cached: Boolean(rawMonthData),

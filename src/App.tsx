@@ -40,6 +40,7 @@ import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
 import { generateTTS } from './services/ttsClient.js';
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
+import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
 import manifest from '../extension/manifest.json';
 
 // Minimum required Chrome extension version
@@ -682,8 +683,9 @@ export default function App() {
   };
 
   // --- Generate DJ Audio using Gemini Flash TTS ---
-  const handleGenerateDJ = async (): Promise<string | null> => {
-    if (!djScript.trim()) {
+  const handleGenerateDJ = async (textOverride?: string): Promise<string | null> => {
+    const textToSynthesize = textOverride || djScript;
+    if (!textToSynthesize.trim()) {
       setDjError('Please enter a DJ script.');
       return null;
     }
@@ -695,7 +697,7 @@ export default function App() {
     const startTime = performance.now();
     try {
       const response = await generateTTS({
-        text: djScript,
+        text: textToSynthesize,
         voice: selectedVoice,
         style: djStyle,
         model: selectedModel
@@ -789,13 +791,14 @@ export default function App() {
   };
 
   // --- Critical Audio Ducking & DJ-Over-Music Execution ---
-  const executeDJOverMusic = async (): Promise<boolean> => {
+  const executeDJOverMusic = async (scriptOverride?: string): Promise<boolean> => {
+    const textToSpeak = scriptOverride || djScript;
     let activeAudioSrc = djAudioData;
 
     if (voiceEngine === 'GEMINI') {
-      if (!activeAudioSrc) {
+      if (!activeAudioSrc || scriptOverride) {
         logMessage('DJ audio not yet generated for current script. Generating Gemini voice now...');
-        activeAudioSrc = await handleGenerateDJ();
+        activeAudioSrc = await handleGenerateDJ(textToSpeak);
         if (!activeAudioSrc) {
           logMessage('Cannot run DJ Over Music: Gemini voice generation failed. Try switching to Instant Browser Voice.');
           return false;
@@ -901,7 +904,7 @@ export default function App() {
         let hasEnded = false;
         let safetyTimeout: any = null;
 
-        const words = djScript.trim().split(/\s+/).filter(Boolean);
+        const words = textToSpeak.trim().split(/\s+/).filter(Boolean);
         const estimatedDurationMs = Math.max(3000, Math.round(words.length * 360));
 
         const finish = (reason: string) => {
@@ -927,7 +930,7 @@ export default function App() {
           }
         } catch {}
 
-        const utterance = new SpeechSynthesisUtterance(djScript);
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
         (window as any).__retroFmDJUtterance = utterance;
 
         try {
@@ -2535,6 +2538,23 @@ export default function App() {
 
         {/* --- SECTION: HISTORICAL FACT PACKET TEST --- */}
         <HistoricalFactPacketTest onLogEvent={logMessage} />
+
+        {/* --- SECTION: DJ BREAK GENERATOR TEST --- */}
+        <DJBreakGeneratorTest
+          onLogEvent={logMessage}
+          onSpeakScript={(script) => {
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+              window.speechSynthesis.cancel();
+              const u = new SpeechSynthesisUtterance(script);
+              u.rate = 1.05;
+              window.speechSynthesis.speak(u);
+            }
+          }}
+          onSpeakOverMusic={(script) => {
+            executeDJOverMusic(script);
+          }}
+          isMixingAudio={isDuckingActive}
+        />
 
         {/* --- SECTION 7: LIVE SYSTEM CONSOLE / LOG --- */}
         <div className="bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-2">
