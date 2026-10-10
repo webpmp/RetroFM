@@ -16,6 +16,7 @@ export interface FactItem {
   nationalFocusReason?: string;
   isFrontPage?: boolean;
   desk?: string;
+  score?: number; // Interest score for DJ usefulness (0-100)
 }
 
 export interface ExcludedFactItem {
@@ -38,6 +39,8 @@ export interface ProviderFactResult {
   excludedItems?: ExcludedFactItem[];
   keptCount?: number;
   excludedCount?: number;
+  categoryChangedCount?: number;
+  top15DJItems?: FactItem[];
   nationalFocusEnabled?: boolean;
   error?: string;
   rawResponse?: any;
@@ -53,6 +56,8 @@ export interface FactPacket {
   nationalFocusEnabled?: boolean;
   keptCount?: number;
   excludedCount?: number;
+  categoryChangedCount?: number;
+  top15DJItems?: FactItem[];
   excludedItems?: ExcludedFactItem[];
   generatedAt: string;
 }

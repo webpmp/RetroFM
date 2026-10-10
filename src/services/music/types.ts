@@ -60,8 +60,8 @@ export interface MusicProvider {
   pause(): Promise<boolean>;
   stop(): Promise<boolean>;
   seek(seconds: number): Promise<boolean>;
-  setVolume(volume: number): Promise<boolean>;
-  rampVolume(targetVolume: number, durationMs: number): Promise<boolean>;
+  setVolume(volume: number, rampId?: number): Promise<boolean>;
+  rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean>;
   navigate(url: string, videoId?: string): Promise<boolean>;
   programSong(request: SongProgramRequest): Promise<SongProgramResult>;
 }

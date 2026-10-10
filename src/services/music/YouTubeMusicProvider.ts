@@ -287,22 +287,22 @@ export class YouTubeMusicProvider implements MusicProvider {
     return !!res?.success;
   }
 
-  public async setVolume(volume: number): Promise<boolean> {
+  public async setVolume(volume: number, rampId?: number): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
     const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
       tabId,
-      command: { action: 'SET_VOLUME', volume },
+      command: { action: 'SET_VOLUME', volume, rampId },
     });
     return !!res?.success;
   }
 
-  public async rampVolume(targetVolume: number, durationMs: number): Promise<boolean> {
+  public async rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
     const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
       tabId,
-      command: { action: 'RAMP_VOLUME', targetVolume, durationMs },
+      command: { action: 'RAMP_VOLUME', targetVolume, durationMs, rampId },
     });
     return !!res?.success;
   }

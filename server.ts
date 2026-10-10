@@ -18,6 +18,8 @@ import {
 } from './src/services/news/factPacketService.js';
 import {
   generateDJBreaksService,
+  generateDJBreaksStep1Service,
+  auditDJBreaksStep2Service,
   getDJBreakSessionStats,
 } from './src/services/djBreak/djBreakService.js';
 
@@ -374,6 +376,126 @@ async function startServer() {
       return res.json({ success: true, stats });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // API Route: Step 1 of 2 - Generate 3 DJ Breaks scripts (fast return, status "CHECKING")
+  app.post('/api/dj-break/step1-write', async (req, res) => {
+    try {
+      const {
+        targetDate,
+        personality,
+        timeOfDay,
+        format,
+        songPlayed,
+        songNext,
+        secondsAvailable,
+        forceFresh,
+        nationalFocus,
+      } = req.body;
+
+      if (!targetDate || typeof targetDate !== 'string') {
+        return res.status(400).json({ success: false, error: 'targetDate is required.' });
+      }
+
+      const isNationalFocus = nationalFocus !== false;
+      console.log(`[API /api/dj-break/step1-write] Writing breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
+
+      const result = await generateDJBreaksStep1Service({
+        targetDate,
+        personality: personality || 'mike',
+        timeOfDay: timeOfDay || 'afternoon',
+        format: format || 'Top 40',
+        songPlayed: songPlayed || 'a-ha - Take on Me',
+        songNext: songNext || 'Michael Jackson - Billie Jean',
+        secondsAvailable: Number(secondsAvailable) || 12,
+        forceFresh: Boolean(forceFresh),
+        nationalFocus: isNationalFocus,
+      });
+
+      const stats = getDJBreakSessionStats();
+      const statusCode = result.success ? 200 : result.quotaExceeded ? 429 : result.stepTimedOut ? 504 : result.isUnavailable ? 503 : 500;
+
+      return res.status(statusCode).json({
+        ...result,
+        stats,
+      });
+    } catch (err: any) {
+      console.error('[API /api/dj-break/step1-write] Error:', err);
+      const isQuota =
+        err?.message?.includes('429') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED') ||
+        err?.message?.includes('quota');
+      const isTimeout = (err?.message || '').toLowerCase().includes('timeout') || err?.isTimeout;
+
+      return res.status(isQuota ? 429 : isTimeout ? 504 : 500).json({
+        success: false,
+        quotaExceeded: isQuota,
+        stepTimedOut: isTimeout ? 'step1' : null,
+        error: err?.message || 'Failed generating Step 1 DJ breaks',
+        stats: getDJBreakSessionStats(),
+      });
+    }
+  });
+
+  // API Route: Step 2 of 2 - Run anachronism audit on the generated breaks
+  app.post('/api/dj-break/step2-audit', async (req, res) => {
+    try {
+      const {
+        breaks,
+        targetDate,
+        modelUsed,
+        personality,
+        timeOfDay,
+        format,
+        songPlayed,
+        songNext,
+        secondsAvailable,
+        nationalFocus,
+        providedFactItems,
+      } = req.body;
+
+      if (!Array.isArray(breaks) || breaks.length === 0) {
+        return res.status(400).json({ success: false, error: 'breaks array is required.' });
+      }
+      if (!targetDate || typeof targetDate !== 'string') {
+        return res.status(400).json({ success: false, error: 'targetDate is required.' });
+      }
+
+      console.log(`[API /api/dj-break/step2-audit] Auditing ${breaks.length} breaks for ${targetDate}`);
+
+      const result = await auditDJBreaksStep2Service({
+        breaks,
+        targetDate,
+        modelUsed,
+        personality,
+        timeOfDay,
+        format,
+        songPlayed,
+        songNext,
+        secondsAvailable: Number(secondsAvailable) || 12,
+        nationalFocus: nationalFocus !== false,
+        providedFactItems,
+      });
+
+      const stats = getDJBreakSessionStats();
+
+      return res.json({
+        ...result,
+        stats,
+      });
+    } catch (err: any) {
+      console.error('[API /api/dj-break/step2-audit] Error:', err);
+      const isTimeout = (err?.message || '').toLowerCase().includes('timeout') || err?.isTimeout;
+
+      return res.json({
+        success: false,
+        auditUnavailable: true,
+        stepTimedOut: isTimeout ? 'step2' : null,
+        error: err?.message || 'Failed auditing breaks for anachronisms',
+        breaks: req.body?.breaks || [],
+        stats: getDJBreakSessionStats(),
+      });
     }
   });
 

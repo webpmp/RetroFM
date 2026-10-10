@@ -228,6 +228,33 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
     );
   };
 
+  const getScoreBadge = (score?: number, isFrontPage?: boolean) => {
+    const s = score ?? 50;
+    let badgeColor = 'bg-zinc-800 text-zinc-300 border-zinc-700';
+    if (s >= 90) {
+      badgeColor = 'bg-amber-950/80 text-amber-300 border-amber-600 font-bold';
+    } else if (s >= 70) {
+      badgeColor = 'bg-emerald-950/80 text-emerald-300 border-emerald-700 font-semibold';
+    } else if (s >= 50) {
+      badgeColor = 'bg-blue-950/80 text-blue-300 border-blue-700';
+    } else {
+      badgeColor = 'bg-zinc-900 text-zinc-400 border-zinc-800';
+    }
+
+    return (
+      <div className="flex items-center gap-1">
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${badgeColor}`}>
+          {s} pts
+        </span>
+        {isFrontPage && (
+          <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/50">
+            A1
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="bg-[#13161f] border border-amber-500/50 rounded-lg p-5 shadow-2xl space-y-6 font-mono text-xs">
       {/* Header */}
@@ -438,13 +465,21 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
             </div>
 
             {/* Filter Tally Badges */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-300 font-bold text-xs">
                 Kept: {factPacket.keptCount ?? factPacket.totalCount} items
               </span>
+              {factPacket.categoryChangedCount !== undefined && (
+                <span
+                  className="px-2 py-0.5 rounded bg-blue-950/70 border border-blue-800 text-blue-300 font-bold text-xs"
+                  title="Items re-categorized using desk, section, and keywords before keyword guessing"
+                >
+                  Categories Remapped: {factPacket.categoryChangedCount} items
+                </span>
+              )}
               {factPacket.nationalFocusEnabled && (
                 <span className="px-2 py-0.5 rounded bg-rose-950/70 border border-rose-800 text-rose-300 font-bold text-xs">
-                  Excluded (NYC-local): {factPacket.excludedCount ?? 0} items
+                  Excluded (Non-story / NYC-local): {factPacket.excludedCount ?? 0} items
                 </span>
               )}
             </div>
@@ -552,12 +587,85 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                 </div>
               )}
 
-              {/* Table of First 15 Kept Items */}
+              {/* Top 15 Scored Items for DJ (Category-Balanced Selection) */}
+              {result && result.top15DJItems && result.top15DJItems.length > 0 && (
+                <div className="space-y-2 p-3.5 bg-gradient-to-b from-amber-950/25 to-[#08090d] border border-amber-500/40 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                        TOP 15 SCORED ITEMS FOR DJ (Category-Balanced Selection)
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">
+                      Top-scoring items distributed across music, arts, sports, news &amp; business
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-zinc-800 rounded bg-[#08090d]">
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead>
+                        <tr className="border-b border-zinc-800 bg-amber-950/20 text-zinc-400 text-[10px] uppercase">
+                          <th className="p-2 font-bold w-10">#</th>
+                          <th className="p-2 font-bold w-24">DJ Score</th>
+                          <th className="p-2 font-bold w-28">Category</th>
+                          <th className="p-2 font-bold">Headline &amp; Summary</th>
+                          <th className="p-2 font-bold w-24">Date</th>
+                          <th className="p-2 font-bold w-48">DJ Relevance &amp; Desk</th>
+                          <th className="p-2 font-bold w-14 text-right">Link</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-850">
+                        {result.top15DJItems.map((item: FactItem, idx: number) => (
+                          <tr key={idx} className="hover:bg-amber-950/10 transition-colors">
+                            <td className="p-2 text-zinc-500 font-mono">{idx + 1}</td>
+                            <td className="p-2">{getScoreBadge(item.score, item.isFrontPage)}</td>
+                            <td className="p-2">{getCategoryBadge(item.category)}</td>
+                            <td className="p-2">
+                              <div className="font-semibold text-zinc-100 leading-snug">
+                                {item.headline}
+                              </div>
+                              {item.summary && (
+                                <div className="text-zinc-400 text-[10px] line-clamp-2 mt-0.5 leading-relaxed">
+                                  {item.summary}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-2 text-zinc-400 whitespace-nowrap font-mono">
+                              {item.publishedDate}
+                            </td>
+                            <td className="p-2 text-amber-300/90 text-[10px] leading-tight">
+                              {item.nationalFocusReason || item.desk || 'Top ranked for radio packet'}
+                            </td>
+                            <td className="p-2 text-right">
+                              {item.url ? (
+                                <a
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-amber-400 hover:text-amber-300 inline-flex items-center gap-0.5 text-[10px]"
+                                >
+                                  <span>View</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              ) : (
+                                <span className="text-zinc-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Table of All Kept Items (Sorted by Score Descending) */}
               {result && result.items && result.items.length > 0 ? (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] text-zinc-400">
                     <span className="font-bold text-zinc-300">
-                      Kept Items (showing first {Math.min(15, result.items.length)} of {result.items.length}):
+                      Kept Items (sorted by DJ usefulness score, showing first {Math.min(15, result.items.length)} of {result.items.length}):
                     </span>
                     <span className="text-[10px] text-zinc-500">
                       Target date &le; {factPacket?.targetDate} (3-day window)
@@ -568,18 +676,20 @@ export function HistoricalFactPacketTest({ onLogEvent }: HistoricalFactPacketTes
                     <table className="w-full text-left border-collapse text-[11px]">
                       <thead>
                         <tr className="border-b border-zinc-800 bg-zinc-900/40 text-zinc-400 text-[10px] uppercase">
-                          <th className="p-2 font-bold w-12">#</th>
+                          <th className="p-2 font-bold w-10">#</th>
+                          <th className="p-2 font-bold w-24">Score</th>
                           <th className="p-2 font-bold w-28">Category</th>
                           <th className="p-2 font-bold">Headline &amp; Summary</th>
                           <th className="p-2 font-bold w-24">Date</th>
                           <th className="p-2 font-bold w-48">Keep Rule / Reason</th>
-                          <th className="p-2 font-bold w-16 text-right">Link</th>
+                          <th className="p-2 font-bold w-14 text-right">Link</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-850">
                         {result.items.slice(0, 15).map((item: FactItem, idx: number) => (
                           <tr key={idx} className="hover:bg-zinc-800/20 transition-colors">
                             <td className="p-2 text-zinc-500 font-mono">{idx + 1}</td>
+                            <td className="p-2">{getScoreBadge(item.score, item.isFrontPage)}</td>
                             <td className="p-2">{getCategoryBadge(item.category)}</td>
                             <td className="p-2">
                               <div className="font-semibold text-zinc-200 leading-snug">

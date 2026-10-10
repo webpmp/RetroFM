@@ -84,6 +84,8 @@ export async function buildFactPacket(
   let totalCount = 0;
   let totalKept = 0;
   let totalExcluded = 0;
+  let totalCategoryChanged = 0;
+  let top15DJItems: any[] = [];
   const allExcludedItems: any[] = [];
 
   for (const res of resultsArr) {
@@ -92,6 +94,12 @@ export async function buildFactPacket(
     }
     totalKept += res.keptCount ?? res.itemCount;
     totalExcluded += res.excludedCount ?? 0;
+    if (res.categoryChangedCount) {
+      totalCategoryChanged += res.categoryChangedCount;
+    }
+    if (res.top15DJItems && res.top15DJItems.length > 0 && top15DJItems.length === 0) {
+      top15DJItems = res.top15DJItems;
+    }
 
     for (const item of res.items) {
       if (countsPerCategory[item.category] !== undefined) {
@@ -112,6 +120,8 @@ export async function buildFactPacket(
     nationalFocusEnabled: nationalFocus,
     keptCount: totalKept,
     excludedCount: totalExcluded,
+    categoryChangedCount: totalCategoryChanged,
+    top15DJItems: top15DJItems.length > 0 ? top15DJItems : undefined,
     excludedItems: allExcludedItems,
     generatedAt: new Date().toISOString(),
   };

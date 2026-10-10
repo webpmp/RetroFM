@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Retro FM YouTube Bridge",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": "Chris Adkins",
   "homepage_url": "https://github.com/webpmp/RetroFM",
   "description": "Permitted browser bridge for Retro FM Proof of Concept to detect, group, and control YouTube music playback and audio ducking.",

@@ -30,6 +30,7 @@ export interface StepProgressEvent {
   breaks?: GeneratedDJBreak[];
   error?: string;
   durationMs?: number;
+  callStartIso?: string;
 }
 
 export interface BreakGeneratorInput {
@@ -84,6 +85,11 @@ export interface BreakGeneratorResult {
   quotaExceeded?: boolean; // 429 quota error
   cached?: boolean;
   modelUsed?: string;
+  auditCompleted?: boolean;
+  auditUnavailable?: boolean;
+  callStartTime?: string;
+  callDurationSec?: number;
+  stepTimedOut?: 'step1' | 'step2' | null;
 }
 
 export interface ScriptWriterProvider {

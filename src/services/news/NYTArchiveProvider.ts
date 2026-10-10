@@ -5,8 +5,14 @@
 
 import { NewsProvider, ProviderFactResult, FactItem, ExcludedFactItem } from './types.js';
 import { readNewsCache, writeNewsCache, recordNewsApiCall, recordNewsCacheHit } from './newsCache.js';
-import { normalizeCategory, extractDateString } from './categoryNormalizer.js';
-import { evaluateNYTNationalFocus } from './nationalFocusFilter.js';
+import { extractDateString } from './categoryNormalizer.js';
+import {
+  evaluateNYTNationalFocus,
+  categorizeNYTArticle,
+  computeDJInterestScore,
+  isNonStoryItem,
+} from './nationalFocusFilter.js';
+import { selectDiverseFactItems } from '../djBreak/djBreakService.js';
 
 // Rate-limiting queue for NYT: 5 requests/minute allowed (12s spacing safe baseline, min 6s)
 let lastNytCallTimestamp = 0;
@@ -160,6 +166,7 @@ export class NYTArchiveProvider implements NewsProvider {
 
     const items: FactItem[] = [];
     const excludedItems: ExcludedFactItem[] = [];
+    let categoryChangedCount = 0;
 
     for (const doc of rawDocs) {
       const pubDate = extractDateString(doc.pub_date);
@@ -180,10 +187,18 @@ export class NYTArchiveProvider implements NewsProvider {
 
       if (!headline && !summary) continue;
 
-      const rawCategory = `${doc.section_name || ''} ${doc.news_desk || ''} ${doc.subsection_name || ''}`;
-      const category = normalizeCategory(rawCategory, `${headline} ${summary}`);
+      // Fix categories using desk, section, and keywords before keyword guessing
+      const catResult = categorizeNYTArticle(doc);
+      const category = catResult.category;
+      if (catResult.changedFromOldGuess) {
+        categoryChangedCount++;
+      }
 
-      // National Focus filter evaluation
+      const printSec = (doc.print_section || '').trim().toUpperCase();
+      const printPage = String(doc.print_page || '').trim();
+      const isFrontPage = printSec === 'A' && (printPage === '1' || printPage === '01');
+
+      // National Focus filter evaluation (includes non-story dropping and loosened sports rule)
       if (nationalFocus) {
         const evalResult = evaluateNYTNationalFocus(doc);
         if (!evalResult.keep) {
@@ -198,6 +213,14 @@ export class NYTArchiveProvider implements NewsProvider {
           continue; // Exclude from kept items
         }
 
+        const score = computeDJInterestScore({
+          isFrontPage: evalResult.isFrontPage,
+          category,
+          publishedDate: pubDate,
+          targetDate,
+          desk: doc.news_desk,
+        });
+
         items.push({
           headline: headline || 'New York Times Report',
           summary,
@@ -209,9 +232,31 @@ export class NYTArchiveProvider implements NewsProvider {
           nationalFocusReason: evalResult.reason,
           isFrontPage: evalResult.isFrontPage,
           desk: doc.news_desk,
+          score,
         });
       } else {
-        // Without national focus filter
+        // Without national focus: still drop non-story items (earnings reports, corrections, summary <60 chars, obits)
+        const nonStory = isNonStoryItem(headline, summary, doc);
+        if (nonStory.isNonStory) {
+          excludedItems.push({
+            headline: headline || 'Untitled NYT Item',
+            publishedDate: pubDate,
+            category,
+            reason: nonStory.reason,
+            desk: doc.news_desk,
+            section: doc.section_name,
+          });
+          continue;
+        }
+
+        const score = computeDJInterestScore({
+          isFrontPage,
+          category,
+          publishedDate: pubDate,
+          targetDate,
+          desk: doc.news_desk,
+        });
+
         items.push({
           headline: headline || 'New York Times Report',
           summary,
@@ -220,18 +265,25 @@ export class NYTArchiveProvider implements NewsProvider {
           source: 'The New York Times',
           url: doc.web_url || '',
           provider: this.id,
+          isFrontPage,
           desk: doc.news_desk,
+          score,
         });
       }
     }
 
-    // Sort items by date descending, then headline
+    // Sort kept items by DJ usefulness score (highest first, not alphabetically)
     items.sort((a, b) => {
+      const diff = (b.score || 0) - (a.score || 0);
+      if (diff !== 0) return diff;
       if (a.publishedDate !== b.publishedDate) {
         return b.publishedDate.localeCompare(a.publishedDate);
       }
       return a.headline.localeCompare(b.headline);
     });
+
+    // Select the DJ's top 15 items spread across categories from the top of the scored list
+    const top15DJItems = selectDiverseFactItems(items, 15);
 
     const keptCount = items.length;
     const excludedCount = excludedItems.length;
@@ -245,11 +297,14 @@ export class NYTArchiveProvider implements NewsProvider {
       excludedItems,
       keptCount,
       excludedCount,
+      categoryChangedCount,
+      top15DJItems,
       nationalFocusEnabled: nationalFocus,
       rawResponse: {
         totalMonthDocs: rawDocs.length,
         filteredDocsCount: items.length,
         excludedDocsCount: excludedItems.length,
+        categoryChangedCount,
         filterWindow: Array.from(validDates),
         nationalFocus,
         sampleDocs: rawDocs.slice(0, 3),

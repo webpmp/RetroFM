@@ -5,6 +5,7 @@ if (!window.__retroFmContentLoaded) {
   window.__retroFmContentLoaded = true;
 
   let rampInterval = null;
+  let activeRampId = null;
 
   function getVideoElement() {
     return document.querySelector('video.video-stream.html5-main-video') || document.querySelector('video');
@@ -46,31 +47,44 @@ if (!window.__retroFmContentLoaded) {
     };
   }
 
-  function smoothRampVolume(targetVolume, durationMs) {
+  function smoothRampVolume(targetVolume, durationMs, rampId) {
     const video = getVideoElement();
     if (!video) return;
 
+    // Cancel any existing ramp interval
     if (rampInterval) {
       clearInterval(rampInterval);
       rampInterval = null;
     }
 
+    activeRampId = (rampId !== undefined && rampId !== null) ? rampId : Date.now();
+    const assignedRampId = activeRampId;
+
     const startVolume = video.volume;
+    const clampedTarget = Math.max(0, Math.min(1, targetVolume));
     const startTime = performance.now();
     const stepMs = 25;
 
     rampInterval = setInterval(() => {
+      // Stale ramp check: if another ramp was started, cancel immediately
+      if (activeRampId !== assignedRampId) {
+        clearInterval(rampInterval);
+        rampInterval = null;
+        return;
+      }
+
       const elapsed = performance.now() - startTime;
       const progress = Math.min(1, elapsed / durationMs);
       // sinusoidal ease in-out
       const eased = 0.5 * (1 - Math.cos(Math.PI * progress));
-      const current = startVolume + (targetVolume - startVolume) * eased;
+      const current = startVolume + (clampedTarget - startVolume) * eased;
       video.volume = Math.max(0, Math.min(1, current));
 
       if (progress >= 1) {
         clearInterval(rampInterval);
         rampInterval = null;
-        video.volume = Math.max(0, Math.min(1, targetVolume));
+        // Explicitly snap to target volume at completion
+        video.volume = clampedTarget;
       }
     }, stepMs);
   }
@@ -126,9 +140,13 @@ if (!window.__retroFmContentLoaded) {
       }
       case 'SET_VOLUME': {
         if (video && typeof message.volume === 'number') {
-          if (rampInterval) clearInterval(rampInterval);
+          if (rampInterval) {
+            clearInterval(rampInterval);
+            rampInterval = null;
+          }
+          activeRampId = (message.rampId !== undefined && message.rampId !== null) ? message.rampId : Date.now();
           video.volume = Math.max(0, Math.min(1, message.volume));
-          sendResponse({ success: true, volume: video.volume });
+          sendResponse({ success: true, volume: video.volume, rampId: activeRampId });
         } else {
           sendResponse({ success: false, error: 'Cannot set volume' });
         }
@@ -137,8 +155,8 @@ if (!window.__retroFmContentLoaded) {
       case 'RAMP_VOLUME': {
         if (video && typeof message.targetVolume === 'number') {
           const duration = message.durationMs || 500;
-          smoothRampVolume(message.targetVolume, duration);
-          sendResponse({ success: true, targetVolume: message.targetVolume });
+          smoothRampVolume(message.targetVolume, duration, message.rampId);
+          sendResponse({ success: true, targetVolume: message.targetVolume, rampId: message.rampId });
         } else {
           sendResponse({ success: false, error: 'Cannot ramp volume' });
         }

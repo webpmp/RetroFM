@@ -36,6 +36,7 @@ import {
   Rocket
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
+import { VolumeController } from './services/audio/VolumeController.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
 import { generateTTS } from './services/ttsClient.js';
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
@@ -90,6 +91,7 @@ const SCRIPT_PRESETS = [
 export default function App() {
   // --- Providers & Audio Instances ---
   const musicProviderRef = useRef<YouTubeMusicProvider>(new YouTubeMusicProvider());
+  const volumeControllerRef = useRef<VolumeController | null>(null);
   const djAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // --- Extension & Tab Connection State ---
@@ -244,6 +246,29 @@ export default function App() {
     setStatusLog((prev) => [`[${time}] ${msg}`, ...prev.slice(0, 49)]);
   };
 
+  // Initialize VolumeController once
+  if (!volumeControllerRef.current) {
+    volumeControllerRef.current = new VolumeController({
+      musicProvider: musicProviderRef.current,
+      onLog: (msg) => logMessage(msg),
+      initialUserVolume: 100,
+      initialDuckLevel: 30,
+    });
+  }
+
+  // Subscribe to VolumeController state changes
+  useEffect(() => {
+    const vc = volumeControllerRef.current;
+    if (!vc) return;
+    const unsub = vc.subscribe((state, effective, user, duck) => {
+      setIsDuckingActive(state !== 'idle');
+      setEffectiveMusicVolume(effective);
+      setTargetMusicVolume(user);
+      setDuckVolumePercent(duck);
+    });
+    return unsub;
+  }, []);
+
   // --- Initial Cleanup to ensure 100% silence on load ---
   useEffect(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -306,9 +331,8 @@ export default function App() {
             currentPosition: s.currentTime > 0 || prev.currentPosition,
             metadata: !!(s.title && s.title !== 'Unknown Title') || prev.metadata
           }));
-          if (s.volume !== undefined && !isDuckingActive) {
-            setEffectiveMusicVolume(Math.round(s.volume * 100));
-            setTargetMusicVolume(Math.round(s.volume * 100));
+          if (s.volume !== undefined && volumeControllerRef.current) {
+            volumeControllerRef.current.handlePolledVolume(s.volume);
           }
         }
       } catch (err) {
@@ -319,7 +343,7 @@ export default function App() {
     poll();
     const timer = setInterval(poll, 1000);
     return () => clearInterval(timer);
-  }, [playbackStatus.connectedTabId, isDuckingActive]);
+  }, [playbackStatus.connectedTabId]);
 
   // --- Launch Retro FM (Chrome Tab Group) Handler ---
   const handleLaunchRetroFm = async () => {
@@ -652,14 +676,11 @@ export default function App() {
   };
 
   const handleMusicVolumeChange = async (volPercent: number) => {
-    setTargetMusicVolume(volPercent);
-    setEffectiveMusicVolume(volPercent);
-    const vol = volPercent / 100;
-
-    logMessage(`Setting YouTube volume to ${volPercent}%...`);
-    const ok = await musicProviderRef.current.setVolume(vol);
-    if (ok) {
-      setTestResults((prev) => ({ ...prev, volumeControl: true }));
+    if (volumeControllerRef.current) {
+      const ok = await volumeControllerRef.current.setUserVolume(volPercent, 'Master volume slider');
+      if (ok) {
+        setTestResults((prev) => ({ ...prev, volumeControl: true }));
+      }
     }
   };
 
@@ -676,9 +697,10 @@ export default function App() {
       } catch {}
     }
     setIsPlayingDJPreview(false);
-    setIsDuckingActive(false);
     setMixPhase('IDLE');
-    setEffectiveMusicVolume(targetMusicVolume);
+    if (volumeControllerRef.current) {
+      volumeControllerRef.current.cancel('Kill all audio clicked');
+    }
     logMessage('🛑 All audio immediately stopped and silenced.');
   };
 
@@ -740,6 +762,11 @@ export default function App() {
 
   // --- Preview DJ Audio Solo ---
   const handleToggleDJPreview = () => {
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      logMessage('DJ sequence active. Please wait for mix sequence to complete.');
+      return;
+    }
+
     if (voiceEngine === 'BROWSER') {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         if (isPlayingDJPreview) {
@@ -792,6 +819,28 @@ export default function App() {
 
   // --- Critical Audio Ducking & DJ-Over-Music Execution ---
   const executeDJOverMusic = async (scriptOverride?: string): Promise<boolean> => {
+    const vc = volumeControllerRef.current;
+    if (!vc) return false;
+
+    // Rule: No overlapping DJ sequences. If a DJ-over-music sequence is running, ignore second request.
+    if (vc.isSequenceActive()) {
+      logMessage('[DJ Over Music] Ignored request: A DJ sequence is already active.');
+      return false;
+    }
+
+    // Rule: Cancel any pending speech before a new sequence.
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    if (djAudioRef.current) {
+      try {
+        djAudioRef.current.pause();
+        djAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+
     const textToSpeak = scriptOverride || djScript;
     let activeAudioSrc = djAudioData;
 
@@ -806,129 +855,81 @@ export default function App() {
       }
     }
 
-    setIsDuckingActive(true);
     setMixPhase('FADING_DOWN');
     logMessage('▶ Step 1: Initiating DJ Over Music sequence.');
 
-    // 1. Record original volume
-    const originalVolPercent = targetMusicVolume;
-    const targetDuckVolPercent = duckVolumePercent;
-    const duckVol = targetDuckVolPercent / 100;
+    const normalVol = vc.getUserVolume();
+    const duckVol = vc.getDuckLevel();
 
-    logMessage(`▶ Step 2: Smoothly ducking YouTube music from ${originalVolPercent}% down to ${targetDuckVolPercent}% (${fadeDownMs}ms fade)...`);
+    logMessage(`▶ Step 2: Smoothly ducking YouTube music from ${normalVol}% down to ${duckVol}% (${fadeDownMs}ms fade)...`);
 
-    // Duck YouTube tab
-    await musicProviderRef.current.rampVolume(duckVol, fadeDownMs);
-
-    // Animate UI volume indicator during fade down
-    const startDownTime = performance.now();
-    await new Promise<void>((resolve) => {
-      const step = () => {
-        const elapsed = performance.now() - startDownTime;
-        const progress = Math.min(1, elapsed / fadeDownMs);
-        const curr = originalVolPercent - (originalVolPercent - targetDuckVolPercent) * progress;
-        setEffectiveMusicVolume(Math.round(curr));
-        if (progress < 1) {
-          requestAnimationFrame(step);
-        } else {
-          setEffectiveMusicVolume(targetDuckVolPercent);
-          resolve();
-        }
-      };
-      step();
-    });
+    // Duck YouTube volume through VolumeController (single RAMP_VOLUME command to content script)
+    const duckSuccess = await vc.duck(fadeDownMs, 'DJ speech start');
+    if (!duckSuccess) {
+      setMixPhase('IDLE');
+      return false;
+    }
 
     setTestResults((prev) => ({ ...prev, musicDucking: true }));
     setMixPhase('DJ_SPEAKING');
 
-    const handleSpeechEnded = async (resolve: (v: boolean) => void) => {
+    let hasEnded = false;
+    let safetyTimeout: any = null;
+
+    const handleSpeechEnded = async (reason: string, resolve: (v: boolean) => void) => {
+      if (hasEnded) return;
+      hasEnded = true;
+      if (safetyTimeout) {
+        clearTimeout(safetyTimeout);
+        safetyTimeout = null;
+      }
+      (window as any).__retroFmDJUtterance = null;
+
+      logMessage(`DJ speech sequence finished (${reason}). Proceeding to restore music.`);
+      logMessage(`▶ Step 5: DJ speech finished. Smoothly restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
+      setMixPhase('FADING_UP');
+
       try {
-        logMessage(`▶ Step 5: DJ speech finished. Smoothly restoring YouTube music back to 100% (${fadeUpMs}ms fade)...`);
-        setMixPhase('FADING_UP');
-
-        const originalVol = originalVolPercent / 100;
-        try {
-          await musicProviderRef.current.rampVolume(originalVol, fadeUpMs);
-        } catch {
-          // ignore
-        }
-
-        // Animate UI volume indicator during fade up
-        const startUpTime = performance.now();
-        await new Promise<void>((resUp) => {
-          const stepUp = () => {
-            const elapsed = performance.now() - startUpTime;
-            const progress = Math.min(1, elapsed / fadeUpMs);
-            const curr = targetDuckVolPercent + (originalVolPercent - targetDuckVolPercent) * progress;
-            setEffectiveMusicVolume(Math.round(curr));
-            if (progress < 1) {
-              requestAnimationFrame(stepUp);
-            } else {
-              setEffectiveMusicVolume(originalVolPercent);
-              resUp();
-            }
-          };
-          stepUp();
-        });
-
+        await vc.restore(fadeUpMs, reason);
         logMessage('▶ Step 6: Radio mix transition complete! YouTube music returned to full volume.');
         setMixPhase('COMPLETED');
-        setIsDuckingActive(false);
-
         setTestResults((prev) => ({
           ...prev,
           musicRestoration: true,
           overallTransition: true
         }));
-
         setTimeout(() => setMixPhase('IDLE'), 1200);
         resolve(true);
-      } catch {
-        setIsDuckingActive(false);
+      } catch (err: any) {
+        logMessage(`[DJ Over Music Error] Restore failed: ${err?.message}`);
+        await vc.cancel('Restore exception');
         setMixPhase('IDLE');
-        setEffectiveMusicVolume(originalVolPercent);
         resolve(false);
       }
     };
 
     if (voiceEngine === 'BROWSER') {
-      logMessage(`▶ Step 3: Music ducked to ${targetDuckVolPercent}%. Starting Instant Browser DJ voice over music!`);
+      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting Instant Browser DJ voice over music!`);
       return new Promise<boolean>((resolve) => {
         if (typeof window === 'undefined' || !window.speechSynthesis) {
           logMessage('SpeechSynthesis not available in this browser.');
-          setIsDuckingActive(false);
+          vc.cancel('SpeechSynthesis not available');
           setMixPhase('IDLE');
           return resolve(false);
         }
 
-        let hasEnded = false;
-        let safetyTimeout: any = null;
-
         const words = textToSpeak.trim().split(/\s+/).filter(Boolean);
-        const estimatedDurationMs = Math.max(3000, Math.round(words.length * 360));
+        const estimatedDurationMs = Math.max(2500, Math.round(words.length * 400));
+        // Rule: Safety restore within estimated speech time PLUS 3 seconds
+        const safetyTimeoutMs = estimatedDurationMs + 3000;
 
-        const finish = (reason: string) => {
-          if (hasEnded) return;
-          hasEnded = true;
-          if (safetyTimeout) {
-            clearTimeout(safetyTimeout);
-            safetyTimeout = null;
-          }
-          (window as any).__retroFmDJUtterance = null;
-          logMessage(`DJ speech sequence finished (${reason}). Proceeding to restore music.`);
-          handleSpeechEnded(resolve);
-        };
-
-        // Safety timeout so the app NEVER hangs on DJ_SPEAKING under any browser condition!
         safetyTimeout = setTimeout(() => {
-          finish('expected speech duration reached');
-        }, estimatedDurationMs + 1200);
-
-        try {
-          if (window.speechSynthesis.speaking) {
-            window.speechSynthesis.cancel();
+          logMessage(`[Safety Restore] Speech end event did not fire within estimated time + 3s (${(safetyTimeoutMs / 1000).toFixed(1)}s). Restoring volume.`);
+          if (typeof window !== 'undefined' && window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch {}
           }
-        } catch {}
+          handleSpeechEnded('safety timeout (estimated speech time + 3s)', resolve);
+        }, safetyTimeoutMs);
 
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
         (window as any).__retroFmDJUtterance = utterance;
@@ -954,42 +955,35 @@ export default function App() {
         };
 
         utterance.onend = () => {
-          finish('onend event');
+          handleSpeechEnded('onend event', resolve);
         };
 
         utterance.onerror = (e) => {
           logMessage('Speech synthesis notice: ' + (e.error || 'ended'));
-          finish(`onerror (${e.error || 'ended'})`);
+          handleSpeechEnded(`onerror (${e.error || 'ended'})`, resolve);
         };
 
         try {
           window.speechSynthesis.speak(utterance);
         } catch (e: any) {
           logMessage('SpeechSynthesis speak exception: ' + e.message);
-          finish('exception');
+          handleSpeechEnded('exception', resolve);
         }
       });
     } else {
-      logMessage(`▶ Step 3: Music ducked to ${targetDuckVolPercent}%. Starting Gemini DJ voice over music!`);
+      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting Gemini DJ voice over music!`);
       return new Promise<boolean>((resolve) => {
-        let hasEnded = false;
-        let safetyTimeout: any = null;
-        const durationMs = Math.max(3000, Math.round((djAudioDuration || 5) * 1000));
-
-        const finish = (reason: string) => {
-          if (hasEnded) return;
-          hasEnded = true;
-          if (safetyTimeout) {
-            clearTimeout(safetyTimeout);
-            safetyTimeout = null;
-          }
-          logMessage(`DJ audio playback finished (${reason}). Proceeding to restore music.`);
-          handleSpeechEnded(resolve);
-        };
+        const durationMs = Math.max(2500, Math.round((djAudioDuration || 5) * 1000));
+        // Rule: Safety restore within estimated speech time PLUS 3 seconds
+        const safetyTimeoutMs = durationMs + 3000;
 
         safetyTimeout = setTimeout(() => {
-          finish('audio duration timeout');
-        }, durationMs + 2000);
+          logMessage(`[Safety Restore] Audio end event did not fire within estimated time + 3s (${(safetyTimeoutMs / 1000).toFixed(1)}s). Restoring volume.`);
+          if (djAudioRef.current) {
+            try { djAudioRef.current.pause(); } catch {}
+          }
+          handleSpeechEnded('safety timeout (estimated audio duration + 3s)', resolve);
+        }, safetyTimeoutMs);
 
         const djAudio = new Audio(activeAudioSrc!);
         djAudioRef.current = djAudio;
@@ -1003,11 +997,11 @@ export default function App() {
           }));
         }).catch((err) => {
           logMessage('Error starting DJ audio: ' + err.message);
-          finish('audio playback error');
+          handleSpeechEnded('audio playback error', resolve);
         });
 
         djAudio.onended = () => {
-          finish('audio onended');
+          handleSpeechEnded('audio onended', resolve);
         };
       });
     }
@@ -1015,6 +1009,11 @@ export default function App() {
 
   // --- Timing Test Handler ---
   const handleRunTimingTest = async () => {
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      logMessage('DJ sequence active. Please wait for mix sequence to complete before starting timing test.');
+      return;
+    }
+
     if (voiceEngine === 'GEMINI' && !djAudioData) {
       logMessage('Synthesizing Gemini audio before running the timing test...');
       const genSrc = await handleGenerateDJ();
@@ -1880,7 +1879,11 @@ export default function App() {
                     min="5"
                     max="60"
                     value={duckVolumePercent}
-                    onChange={(e) => setDuckVolumePercent(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setDuckVolumePercent(val);
+                      volumeControllerRef.current?.setDuckLevel(val);
+                    }}
                     className="w-full accent-amber-500 cursor-pointer"
                   />
                 </div>
@@ -2543,6 +2546,10 @@ export default function App() {
         <DJBreakGeneratorTest
           onLogEvent={logMessage}
           onSpeakScript={(script) => {
+            if (volumeControllerRef.current?.isSequenceActive()) {
+              logMessage('DJ sequence active. Please wait for mix sequence to complete.');
+              return;
+            }
             if (typeof window !== 'undefined' && window.speechSynthesis) {
               window.speechSynthesis.cancel();
               const u = new SpeechSynthesisUtterance(script);

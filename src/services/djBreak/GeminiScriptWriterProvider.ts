@@ -59,14 +59,22 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
   }
 
   /**
-   * Helper to check if an error is an unavailable / 503 / high-load condition.
+   * Helper to check if an error is an unavailable / 503 / timeout / high-load condition.
    */
   private isUnavailableError(err: any): boolean {
     const msg = (err?.message || '').toLowerCase();
     const status = err?.status || err?.statusCode || 0;
     return (
       status === 503 ||
+      status === 504 ||
+      status === 408 ||
       msg.includes('503') ||
+      msg.includes('504') ||
+      msg.includes('408') ||
+      msg.includes('timeout') ||
+      msg.includes('timed out') ||
+      msg.includes('exceeded 45s') ||
+      msg.includes('deadline exceeded') ||
       msg.includes('unavailable') ||
       msg.includes('high demand') ||
       msg.includes('overloaded') ||
@@ -75,22 +83,52 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
   }
 
   /**
-   * Executes a model call with up to 3 automatic retries with 2s, 5s, 10s backoff for 503 / UNAVAILABLE.
-   * If all retries fail and a fallback model is configured, attempts the fallback model once.
+   * Wraps a promise with a timeout (default 45s).
+   */
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+    let timer: any = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Timeout: ${operationName} exceeded ${timeoutMs / 1000}s limit.`));
+      }, timeoutMs);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  /**
+   * Executes a model call with a 45-second timeout on each model call.
+   * On timeout, treats it like a 503: retries up to 3 times with 2s, 5s, 10s backoff,
+   * then tries the fallback model.
+   * If everything fails, throws a clear error stating which step timed out.
    */
   private async executeWithRetryAndFallback<T>(
     operationName: string,
-    executeFn: (model: string) => Promise<T>
-  ): Promise<{ result: T; modelUsed: string }> {
+    executeFn: (model: string) => Promise<T>,
+    timeoutMs = 45000
+  ): Promise<{ result: T; modelUsed: string; callStartTime: string; durationSec: number }> {
     const retryDelaysMs = [2000, 5000, 10000];
     let lastError: any = null;
+    const callStart = Date.now();
+    const callStartTime = new Date(callStart).toISOString();
 
-    // 1. Try primary model with up to 3 retries on 503 / UNAVAILABLE
+    // 1. Try primary model with up to 3 retries on 503 / UNAVAILABLE / Timeout
     for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+      const attemptStart = Date.now();
       try {
         recordTextModelCall(1);
-        const result = await executeFn(this.modelName);
-        return { result, modelUsed: this.modelName };
+        const result = await this.withTimeout(executeFn(this.modelName), timeoutMs, operationName);
+        const durationSec = Number(((Date.now() - attemptStart) / 1000).toFixed(1));
+        return { result, modelUsed: this.modelName, callStartTime, durationSec };
       } catch (err: any) {
         lastError = err;
         const isUnavailable = this.isUnavailableError(err);
@@ -105,31 +143,75 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
         }
 
         const waitMs = retryDelaysMs[attempt];
+        const isTimeout = (err?.message || '').toLowerCase().includes('timeout');
         console.warn(
-          `[GeminiScriptWriterProvider] ${operationName} returned 503/UNAVAILABLE. Model busy, retrying (${attempt + 1} of 3) in ${waitMs / 1000}s...`
+          `[GeminiScriptWriterProvider] ${operationName} returned ${isTimeout ? 'TIMEOUT' : '503/UNAVAILABLE'}. Retrying (${attempt + 1} of 3) in ${waitMs / 1000}s...`
         );
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
 
-    // 2. If primary model is still unavailable after all retries, try fallback model once if configured
+    // 2. If primary model failed/timed out after all retries, try fallback model once if configured
     if (this.fallbackModelName && this.fallbackModelName !== this.modelName && this.isUnavailableError(lastError)) {
       console.warn(
-        `[GeminiScriptWriterProvider] Primary model ${this.modelName} still unavailable. Attempting fallback model: ${this.fallbackModelName}...`
+        `[GeminiScriptWriterProvider] Primary model ${this.modelName} unavailable/timed out. Attempting fallback model: ${this.fallbackModelName}...`
       );
+      const fallbackStart = Date.now();
       try {
         recordTextModelCall(1);
-        const result = await executeFn(this.fallbackModelName);
-        return { result, modelUsed: this.fallbackModelName };
+        const result = await this.withTimeout(executeFn(this.fallbackModelName), timeoutMs, operationName);
+        const durationSec = Number(((Date.now() - fallbackStart) / 1000).toFixed(1));
+        return { result, modelUsed: this.fallbackModelName, callStartTime, durationSec };
       } catch (fallbackErr: any) {
         lastError = fallbackErr;
       }
     }
 
+    // If everything failed on timeout, throw clear error stating which step timed out
+    if ((lastError?.message || '').toLowerCase().includes('timeout')) {
+      const stepError = new Error(`${operationName} timed out after ${timeoutMs / 1000}s (all retries and fallback models failed).`);
+      (stepError as any).status = 504;
+      (stepError as any).isTimeout = true;
+      throw stepError;
+    }
+
     throw lastError;
   }
 
-  async generateBreaks(input: BreakGeneratorInput): Promise<BreakGeneratorResult> {
+  /**
+   * Helper to invoke generateContent with minimal/off thinking (thinkingBudget: 0)
+   * and fallback cleanly without thinkingConfig if the model does not support it.
+   */
+  private async safeGenerateContent(params: any): Promise<any> {
+    try {
+      return await this.ai.models.generateContent(params);
+    } catch (err: any) {
+      if (err?.message && /thinking/i.test(err.message)) {
+        // Retry immediately without thinkingConfig for models that do not support thinking
+        const strippedParams = { ...params, config: { ...params.config } };
+        delete strippedParams.config.thinkingConfig;
+        return await this.ai.models.generateContent(strippedParams);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Step 1 of 2: Generates the 3 DJ break scripts without running anachronism audit.
+   * Returns immediately with break scripts marked with status "CHECKING".
+   */
+  async writeBreaksOnly(input: BreakGeneratorInput): Promise<{
+    success: boolean;
+    breaks: GeneratedDJBreak[];
+    providedFactItems: any[];
+    modelUsed: string;
+    callStartTime: string;
+    callDurationSec: number;
+    error?: string;
+    isUnavailable?: boolean;
+    quotaExceeded?: boolean;
+    stepTimedOut?: 'step1' | null;
+  }> {
     const persona = PERSONALITIES[input.personality] || PERSONALITIES.mike;
     const targetWords = Math.round(input.secondsAvailable * 2.5); // ~2.5 words per second
     const minWords = Math.max(5, Math.round(targetWords * 0.8));
@@ -194,13 +276,14 @@ Respond ONLY with valid JSON matching this schema:
 
     let rawBreaksData: any = null;
     let finalModelUsed = this.modelName;
+    let startTimeIso = new Date().toISOString();
+    let durationSec = 0;
 
-    // Call #1: Generate all 3 break variations in one single structured call
     try {
-      const { result, modelUsed } = await this.executeWithRetryAndFallback(
-        'Generate 3 DJ Breaks',
+      const { result, modelUsed, callStartTime, durationSec: dur } = await this.executeWithRetryAndFallback(
+        'Step 1: writing 3 breaks',
         async (activeModel) => {
-          const response = await this.ai.models.generateContent({
+          const response = await this.safeGenerateContent({
             model: activeModel,
             contents: prompt,
             config: {
@@ -227,39 +310,45 @@ Respond ONLY with valid JSON matching this schema:
                 required: ['breaks'],
               },
               temperature: 0.85,
+              maxOutputTokens: 1000, // Lower latency: limit output tokens to what 3 short breaks need
+              thinkingConfig: {
+                thinkingBudget: 0, // Lower latency: turn thinking off/minimal
+              },
             },
           });
           const text = response.text || '';
           return JSON.parse(text);
-        }
+        },
+        45000 // 45-second timeout on each model call
       );
 
       rawBreaksData = result;
       finalModelUsed = modelUsed;
+      startTimeIso = callStartTime;
+      durationSec = dur;
     } catch (err: any) {
-      console.error('[GeminiScriptWriterProvider] Break generation error:', err);
+      console.error('[GeminiScriptWriterProvider] Step 1 break writing error:', err);
       const isUnavailable = this.isUnavailableError(err);
       const isQuota =
         err?.message?.includes('429') ||
         err?.message?.includes('RESOURCE_EXHAUSTED') ||
         err?.message?.includes('quota');
+      const isTimeout = (err?.message || '').toLowerCase().includes('timeout') || err?.isTimeout;
 
       return {
         success: false,
-        targetDate: input.targetDate,
-        personality: input.personality,
-        timeOfDay: input.timeOfDay,
-        format: input.format,
-        songPlayed: input.songPlayed,
-        songNext: input.songNext,
-        secondsAvailable: input.secondsAvailable,
         breaks: [],
         providedFactItems: factItemsGiven,
-        callsUsedThisRun: 1,
+        modelUsed: finalModelUsed,
+        callStartTime: startTimeIso,
+        callDurationSec: durationSec,
         quotaExceeded: isQuota,
         isUnavailable,
+        stepTimedOut: isTimeout ? 'step1' : null,
         error: isQuota
           ? 'Gemini API text model quota limit reached (429 RESOURCE_EXHAUSTED).'
+          : isTimeout
+          ? 'Step 1 (writing 3 breaks) timed out after 45s (all retries and fallback models failed).'
           : isUnavailable
           ? 'Model is busy right now, try again in a few minutes.'
           : err?.message || 'Failed generating DJ breaks with Gemini',
@@ -270,42 +359,22 @@ Respond ONLY with valid JSON matching this schema:
     if (rawBreaks.length === 0) {
       return {
         success: false,
-        targetDate: input.targetDate,
-        personality: input.personality,
-        timeOfDay: input.timeOfDay,
-        format: input.format,
-        songPlayed: input.songPlayed,
-        songNext: input.songNext,
-        secondsAvailable: input.secondsAvailable,
         breaks: [],
         providedFactItems: factItemsGiven,
-        callsUsedThisRun: 1,
+        modelUsed: finalModelUsed,
+        callStartTime: startTimeIso,
+        callDurationSec: durationSec,
         error: 'Model did not return break scripts.',
       };
     }
 
-    // Call #2: Run anachronism audit for ALL 3 breaks in one second call
-    const scriptsForAudit = rawBreaks.map((b: any, idx: number) => ({
-      breakNumber: b.breakNumber || idx + 1,
-      scriptText: b.scriptText || '',
-    }));
-
-    const auditResults = await this.checkAllAnachronisms(
-      scriptsForAudit,
-      input.targetDate,
-      finalModelUsed
-    );
-
-    const generatedBreaks: GeneratedDJBreak[] = [];
-
-    for (let i = 0; i < rawBreaks.length; i++) {
-      const b = rawBreaks[i];
+    // Build the initial 3 break cards with audit status "CHECKING"
+    const generatedBreaks: GeneratedDJBreak[] = rawBreaks.map((b: any, i: number) => {
       const scriptText = (b.scriptText || '').trim();
       const words = scriptText.split(/\s+/).filter(Boolean);
       const wordCount = words.length;
       const estimatedSeconds = Number((wordCount / 2.5).toFixed(1));
 
-      // Match cited items
       const citedHeadlines: string[] = Array.isArray(b.citedItemHeadlines) ? b.citedItemHeadlines : [];
       const citedItems = citedHeadlines.map((hl) => {
         const found = input.factItems.find(
@@ -318,48 +387,50 @@ Respond ONLY with valid JSON matching this schema:
         };
       });
 
-      const audit = auditResults[b.breakNumber || i + 1] || {
-        status: 'PASS',
-        notes: 'Chronologically authentic for this date.',
-        flaggedPhrases: [],
-      };
-
-      generatedBreaks.push({
+      return {
         id: `break_${Date.now()}_${i + 1}`,
-        breakNumber: i + 1,
+        breakNumber: b.breakNumber || i + 1,
         scriptText,
         wordCount,
         estimatedSeconds,
         targetSeconds: input.secondsAvailable,
         citedItems,
-        anachronismCheck: audit,
-      });
-    }
+        anachronismCheck: {
+          status: 'CHECKING',
+          notes: 'Checking for anachronisms...',
+          flaggedPhrases: [],
+        },
+      };
+    });
 
     return {
       success: true,
-      targetDate: input.targetDate,
-      personality: input.personality,
-      timeOfDay: input.timeOfDay,
-      format: input.format,
-      songPlayed: input.songPlayed,
-      songNext: input.songNext,
-      secondsAvailable: input.secondsAvailable,
       breaks: generatedBreaks,
       providedFactItems: factItemsGiven,
-      callsUsedThisRun: 2, // Exactly 2 calls per click
       modelUsed: finalModelUsed,
+      callStartTime: startTimeIso,
+      callDurationSec: durationSec,
     };
   }
 
   /**
-   * Runs anachronism audit for ALL generated breaks in a SINGLE second model call.
+   * Step 2 of 2: Runs anachronism audit on the generated breaks in a single model call.
+   * If model call fails or times out, returns auditUnavailable: true so scripts still display.
    */
-  private async checkAllAnachronisms(
+  async auditBreaksOnly(
     scripts: { breakNumber: number; scriptText: string }[],
     targetDate: string,
-    modelToUse: string
-  ): Promise<Record<number, AnachronismCheckResult>> {
+    modelToUse?: string
+  ): Promise<{
+    success: boolean;
+    audits: Record<number, AnachronismCheckResult>;
+    modelUsed: string;
+    callStartTime: string;
+    callDurationSec: number;
+    error?: string;
+    auditUnavailable?: boolean;
+    stepTimedOut?: 'step2' | null;
+  }> {
     const scriptsFormatted = scripts.map((s) => {
       return `[Break #${s.breakNumber}]: "${s.scriptText}"`;
     }).join('\n\n');
@@ -391,11 +462,15 @@ Respond strictly with JSON schema:
 }
 `.trim();
 
+    let finalModelUsed = modelToUse || this.modelName;
+    let startTimeIso = new Date().toISOString();
+    let durationSec = 0;
+
     try {
-      const { result } = await this.executeWithRetryAndFallback(
-        'Anachronism Audit for 3 Breaks',
+      const { result, modelUsed, callStartTime, durationSec: dur } = await this.executeWithRetryAndFallback(
+        'Step 2: checking for anachronisms',
         async (activeModel) => {
-          const response = await this.ai.models.generateContent({
+          const response = await this.safeGenerateContent({
             model: activeModel,
             contents: auditPrompt,
             config: {
@@ -423,12 +498,21 @@ Respond strictly with JSON schema:
                 required: ['audits'],
               },
               temperature: 0.1,
+              maxOutputTokens: 600, // Lower latency: limit output tokens to what audit notes need
+              thinkingConfig: {
+                thinkingBudget: 0, // Lower latency: turn thinking off/minimal
+              },
             },
           });
           const text = response.text || '';
           return JSON.parse(text);
-        }
+        },
+        45000 // 45-second timeout on each model call
       );
+
+      finalModelUsed = modelUsed;
+      startTimeIso = callStartTime;
+      durationSec = dur;
 
       const auditMap: Record<number, AnachronismCheckResult> = {};
       const audits = Array.isArray(result?.audits) ? result.audits : [];
@@ -439,18 +523,115 @@ Respond strictly with JSON schema:
           flaggedPhrases: a.flaggedPhrases || [],
         };
       }
-      return auditMap;
+
+      // Ensure every script has an entry
+      for (const s of scripts) {
+        if (!auditMap[s.breakNumber]) {
+          auditMap[s.breakNumber] = {
+            status: 'PASS',
+            notes: 'Chronologically authentic for this date.',
+            flaggedPhrases: [],
+          };
+        }
+      }
+
+      return {
+        success: true,
+        audits: auditMap,
+        modelUsed: finalModelUsed,
+        callStartTime: startTimeIso,
+        callDurationSec: durationSec,
+      };
     } catch (err: any) {
-      console.warn('[GeminiScriptWriterProvider] Combined anachronism audit fallback:', err?.message);
+      console.warn('[GeminiScriptWriterProvider] Step 2 anachronism audit error/timeout:', err?.message);
+      const isTimeout = (err?.message || '').toLowerCase().includes('timeout') || err?.isTimeout;
+      const errorMsg = isTimeout
+        ? 'Step 2 (anachronism audit) timed out after 45s (all retries and fallback models failed).'
+        : err?.message || 'Audit unavailable';
+
       const fallbackMap: Record<number, AnachronismCheckResult> = {};
       for (const s of scripts) {
         fallbackMap[s.breakNumber] = {
-          status: 'PASS',
-          notes: `Audit skipped due to service response: ${err?.message || 'offline'}`,
+          status: 'UNAVAILABLE',
+          notes: `Audit unavailable: ${errorMsg}`,
           flaggedPhrases: [],
         };
       }
-      return fallbackMap;
+
+      return {
+        success: false,
+        audits: fallbackMap,
+        auditUnavailable: true,
+        stepTimedOut: isTimeout ? 'step2' : null,
+        modelUsed: finalModelUsed,
+        callStartTime: startTimeIso,
+        callDurationSec: durationSec,
+        error: errorMsg,
+      };
     }
+  }
+
+  /**
+   * Unified generateBreaks: Executes Step 1 (writing) then Step 2 (auditing).
+   */
+  async generateBreaks(input: BreakGeneratorInput): Promise<BreakGeneratorResult> {
+    const step1 = await this.writeBreaksOnly(input);
+    if (!step1.success) {
+      return {
+        success: false,
+        targetDate: input.targetDate,
+        personality: input.personality,
+        timeOfDay: input.timeOfDay,
+        format: input.format,
+        songPlayed: input.songPlayed,
+        songNext: input.songNext,
+        secondsAvailable: input.secondsAvailable,
+        breaks: [],
+        providedFactItems: step1.providedFactItems,
+        callsUsedThisRun: 1,
+        quotaExceeded: step1.quotaExceeded,
+        isUnavailable: step1.isUnavailable,
+        stepTimedOut: step1.stepTimedOut,
+        error: step1.error,
+        modelUsed: step1.modelUsed,
+        callStartTime: step1.callStartTime,
+        callDurationSec: step1.callDurationSec,
+      };
+    }
+
+    const scriptsForAudit = step1.breaks.map((b) => ({
+      breakNumber: b.breakNumber,
+      scriptText: b.scriptText,
+    }));
+
+    const step2 = await this.auditBreaksOnly(scriptsForAudit, input.targetDate, step1.modelUsed);
+
+    const auditedBreaks = step1.breaks.map((b) => ({
+      ...b,
+      anachronismCheck: step2.audits[b.breakNumber] || {
+        status: step2.auditUnavailable ? 'UNAVAILABLE' : 'PASS',
+        notes: step2.error ? `Audit unavailable: ${step2.error}` : 'Chronologically authentic for this date.',
+        flaggedPhrases: [],
+      },
+    }));
+
+    return {
+      success: true,
+      targetDate: input.targetDate,
+      personality: input.personality,
+      timeOfDay: input.timeOfDay,
+      format: input.format,
+      songPlayed: input.songPlayed,
+      songNext: input.songNext,
+      secondsAvailable: input.secondsAvailable,
+      breaks: auditedBreaks,
+      providedFactItems: step1.providedFactItems,
+      callsUsedThisRun: 2,
+      modelUsed: step2.modelUsed || step1.modelUsed,
+      callStartTime: step1.callStartTime,
+      callDurationSec: Number(((step1.callDurationSec || 0) + (step2.callDurationSec || 0)).toFixed(1)),
+      auditUnavailable: step2.auditUnavailable,
+      stepTimedOut: step2.stepTimedOut,
+    };
   }
 }
