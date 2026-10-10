@@ -163,7 +163,7 @@ export class YouTubeMusicProvider implements MusicProvider {
           status,
         };
       }
-      return { success: false, error: res?.error || 'Failed to initialize Retro FM tab group' };
+      return { success: false, error: res?.error || 'Failed to initialize RetroFM tab group' };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

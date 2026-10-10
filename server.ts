@@ -284,7 +284,7 @@ async function startServer() {
       }
 
       const manifestPath = path.join(extensionDir, 'manifest.json');
-      let version = '1.0.5';
+      let version = '1.0.8';
       if (fs.existsSync(manifestPath)) {
         try {
           const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -294,8 +294,8 @@ async function startServer() {
         }
       }
 
-      const folderName = `retro-fm-extension-v${version}`;
-      const zipFilename = `retro-fm-extension-v${version}.zip`;
+      const folderName = 'retrofm-extension';
+      const zipFilename = `retrofm-extension-v${version}.zip`;
       const zipBuffer = createZipFromDirectory(extensionDir, folderName);
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
@@ -311,16 +311,26 @@ async function startServer() {
   app.get('/api/extension/files', (req, res) => {
     try {
       const extensionDir = path.resolve(__dirname, 'extension');
-      const fileNames = ['manifest.json', 'content_youtube.js', 'content_retrofm.js', 'background.js', 'popup.html', 'README.md', 'LICENSE'];
       const files: Record<string, string> = {};
 
-      for (const name of fileNames) {
-        const fullPath = path.join(extensionDir, name);
-        if (fs.existsSync(fullPath)) {
-          files[name] = fs.readFileSync(fullPath, 'utf8');
+      function scanDir(dir: string, baseDir: string) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+          if (entry.isDirectory()) {
+            scanDir(fullPath, baseDir);
+          } else if (entry.isFile()) {
+            if (entry.name.endsWith('.png')) {
+              files[relPath] = `data:image/png;base64,${fs.readFileSync(fullPath).toString('base64')}`;
+            } else {
+              files[relPath] = fs.readFileSync(fullPath, 'utf8');
+            }
+          }
         }
       }
 
+      scanDir(extensionDir, extensionDir);
       return res.json({ success: true, files });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
@@ -579,11 +589,11 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Retro FM Server] Server running at http://0.0.0.0:${PORT}`);
+    console.log(`[RetroFM Server] Server running at http://0.0.0.0:${PORT}`);
   });
 }
 
 startServer().catch((err) => {
-  console.error('[Retro FM Server] Startup error:', err);
+  console.error('[RetroFM Server] Startup error:', err);
   process.exit(1);
 });

@@ -10,6 +10,18 @@
       background: #12141a;
       color: #e2e8f0;
       margin: 0;
+      box-sizing: border-box;
+    }
+    .logo-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .logo-container img {
+      max-width: 140px;
+      height: auto;
+      display: block;
     }
     h3 {
       margin: 0 0 8px 0;
@@ -17,12 +29,19 @@
       font-size: 14px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      text-align: center;
     }
     p {
       font-size: 12px;
       line-height: 1.4;
       color: #94a3b8;
       margin: 0 0 12px 0;
+      text-align: center;
+    }
+    .status-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 12px;
     }
     .status {
       display: inline-block;
@@ -34,7 +53,7 @@
       color: #10b981;
     }
     footer {
-      margin-top: 16px;
+      margin-top: 14px;
       padding-top: 12px;
       border-top: 1px solid #1f293d;
       font-size: 11px;
@@ -56,12 +75,17 @@
   </style>
 </head>
 <body>
-  <h3 id="ext-title">Retro FM Bridge</h3>
-  <p>Permitted tab controller bridge for the Retro FM proof-of-concept experiment.</p>
-  <div class="status" id="ext-status">● Bridge Active</div>
+  <div class="logo-container">
+    <img src="icons/icon-48.png" alt="RetroFM" width="48" height="48">
+  </div>
+  <h3 id="ext-title">RetroFM</h3>
+  <p>Connects the RetroFM app to a YouTube tab for audio ducking and playback control.</p>
+  <div class="status-container">
+    <div class="status" id="ext-status">● Bridge Active</div>
+  </div>
 
   <footer>
-    <div><strong id="ext-name">Retro FM Bridge</strong> <span id="ext-ver"></span> by Chris Adkins</div>
+    <div><strong id="ext-name">RetroFM</strong> <span id="ext-ver"></span> by Chris Adkins</div>
     <div class="footer-links">
       <a href="https://github.com/webpmp/RetroFM" target="_blank" rel="noopener noreferrer">GitHub</a>
       <span>&bull;</span>

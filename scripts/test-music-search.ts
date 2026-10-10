@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: MIT
  *
- * Test script for Retro FM Music Programming:
+ * Test script for RetroFM Music Programming:
  * Evaluates candidate selection for:
  * 1. a-ha / Take on Me / 1985
  * 2. Michael Jackson / Billie Jean / 1983

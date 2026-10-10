@@ -33,7 +33,8 @@ import {
   Check,
   Database,
   Cpu,
-  Rocket
+  Rocket,
+  Copy
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { VolumeController } from './services/audio/VolumeController.js';
@@ -73,12 +74,12 @@ export const CRITICAL_TEST_SONGS = [
 const SCRIPT_PRESETS = [
   {
     title: 'Chart Climber (Default)',
-    text: "Here's another one that's been climbing the charts all week. Stay with us right here on Retro FM.",
+    text: "Here's another one that's been climbing the charts all week. Stay with us right here on RetroFM.",
     style: "Confident, conversational 1980s radio DJ. Fast but natural pacing. Warm broadcast voice. Slightly energetic. Not announcer-like."
   },
   {
     title: 'Top of the Hour Station ID',
-    text: "You are locked into Retro FM, your non-stop vintage soundtrack. It's twenty past the hour, turning up the heat with this absolute classic.",
+    text: "You are locked into RetroFM, your non-stop vintage soundtrack. It's twenty past the hour, turning up the heat with this absolute classic.",
     style: "Energetic top-40 drive-time radio DJ. Fast punchy delivery, smiling voice, high broadcast presence."
   },
   {
@@ -230,6 +231,16 @@ export default function App() {
   const [extensionFiles, setExtensionFiles] = useState<Record<string, string>>(EXTENSION_FILES);
   const [activeFileKey, setActiveFileKey] = useState<string>('manifest.json');
   const [copiedFileKey, setCopiedFileKey] = useState<string | null>(null);
+  const [updateSuccessVersion, setUpdateSuccessVersion] = useState<string | null>(null);
+  const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState<boolean>(false);
+  const previousReportedVersionRef = useRef<string | null>(null);
+  const hadOutdatedBannerRef = useRef<boolean>(false);
+
+  const handleCopyExtensionsUrl = () => {
+    navigator.clipboard.writeText('chrome://extensions');
+    setCopiedExtensionsUrl(true);
+    setTimeout(() => setCopiedExtensionsUrl(false), 2500);
+  };
 
   const loadExtensionFiles = () => {
     setExtensionFiles(EXTENSION_FILES);
@@ -300,6 +311,26 @@ export default function App() {
       const reportedVer = pingResult.version || musicProviderRef.current.getReportedVersion() || null;
       setReportedExtensionVersion(reportedVer);
 
+      if (pingResult.active && reportedVer) {
+        if (compareVersions(reportedVer, MIN_REQUIRED_EXTENSION_VERSION) >= 0) {
+          if (
+            hadOutdatedBannerRef.current ||
+            (previousReportedVersionRef.current && compareVersions(previousReportedVersionRef.current, reportedVer) < 0)
+          ) {
+            setUpdateSuccessVersion(reportedVer);
+            hadOutdatedBannerRef.current = false;
+            setTimeout(() => {
+              setUpdateSuccessVersion((curr) => (curr === reportedVer ? null : curr));
+            }, 10000);
+          }
+        } else {
+          hadOutdatedBannerRef.current = true;
+        }
+        previousReportedVersionRef.current = reportedVer;
+      } else if (!pingResult.active) {
+        hadOutdatedBannerRef.current = true;
+      }
+
       if (pingResult.active) {
         setTestResults((prev) => ({ ...prev, tabDetection: true }));
         try {
@@ -345,12 +376,12 @@ export default function App() {
     return () => clearInterval(timer);
   }, [playbackStatus.connectedTabId]);
 
-  // --- Launch Retro FM (Chrome Tab Group) Handler ---
+  // --- Launch RetroFM (Chrome Tab Group) Handler ---
   const handleLaunchRetroFm = async () => {
     setIsLaunchingGroup(true);
     setLaunchMessage(null);
     setConnectionError(null);
-    logMessage('Launching Retro FM Tab Group (opening YouTube + grouping in Chrome)...');
+    logMessage('Launching RetroFM Tab Group (opening YouTube + grouping in Chrome)...');
 
     try {
       const res = await musicProviderRef.current.launchRetroFmGroup();
@@ -367,17 +398,17 @@ export default function App() {
         }));
 
         const successNotice = res.createdNewTab
-          ? '✓ Launched: Created new YouTube tab and organized both tabs into "Retro FM" Chrome Tab Group.'
-          : '✓ Connected: Reused existing YouTube tab inside "Retro FM" Chrome Tab Group.';
+          ? '✓ Launched: Created new YouTube tab and organized both tabs into "RetroFM" Chrome Tab Group.'
+          : '✓ Connected: Reused existing YouTube tab inside "RetroFM" Chrome Tab Group.';
         setLaunchMessage({ text: successNotice, isError: false });
         logMessage(successNotice);
       } else {
-        const errorNotice = res.error || `Failed to create Retro FM Tab Group. Ensure the Chrome Extension (v${EXTENSION_VERSION}) is loaded.`;
+        const errorNotice = res.error || `Failed to create RetroFM Tab Group. Ensure the Chrome Extension (v${EXTENSION_VERSION}) is loaded.`;
         setLaunchMessage({ text: errorNotice, isError: true });
         logMessage(`[Launch Failed] ${errorNotice}`);
       }
     } catch (err: any) {
-      const errMsg = err.message || 'Error launching Retro FM tab group.';
+      const errMsg = err.message || 'Error launching RetroFM tab group.';
       setLaunchMessage({ text: errMsg, isError: true });
       logMessage(`[Launch Error] ${errMsg}`);
     } finally {
@@ -389,7 +420,7 @@ export default function App() {
   const handleConnectTab = async () => {
     setIsConnecting(true);
     setConnectionError(null);
-    logMessage('Scanning for YouTube tabs via Retro FM Extension...');
+    logMessage('Scanning for YouTube tabs via RetroFM Extension...');
 
     try {
       const res = await musicProviderRef.current.connect(selectedTabId || undefined);
@@ -1121,31 +1152,81 @@ export default function App() {
           </div>
         )}
 
-        {/* On-screen Banner: Old Extension Warning / Extension Required */}
-        {(!extensionDetected || (reportedExtensionVersion && compareVersions(reportedExtensionVersion, MIN_REQUIRED_EXTENSION_VERSION) < 0)) && (
-          <div className="p-4 rounded-lg shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono text-xs bg-amber-950/95 border-2 border-amber-500 text-amber-100 animate-in fade-in duration-200">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+        {/* On-screen Banner: Extension Updated Success Notice */}
+        {updateSuccessVersion && (
+          <div className="p-3.5 rounded-lg shadow-2xl flex items-center justify-between gap-3 font-mono text-xs bg-emerald-950/95 border-2 border-emerald-500 text-emerald-100 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
               <div>
-                <div className="font-bold text-sm tracking-wide uppercase text-amber-300 flex items-center gap-2">
-                  <span>EXTENSION UPDATE REQUIRED</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/70 border border-amber-700 text-amber-200 font-normal">
-                    v{reportedExtensionVersion || 'Unknown'} detected &bull; v{MIN_REQUIRED_EXTENSION_VERSION} required
-                  </span>
-                </div>
-                <p className="mt-1 text-zinc-100 text-xs leading-relaxed">
-                  Your Retro FM extension is {reportedExtensionVersion ? `v${reportedExtensionVersion}` : 'not detected or an older build'} but this app needs v{MIN_REQUIRED_EXTENSION_VERSION} or newer. Download the update, reload it at <code className="px-1.5 py-0.5 bg-black/40 rounded border border-amber-800 text-amber-300">chrome://extensions</code>, then refresh this page.
-                </p>
+                <span className="font-bold text-emerald-300 text-sm">
+                  Extension updated to v{updateSuccessVersion} ✓
+                </span>
+                <span className="ml-2 text-zinc-300 text-xs hidden sm:inline">
+                  &bull; Connected to YouTube tab and ready for audio ducking and playback control.
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => generateAndDownloadExtensionZip()}
-                className="px-4 py-2 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase transition-colors flex items-center gap-2 cursor-pointer shadow"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download Extension (v{EXTENSION_VERSION})</span>
-              </button>
+            <button
+              onClick={() => setUpdateSuccessVersion(null)}
+              className="text-zinc-400 hover:text-white px-2 py-0.5 rounded hover:bg-emerald-900/50 text-base leading-none cursor-pointer"
+              title="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
+        {/* On-screen Banner: Old Extension Warning / Extension Required */}
+        {(!extensionDetected || (reportedExtensionVersion && compareVersions(reportedExtensionVersion, MIN_REQUIRED_EXTENSION_VERSION) < 0)) && (
+          <div className="p-4 rounded-lg shadow-2xl space-y-3 font-mono text-xs bg-amber-950/95 border-2 border-amber-500 text-amber-100 animate-in fade-in duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-800/80 pb-2">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 shrink-0 text-amber-400" />
+                <span className="font-bold text-sm tracking-wide uppercase text-amber-300">
+                  EXTENSION SETUP OR UPDATE REQUIRED
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/70 border border-amber-700 text-amber-200 font-normal">
+                  v{reportedExtensionVersion || 'None'} detected &bull; v{MIN_REQUIRED_EXTENSION_VERSION} required
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyExtensionsUrl}
+                  className="px-2.5 py-1.5 rounded bg-black/60 hover:bg-black/90 border border-amber-700 text-amber-300 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedExtensionsUrl ? 'Copied chrome://extensions ✓' : 'Copy chrome://extensions'}</span>
+                </button>
+                <button
+                  onClick={() => generateAndDownloadExtensionZip()}
+                  className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase transition-colors flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Extension (v{EXTENSION_VERSION})</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-zinc-200 text-xs leading-relaxed pt-1">
+              <div className="p-3 bg-black/40 rounded border border-amber-900/60 space-y-1.5">
+                <strong className="text-amber-300 uppercase block font-bold text-[11px]">First Time Setup:</strong>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-300 text-[11px]">
+                  <li>Download, unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).</li>
+                  <li>Open <code className="text-amber-300">chrome://extensions</code> (click button above).</li>
+                  <li>Turn on <strong className="text-zinc-100">Developer mode</strong> toggle in top-right.</li>
+                  <li>Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.</li>
+                </ol>
+              </div>
+
+              <div className="p-3 bg-black/40 rounded border border-amber-900/60 space-y-1.5">
+                <strong className="text-amber-300 uppercase block font-bold text-[11px]">Updating:</strong>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-300 text-[11px]">
+                  <li>Download, unzip into the same folder and replace the files.</li>
+                  <li>Open <code className="text-amber-300">chrome://extensions</code>.</li>
+                  <li>Click the reload arrow <strong className="text-amber-400">↻</strong> on the RetroFM card (don’t remove it).</li>
+                  <li>Refresh the RetroFM and YouTube tabs.</li>
+                </ol>
+              </div>
             </div>
           </div>
         )}
@@ -1159,7 +1240,7 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black tracking-wider uppercase text-amber-400 font-mono">
-                  RETRO FM
+                  RETROFM
                 </h1>
                 <p className="text-xs sm:text-sm font-mono tracking-widest text-zinc-400 uppercase">
                   AUDIO PROOF OF CONCEPT &bull; YOUTUBE + GEMINI FLASH TTS
@@ -1179,15 +1260,15 @@ export default function App() {
               <span>SILENCE ALL AUDIO</span>
             </button>
 
-            {/* Launch Retro FM (Chrome Tab Group) Button */}
+            {/* Launch RetroFM (Chrome Tab Group) Button */}
             <button
               onClick={handleLaunchRetroFm}
               disabled={isLaunchingGroup}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow cursor-pointer"
-              title="Open YouTube in a new tab, connect it, and organize both tabs in a 'Retro FM' Chrome Tab Group"
+              title="Open YouTube in a new tab, connect it, and organize both tabs in a 'RetroFM' Chrome Tab Group"
             >
               <Rocket className={`w-3.5 h-3.5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
-              <span>{isLaunchingGroup ? 'Launching...' : 'Launch Retro FM'}</span>
+              <span>{isLaunchingGroup ? 'Launching...' : 'Launch RetroFM'}</span>
             </button>
 
             {/* Open in Dedicated Tab Button */}
@@ -1196,7 +1277,7 @@ export default function App() {
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono text-zinc-200 transition-colors"
-              title="Open Retro FM in a dedicated browser tab side-by-side with YouTube"
+              title="Open RetroFM in a dedicated browser tab side-by-side with YouTube"
             >
               <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
               <span>Open in Dedicated Tab</span>
@@ -1284,10 +1365,10 @@ export default function App() {
                     onClick={handleLaunchRetroFm}
                     disabled={isLaunchingGroup}
                     className="flex-1 py-2.5 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
-                    title="Open YouTube in a new tab, connect it, and organize both tabs in a 'Retro FM' Chrome Tab Group"
+                    title="Open YouTube in a new tab, connect it, and organize both tabs in a 'RetroFM' Chrome Tab Group"
                   >
                     <Rocket className={`w-3.5 h-3.5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
-                    <span>{isLaunchingGroup ? 'Launching Tab Group...' : 'Launch Retro FM (Tab Group)'}</span>
+                    <span>{isLaunchingGroup ? 'Launching Tab Group...' : 'Launch RetroFM (Tab Group)'}</span>
                   </button>
 
                   <button
@@ -1333,7 +1414,7 @@ export default function App() {
                     <div>
                       <span>{connectionError}</span>
                       <div className="mt-1 text-[11px] text-zinc-400">
-                        Make sure the Retro FM Chrome Extension is loaded and a YouTube video is open in another tab.
+                        Make sure the RetroFM Chrome Extension is loaded and a YouTube video is open in another tab.
                       </div>
                     </div>
                   </div>
@@ -2611,7 +2692,7 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                 <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-1">
-                  <span className="text-amber-400 font-bold">1. Can Retro FM communicate with a YouTube tab?</span>
+                  <span className="text-amber-400 font-bold">1. Can RetroFM communicate with a YouTube tab?</span>
                   <p className="text-zinc-400">
                     <strong className="text-emerald-400">YES.</strong> Using a lightweight Manifest V3 Chrome Extension bridge that routes permitted messages between the web app and the YouTube tab's content script without bypassing browser security.
                   </p>
@@ -2709,12 +2790,12 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <Radio className="w-4 h-4 text-amber-400" />
                 <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider">
-                  RETRO FM CHROME EXTENSION
+                  RETROFM CHROME EXTENSION
                 </h3>
               </div>
               <button
                 onClick={() => setShowExtensionModal(false)}
-                className="text-zinc-400 hover:text-zinc-200 text-lg leading-none"
+                className="text-zinc-400 hover:text-zinc-200 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
@@ -2724,7 +2805,7 @@ export default function App() {
             <div className="flex border-b border-zinc-800 gap-2 pb-1">
               <button
                 onClick={() => setModalTab('GUIDE')}
-                className={`px-3 py-1.5 rounded-t text-xs font-bold transition-colors ${
+                className={`px-3 py-1.5 rounded-t text-xs font-bold transition-colors cursor-pointer ${
                   modalTab === 'GUIDE'
                     ? 'bg-zinc-800 text-amber-400 border-b-2 border-amber-500'
                     : 'text-zinc-400 hover:text-zinc-200'
@@ -2739,7 +2820,7 @@ export default function App() {
                     loadExtensionFiles();
                   }
                 }}
-                className={`px-3 py-1.5 rounded-t text-xs font-bold transition-colors ${
+                className={`px-3 py-1.5 rounded-t text-xs font-bold transition-colors cursor-pointer ${
                   modalTab === 'FILES'
                     ? 'bg-zinc-800 text-amber-400 border-b-2 border-amber-500'
                     : 'text-zinc-400 hover:text-zinc-200'
@@ -2751,29 +2832,69 @@ export default function App() {
 
             {modalTab === 'GUIDE' ? (
               <div className="space-y-4">
-                <ol className="space-y-3 text-zinc-300 list-decimal list-inside leading-relaxed">
-                  <li>
-                    Click <strong className="text-amber-400">Download ZIP Now</strong> below (compliant, cross-platform archive generated with Adm-Zip).
-                  </li>
-                  <li>
-                    Uncompress/unzip <code className="text-zinc-200">retro-fm-extension-v{EXTENSION_VERSION}.zip</code> to a folder on your computer.
-                  </li>
-                  <li>
-                    In Chrome, navigate to <code className="text-amber-300">chrome://extensions/</code>
-                  </li>
-                  <li>
-                    Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
-                  </li>
-                  <li>
-                    Click <strong className="text-zinc-100">Load unpacked</strong> and select the unzipped <code className="text-zinc-200">retro-fm-extension-v{EXTENSION_VERSION}</code> directory (or click the <strong className="text-amber-400">Reload icon ↻</strong> if updating).
-                  </li>
-                  <li>
-                    Click <strong className="text-amber-400">Launch Retro FM</strong> to automatically open YouTube next to Retro FM and group both tabs into an orange <strong>"Retro FM"</strong> Chrome Tab Group!
-                  </li>
-                </ol>
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-black/40 rounded border border-zinc-800">
+                  <span className="text-zinc-300 text-xs">
+                    Chrome blocks web pages from navigating directly to <code className="text-amber-300">chrome://extensions</code>.
+                  </span>
+                  <button
+                    onClick={handleCopyExtensionsUrl}
+                    className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-[11px] border border-zinc-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedExtensionsUrl ? 'Copied chrome://extensions ✓' : 'Copy chrome://extensions'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-2">
+                    <h4 className="font-bold text-amber-400 uppercase tracking-wide text-xs">
+                      First Time Setup
+                    </h4>
+                    <ol className="space-y-2 text-zinc-300 list-decimal list-inside text-xs leading-relaxed">
+                      <li>
+                        Download the extension ZIP below and unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).
+                      </li>
+                      <li>
+                        Open <code className="text-amber-300">chrome://extensions</code> in Google Chrome.
+                      </li>
+                      <li>
+                        Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
+                      </li>
+                      <li>
+                        Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.
+                      </li>
+                      <li>
+                        Return to RetroFM and click <strong className="text-amber-400">Launch RetroFM</strong> to connect!
+                      </li>
+                    </ol>
+                  </div>
+
+                  <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-2">
+                    <h4 className="font-bold text-amber-400 uppercase tracking-wide text-xs">
+                      Updating to New Version
+                    </h4>
+                    <ol className="space-y-2 text-zinc-300 list-decimal list-inside text-xs leading-relaxed">
+                      <li>
+                        Download the updated ZIP package below.
+                      </li>
+                      <li>
+                        Unzip into the <strong className="text-zinc-100">same folder</strong> and replace the existing files.
+                      </li>
+                      <li>
+                        Open <code className="text-amber-300">chrome://extensions</code> in Chrome.
+                      </li>
+                      <li>
+                        Click the reload arrow <strong className="text-amber-400">↻</strong> on the RetroFM card (don’t remove it).
+                      </li>
+                      <li>
+                        Refresh both your RetroFM and YouTube tabs.
+                      </li>
+                    </ol>
+                  </div>
+                </div>
 
                 <div className="p-3 bg-[#0a0c10] border border-zinc-800 rounded text-zinc-400 text-[11px] leading-relaxed">
-                  <strong className="text-zinc-200">Alternative:</strong> If you prefer to create the files manually in a folder without unzipping, click the <strong className="text-amber-400">View / Copy Extension Code</strong> tab above to copy each file's code directly!
+                  <strong className="text-zinc-200">Alternative:</strong> If you prefer to create the files manually in a folder without unzipping, click the <strong className="text-amber-400">View / Copy Extension Code</strong> tab above to view and copy each file's code directly!
                 </div>
               </div>
             ) : (
@@ -2784,7 +2905,7 @@ export default function App() {
                     <button
                       key={fileName}
                       onClick={() => setActiveFileKey(fileName)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+                      className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors cursor-pointer ${
                         activeFileKey === fileName
                           ? 'bg-amber-500 text-black font-bold'
                           : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
@@ -2795,20 +2916,27 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Code display with Copy button */}
+                {/* Code / Image display with Copy button */}
                 <div className="relative">
                   <div className="flex justify-between items-center bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-t text-[11px] text-zinc-400">
                     <span>File: <strong className="text-zinc-200">{activeFileKey}</strong></span>
                     <button
                       onClick={() => handleCopyFileContent(activeFileKey, extensionFiles[activeFileKey] || '')}
-                      className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold text-[11px] border border-zinc-700 flex items-center gap-1 transition-colors"
+                      className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold text-[11px] border border-zinc-700 flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       {copiedFileKey === activeFileKey ? 'Copied to Clipboard!' : 'Copy Code'}
                     </button>
                   </div>
-                  <pre className="max-h-56 overflow-y-auto bg-[#08090d] border border-t-0 border-zinc-800 p-3 rounded-b text-[11px] text-zinc-300 font-mono leading-relaxed select-all">
-                    {extensionFiles[activeFileKey] || 'Loading file content...'}
-                  </pre>
+                  {activeFileKey.endsWith('.png') || (extensionFiles[activeFileKey] && extensionFiles[activeFileKey].startsWith('data:image/png;base64,')) ? (
+                    <div className="p-6 flex flex-col items-center justify-center bg-[#08090d] border border-t-0 border-zinc-800 rounded-b space-y-2">
+                      <img src={extensionFiles[activeFileKey]} alt={activeFileKey} className="max-h-36 max-w-full object-contain shadow" />
+                      <span className="text-zinc-500 font-mono text-[11px]">Binary PNG Image ({activeFileKey})</span>
+                    </div>
+                  ) : (
+                    <pre className="max-h-56 overflow-y-auto bg-[#08090d] border border-t-0 border-zinc-800 p-3 rounded-b text-[11px] text-zinc-300 font-mono leading-relaxed select-all">
+                      {extensionFiles[activeFileKey] || 'Loading file content...'}
+                    </pre>
+                  )}
                 </div>
               </div>
             )}

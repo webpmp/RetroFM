@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import JSZip from 'jszip';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,25 +33,29 @@ if (isBump) {
   console.log(`Synchronizing extension bundle for version: ${newVersion}`);
 }
 
-// Read all extension files
+// Read all extension files recursively
 const extensionDir = path.join(rootDir, 'extension');
-const fileNames = [
-  'manifest.json',
-  'background.js',
-  'content_retrofm.js',
-  'content_youtube.js',
-  'popup.html',
-  'README.md',
-  'LICENSE'
-];
-
 const filesRecord: Record<string, string> = {};
-for (const name of fileNames) {
-  const filePath = path.join(extensionDir, name);
-  if (fs.existsSync(filePath)) {
-    filesRecord[name] = fs.readFileSync(filePath, 'utf8');
+
+function scanDirectory(dir: string, baseDir: string) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+    if (entry.isDirectory()) {
+      scanDirectory(fullPath, baseDir);
+    } else if (entry.isFile()) {
+      if (entry.name.endsWith('.png')) {
+        const buf = fs.readFileSync(fullPath);
+        filesRecord[relPath] = `data:image/png;base64,${buf.toString('base64')}`;
+      } else {
+        filesRecord[relPath] = fs.readFileSync(fullPath, 'utf8');
+      }
+    }
   }
 }
+
+scanDirectory(extensionDir, extensionDir);
 
 // Generate src/services/extensionBundle.ts
 const bundleCode = `// Generated automatically from extension/ directory.
@@ -65,15 +70,24 @@ export const EXTENSION_FILES: Record<string, string> = ${JSON.stringify(filesRec
 
 export async function generateAndDownloadExtensionZip(): Promise<void> {
   const zip = new JSZip();
-  const folderName = \`retro-fm-extension-v\${EXTENSION_VERSION}\`;
+  const folderName = 'retrofm-extension';
   const folder = zip.folder(folderName) || zip;
 
   const now = new Date();
   for (const [filename, content] of Object.entries(EXTENSION_FILES)) {
-    folder.file(filename, content, {
-      date: now,
-      unixPermissions: '644',
-    });
+    if (filename.endsWith('.png') || content.startsWith('data:image/png;base64,')) {
+      const b64 = content.replace(/^data:image\\/png;base64,/, '');
+      folder.file(filename, b64, {
+        base64: true,
+        date: now,
+        unixPermissions: '644',
+      });
+    } else {
+      folder.file(filename, content, {
+        date: now,
+        unixPermissions: '644',
+      });
+    }
   }
 
   const blob = await zip.generateAsync({
@@ -86,7 +100,7 @@ export async function generateAndDownloadExtensionZip(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = \`retro-fm-extension-v\${EXTENSION_VERSION}.zip\`;
+  anchor.download = \`retrofm-extension-v\${EXTENSION_VERSION}.zip\`;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
@@ -99,3 +113,45 @@ export async function generateAndDownloadExtensionZip(): Promise<void> {
 
 fs.writeFileSync(bundlePath, bundleCode, 'utf8');
 console.log(`Successfully generated ${bundlePath}`);
+
+// Verify zip output and verify PNG sizes
+async function verifyZip() {
+  const zip = new JSZip();
+  const folderName = 'retrofm-extension';
+  const folder = zip.folder(folderName) || zip;
+  for (const [filename, content] of Object.entries(filesRecord)) {
+    if (filename.endsWith('.png') || content.startsWith('data:image/png;base64,')) {
+      const b64 = content.replace(/^data:image\/png;base64,/, '');
+      folder.file(filename, b64, { base64: true });
+    } else {
+      folder.file(filename, content);
+    }
+  }
+
+  const zipBuf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const reloaded = await JSZip.loadAsync(zipBuf);
+
+  console.log('\\n--- Exported Zip File Manifest ---');
+  let hasZeroBytePng = false;
+  for (const [entryPath, entry] of Object.entries(reloaded.files)) {
+    if (!entry.dir) {
+      const entryBuf = await entry.async('nodebuffer');
+      console.log(`  ${entryPath}: ${entryBuf.length} bytes`);
+      if (entryPath.endsWith('.png') && entryBuf.length === 0) {
+        hasZeroBytePng = true;
+      }
+    }
+  }
+
+  if (hasZeroBytePng) {
+    console.error('ERROR: Detected 0-byte PNG file in generated ZIP archive!');
+    process.exit(1);
+  } else {
+    console.log('Verification: All PNGs verified non-zero bytes in exported ZIP bundle.\\n');
+  }
+}
+
+verifyZip().catch((err) => {
+  console.error('Error during zip verification:', err);
+  process.exit(1);
+});

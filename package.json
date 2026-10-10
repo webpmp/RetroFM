@@ -1,5 +1,6 @@
 {
-  "name": "react-example",
+  "name": "retrofm",
+  "description": "RetroFM: AI-powered historical radio simulator and broadcast mixer",
   "private": true,
   "version": "0.0.0",
   "type": "module",

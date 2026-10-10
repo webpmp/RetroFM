@@ -23,7 +23,7 @@ export type VolumeChangeListener = (
 
 /**
  * VolumeController
- * Single authority controlling all YouTube volume changes in Retro FM.
+ * Single authority controlling all YouTube volume changes in RetroFM.
  * 
  * Rules:
  * 1. Tracks userVolume (normal level, set only by master slider or user action),
