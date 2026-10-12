@@ -1,6 +1,7 @@
 export interface TTSGenerateRequest {
   text: string;
-  voice?: string; // 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr'
+  engine?: 'GEMINI' | 'KOKORO' | 'BROWSER';
+  voice?: string; // 'Puck' | 'Charon' | etc. for Gemini, or 'am_michael' | 'bm_george' etc. for Kokoro
   style?: string; // Voice acting / radio delivery prompt
   model?: string;
 }

@@ -39,7 +39,7 @@ import {
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { VolumeController } from './services/audio/VolumeController.js';
 import { MusicPlaybackStatus, TabInfo } from './services/music/types.js';
-import { generateTTS } from './services/ttsClient.js';
+import { generateTTS, fetchKokoroStatus, KokoroVoice } from './services/ttsClient.js';
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
@@ -169,11 +169,42 @@ export default function App() {
   });
 
   // --- DJ Script & TTS State ---
-  const [voiceEngine, setVoiceEngine] = useState<'GEMINI' | 'BROWSER'>('BROWSER');
+  const [voiceEngine, setVoiceEngine] = useState<'GEMINI' | 'KOKORO' | 'BROWSER'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_voice_engine');
+      if (saved === 'GEMINI' || saved === 'KOKORO' || saved === 'BROWSER') return saved;
+    }
+    return 'BROWSER';
+  });
   const [djScript, setDjScript] = useState<string>(SCRIPT_PRESETS[0].text);
   const [djStyle, setDjStyle] = useState<string>(SCRIPT_PRESETS[0].style);
-  const [selectedVoice, setSelectedVoice] = useState<string>('Puck');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash-preview-tts');
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_gemini_voice') || 'Puck';
+    }
+    return 'Puck';
+  });
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_gemini_model') || 'gemini-2.5-flash-preview-tts';
+    }
+    return 'gemini-2.5-flash-preview-tts';
+  });
+  const [selectedKokoroVoice, setSelectedKokoroVoice] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_kokoro_voice') || 'am_michael';
+    }
+    return 'am_michael';
+  });
+  const [kokoroVoices, setKokoroVoices] = useState<KokoroVoice[]>([
+    { id: 'am_michael', name: 'Michael (American Male - DJ/Host)' },
+    { id: 'bm_george', name: 'George (British Male - BBC Host)' },
+    { id: 'af_bella', name: 'Bella (American Female)' },
+    { id: 'af_sarah', name: 'Sarah (American Female)' },
+    { id: 'bf_emma', name: 'Emma (British Female)' },
+    { id: 'bf_isabella', name: 'Isabella (British Female)' },
+  ]);
+  const [isKokoroAvailable, setIsKokoroAvailable] = useState<boolean | null>(null);
   const [isGeneratingDJ, setIsGeneratingDJ] = useState<boolean>(false);
   const [djAudioData, setDjAudioData] = useState<string | null>(null);
   const [djAudioDuration, setDjAudioDuration] = useState<number>(0);
@@ -298,10 +329,49 @@ export default function App() {
       })
       .catch(() => setHasYouTubeApiKey(false));
 
+    // Check Kokoro service availability and load supported voices
+    fetchKokoroStatus()
+      .then((status) => {
+        setIsKokoroAvailable(status.isAvailable);
+        if (status.voices && status.voices.length > 0) {
+          setKokoroVoices(status.voices);
+          // If current selection is invalid, reset to default
+          if (!status.voices.some((v) => v.id === selectedKokoroVoice)) {
+            setSelectedKokoroVoice(status.defaultVoice || status.voices[0].id);
+          }
+        }
+      })
+      .catch(() => setIsKokoroAvailable(false));
+
     return () => {
       killAllAudio();
     };
   }, []);
+
+  // Sync Voice Engine and selections to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_voice_engine', voiceEngine);
+    } catch {}
+  }, [voiceEngine]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_kokoro_voice', selectedKokoroVoice);
+    } catch {}
+  }, [selectedKokoroVoice]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_gemini_voice', selectedVoice);
+    } catch {}
+  }, [selectedVoice]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_gemini_model', selectedModel);
+    } catch {}
+  }, [selectedModel]);
 
   // --- Extension Heartbeat / Detection Loop ---
   useEffect(() => {
@@ -735,7 +805,7 @@ export default function App() {
     logMessage('🛑 All audio immediately stopped and silenced.');
   };
 
-  // --- Generate DJ Audio using Gemini Flash TTS ---
+  // --- Generate DJ Audio using Gemini Flash TTS or Kokoro TTS ---
   const handleGenerateDJ = async (textOverride?: string): Promise<string | null> => {
     const textToSynthesize = textOverride || djScript;
     if (!textToSynthesize.trim()) {
@@ -745,15 +815,20 @@ export default function App() {
 
     setIsGeneratingDJ(true);
     setDjError(null);
-    logMessage(`Generating DJ voice using Gemini TTS (${selectedModel}, voice: ${selectedVoice})...`);
+
+    const isKokoro = voiceEngine === 'KOKORO';
+    const voiceToUse = isKokoro ? selectedKokoroVoice : selectedVoice;
+    const engineLabel = isKokoro ? 'Kokoro TTS (Local)' : 'Gemini Flash TTS';
+    logMessage(`Generating DJ voice using ${engineLabel} (voice: ${voiceToUse})...`);
 
     const startTime = performance.now();
     try {
       const response = await generateTTS({
         text: textToSynthesize,
-        voice: selectedVoice,
+        engine: voiceEngine,
+        voice: voiceToUse,
         style: djStyle,
-        model: selectedModel
+        model: isKokoro ? 'Kokoro-82M-bf16' : selectedModel
       });
 
       const latencyMs = Math.round(performance.now() - startTime);
@@ -762,29 +837,30 @@ export default function App() {
         const audioSrc = `data:${response.mimeType || 'audio/wav'};base64,${response.audioBase64}`;
         setDjAudioData(audioSrc);
         setDjAudioDuration(response.durationSeconds || 4);
-        setDjModelUsed(response.modelUsed || selectedModel);
+        setDjModelUsed(response.modelUsed || (isKokoro ? 'Kokoro-82M-bf16' : selectedModel));
         setTestResults((prev) => ({
           ...prev,
           geminiTTS: true
         }));
-        logMessage(`Gemini Flash TTS audio generated in ${latencyMs}ms (${response.durationSeconds || '~4'}s audio). Ready.`);
+        logMessage(`${engineLabel} audio generated in ${latencyMs}ms (${response.durationSeconds || '~4'}s audio). Ready.`);
         return audioSrc;
       } else {
-        if (response.quotaExceeded) {
+        if (!isKokoro && response.quotaExceeded) {
           setVoiceEngine('BROWSER');
           setDjError('Google Cloud Free Tier TTS quota reached (10 requests/day). Auto-switched to Instant Browser Voice for unlimited speech!');
           logMessage('Quota reached. Auto-switched to Instant Browser DJ Voice Engine.');
         } else {
-          setDjError(response.error || 'TTS generation failed');
-          logMessage(`TTS Error: ${response.error}`);
+          setDjError(response.error || `${engineLabel} generation failed`);
+          logMessage(`${engineLabel} Error: ${response.error}`);
         }
         setTestResults((prev) => ({ ...prev, geminiTTS: false }));
         return null;
       }
     } catch (err: any) {
-      setDjError(err.message || 'Network error requesting Gemini TTS');
+      const msg = err.message || `Network error requesting ${engineLabel}`;
+      setDjError(msg);
       setTestResults((prev) => ({ ...prev, geminiTTS: false }));
-      logMessage(`Network error requesting Gemini TTS: ${err.message}`);
+      logMessage(`Network error requesting ${engineLabel}: ${msg}`);
       return null;
     } finally {
       setIsGeneratingDJ(false);
@@ -834,10 +910,11 @@ export default function App() {
       logMessage('DJ preview stopped.');
     } else {
       djAudioRef.current.src = djAudioData;
+      const engineName = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
       djAudioRef.current.play().then(() => {
         setIsPlayingDJPreview(true);
         setTestResults((prev) => ({ ...prev, geminiPlayback: true }));
-        logMessage('Playing generated Gemini DJ speech preview.');
+        logMessage(`Playing generated ${engineName} DJ speech preview.`);
       }).catch((e) => {
         logMessage('DJ preview playback error: ' + e.message);
       });
@@ -875,12 +952,13 @@ export default function App() {
     const textToSpeak = scriptOverride || djScript;
     let activeAudioSrc = djAudioData;
 
-    if (voiceEngine === 'GEMINI') {
+    if (voiceEngine === 'GEMINI' || voiceEngine === 'KOKORO') {
       if (!activeAudioSrc || scriptOverride) {
-        logMessage('DJ audio not yet generated for current script. Generating Gemini voice now...');
+        const engineLabel = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
+        logMessage(`DJ audio not yet generated for current script. Generating ${engineLabel} voice now...`);
         activeAudioSrc = await handleGenerateDJ(textToSpeak);
         if (!activeAudioSrc) {
-          logMessage('Cannot run DJ Over Music: Gemini voice generation failed. Try switching to Instant Browser Voice.');
+          logMessage(`Cannot run DJ Over Music: ${engineLabel} voice generation failed.`);
           return false;
         }
       }
@@ -1002,7 +1080,8 @@ export default function App() {
         }
       });
     } else {
-      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting Gemini DJ voice over music!`);
+      const engineLabel = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
+      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting ${engineLabel} DJ voice over music!`);
       return new Promise<boolean>((resolve) => {
         const durationMs = Math.max(2500, Math.round((djAudioDuration || 5) * 1000));
         // Rule: Safety restore within estimated speech time PLUS 3 seconds
@@ -1020,7 +1099,7 @@ export default function App() {
         djAudioRef.current = djAudio;
 
         djAudio.play().then(() => {
-          logMessage('▶ Step 4: Simultaneous playback confirmed: Gemini DJ voice speaking over ducked music.');
+          logMessage(`▶ Step 4: Simultaneous playback confirmed: ${engineLabel} DJ voice speaking over ducked music.`);
           setTestResults((prev) => ({
             ...prev,
             geminiPlayback: true,
@@ -1045,8 +1124,9 @@ export default function App() {
       return;
     }
 
-    if (voiceEngine === 'GEMINI' && !djAudioData) {
-      logMessage('Synthesizing Gemini audio before running the timing test...');
+    if ((voiceEngine === 'GEMINI' || voiceEngine === 'KOKORO') && !djAudioData) {
+      const engineLabel = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
+      logMessage(`Synthesizing ${engineLabel} audio before running the timing test...`);
       const genSrc = await handleGenerateDJ();
       if (!genSrc) return;
     }
@@ -1771,12 +1851,16 @@ export default function App() {
                     ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                     : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
                 }`}>
-                  {voiceEngine === 'BROWSER' ? 'ENGINE: BROWSER SPEECH (INSTANT)' : `GEMINI AUDIO: ${djAudioData ? 'READY' : 'NOT READY'}`}
+                  {voiceEngine === 'BROWSER'
+                    ? 'ENGINE: BROWSER SPEECH (INSTANT)'
+                    : voiceEngine === 'KOKORO'
+                    ? `KOKORO AUDIO: ${djAudioData ? 'READY' : 'NOT READY'}`
+                    : `GEMINI AUDIO: ${djAudioData ? 'READY' : 'NOT READY'}`}
                 </span>
               </div>
 
               {/* Voice Engine Tabs */}
-              <div className="flex bg-[#0a0c10] border border-zinc-800 p-1 rounded gap-1">
+              <div className="flex flex-col sm:flex-row bg-[#0a0c10] border border-zinc-800 p-1 rounded gap-1">
                 <button
                   onClick={() => setVoiceEngine('GEMINI')}
                   className={`flex-1 py-1.5 px-3 rounded text-xs font-mono font-bold transition-colors ${
@@ -1786,6 +1870,22 @@ export default function App() {
                   }`}
                 >
                   ⚡ Gemini Cloud AI Voice
+                </button>
+                <button
+                  onClick={() => setVoiceEngine('KOKORO')}
+                  className={`flex-1 py-1.5 px-3 rounded text-xs font-mono font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                    voiceEngine === 'KOKORO'
+                      ? 'bg-amber-500 text-black shadow'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <span>🎧 Kokoro TTS (Local)</span>
+                  {isKokoroAvailable === true && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" title="Kokoro service online" />
+                  )}
+                  {isKokoroAvailable === false && (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" title="Kokoro service unreachable" />
+                  )}
                 </button>
                 <button
                   onClick={() => setVoiceEngine('BROWSER')}
@@ -1915,6 +2015,81 @@ export default function App() {
                       <span className="text-[11px] text-zinc-500">24kHz 16-bit mono WAV</span>
                     </div>
                   )}
+                </>
+              ) : voiceEngine === 'KOKORO' ? (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-mono text-zinc-400">
+                          Kokoro Voice:
+                        </label>
+                        <span className="text-[11px] font-mono text-zinc-400">
+                          Model: MLX Kokoro-82M (Local)
+                        </span>
+                      </div>
+                      <select
+                        value={selectedKokoroVoice}
+                        onChange={(e) => {
+                          setSelectedKokoroVoice(e.target.value);
+                          setDjAudioData(null);
+                        }}
+                        className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-1.5 text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-500"
+                      >
+                        {kokoroVoices.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {isKokoroAvailable === false && (
+                      <div className="p-2.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs font-mono flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>Kokoro local service not detected at 127.0.0.1:8880. Ensure your local Kokoro service is running.</span>
+                      </div>
+                    )}
+
+                    {/* Generate & Preview Buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleGenerateDJ()}
+                        disabled={isGeneratingDJ}
+                        className="flex-1 py-2.5 px-4 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-bold text-xs uppercase tracking-wider transition-colors shadow flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${isGeneratingDJ ? 'animate-spin' : ''}`} />
+                        <span>{isGeneratingDJ ? 'Synthesizing with Kokoro...' : 'Generate DJ Voice'}</span>
+                      </button>
+
+                      {djAudioData && (
+                        <button
+                          onClick={handleToggleDJPreview}
+                          className="px-4 py-2.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono font-bold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {isPlayingDJPreview ? <Square className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+                          <span>{isPlayingDJPreview ? 'Stop Preview' : 'Solo Preview'}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {djError && (
+                      <div className="p-2.5 rounded bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs font-mono flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>{djError}</span>
+                      </div>
+                    )}
+
+                    {djAudioData && (
+                      <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex items-center justify-between text-xs font-mono text-zinc-400">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Duration: ~{djAudioDuration}s | Voice: {selectedKokoroVoice}</span>
+                        </div>
+                        <span className="text-[11px] text-zinc-500">24kHz 16-bit mono WAV</span>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="space-y-3">

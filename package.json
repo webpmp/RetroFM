@@ -13,6 +13,7 @@
     "test:music": "tsx scripts/test-music-search.ts",
     "bump-extension": "tsx scripts/bump-extension.ts --bump",
     "sync-extension": "tsx scripts/bump-extension.ts",
+    "test:kokoro": "tsx scripts/test-kokoro.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

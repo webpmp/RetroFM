@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GeminiTTSProvider } from './src/services/tts/GeminiTTSProvider.js';
+import { KokoroTTSProvider } from './src/services/tts/KokoroTTSProvider.js';
 import { createZipFromDirectory } from './src/server/zipUtil.js';
 import {
   searchYouTubeForSong,
@@ -34,20 +35,36 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Instantiate TTS Provider
-  const ttsProvider = new GeminiTTSProvider();
+  // Instantiate TTS Providers
+  const geminiTtsProvider = new GeminiTTSProvider();
+  const kokoroTtsProvider = new KokoroTTSProvider();
 
-  // API Route: Generate Gemini Flash TTS DJ speech
+  // API Route: Get Kokoro status and supported voices
+  app.get('/api/tts/kokoro/status', async (_req, res) => {
+    try {
+      const status = await kokoroTtsProvider.getServiceInfo();
+      return res.json(status);
+    } catch (err: any) {
+      return res.status(500).json({
+        isAvailable: false,
+        error: err?.message || 'Failed to query Kokoro service status',
+      });
+    }
+  });
+
+  // API Route: Generate TTS DJ speech (Gemini or Kokoro)
   app.post('/api/tts/generate', async (req, res) => {
     try {
-      const { text, voice, style, model } = req.body;
+      const { text, engine, voice, style, model } = req.body;
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ success: false, error: 'A script text is required.' });
       }
 
-      console.log(`[API /api/tts/generate] Received request for text: "${text.substring(0, 40)}..."`);
-      const result = await ttsProvider.generate({ text, voice, style, model });
+      console.log(`[API /api/tts/generate] Received request (engine: ${engine || 'GEMINI'}) for text: "${text.substring(0, 40)}..."`);
+
+      const provider = (engine === 'KOKORO') ? kokoroTtsProvider : geminiTtsProvider;
+      const result = await provider.generate({ text, engine, voice, style, model });
 
       return res.json({
         success: true,
@@ -71,7 +88,7 @@ async function startServer() {
       console.error('[API /api/tts/generate] Error:', err);
       return res.status(500).json({
         success: false,
-        error: err?.message || 'Failed to generate speech with Gemini TTS',
+        error: err?.message || 'Failed to generate speech with TTS engine',
       });
     }
   });
