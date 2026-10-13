@@ -8,3 +8,7 @@ coverage/
 .env*
 !.env.example
 cache/
+.dockerignore
+AGENTS.md
+Dockerfile
+docker-compose.yml
