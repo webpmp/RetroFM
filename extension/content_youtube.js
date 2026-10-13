@@ -7,6 +7,7 @@ if (!window.__retroFmContentLoaded) {
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
+  const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
 
   let rampInterval = null;
   let activeRampId = null;
@@ -101,6 +102,16 @@ if (!window.__retroFmContentLoaded) {
     latestPlayerVolume = clampedPercent;
   }
 
+  function sendPlayerCommandToMainWorld(command, payload = {}) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(EVENT_PLAYER_COMMAND, {
+          detail: JSON.stringify({ command, payload })
+        })
+      );
+    } catch (e) {}
+  }
+
   function smoothRampVolume(targetVolume, durationMs, rampId) {
     // Cancel any existing ramp interval
     if (rampInterval) {
@@ -188,9 +199,17 @@ if (!window.__retroFmContentLoaded) {
   ensureVolumeListener();
   ensureVolumeInterval = setInterval(ensureVolumeListener, 2000);
 
+  let activePlayCleanup = null;
+
   // Listen for messages from background service worker
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const video = getVideoElement();
+
+    // If an action arrives (e.g. PAUSE, STOP, or another PLAY), cancel any pending play polling
+    if (activePlayCleanup && (message.action === 'PLAY' || message.action === 'PAUSE' || message.action === 'STOP')) {
+      activePlayCleanup();
+      activePlayCleanup = null;
+    }
 
     switch (message.action) {
       case 'GET_STATUS': {
@@ -198,43 +217,168 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'PLAY': {
-        if (video) {
-          // If a target volume is pending confirmation, give it a moment to apply before starting playback
-          const startPlay = () => {
-            return video.play().then(() => {
-              sendResponse({ success: true, status: getPlaybackStatus() });
-            }).catch((err) => {
-              sendResponse({ success: false, error: err.message });
-            });
-          };
-
-          startPlay();
-          return true;
+        if (!video) {
+          sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
+          break;
         }
-        sendResponse({ success: false, error: 'Video element not found' });
-        break;
+
+        // If already actively playing, confirm immediately
+        if (!video.paused && !video.ended && (video.readyState >= 3 || video.currentTime > 0)) {
+          sendResponse({ success: true, state: 'already_playing', status: getPlaybackStatus() });
+          break;
+        }
+
+        // Bridge to YouTube movie_player in the main world to activate player lifecycle
+        sendPlayerCommandToMainWorld('PLAY');
+
+        const initialTime = video.currentTime;
+        let playPromise;
+        try {
+          playPromise = video.play();
+        } catch (err) {
+          sendResponse({
+            success: false,
+            state: 'play_threw',
+            error: err.message,
+            status: getPlaybackStatus()
+          });
+          break;
+        }
+
+        if (!playPromise || typeof playPromise.then !== 'function') {
+          const isPlaying = !video.paused && !video.ended;
+          sendResponse({
+            success: isPlaying,
+            state: isPlaying ? 'playing' : 'failed',
+            status: getPlaybackStatus()
+          });
+          break;
+        }
+
+        let responded = false;
+        let pollTimer = null;
+        let safetyTimeout = null;
+
+        const cleanup = () => {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          if (safetyTimeout) { clearTimeout(safetyTimeout); safetyTimeout = null; }
+          video.removeEventListener('playing', onPlaying);
+          video.removeEventListener('timeupdate', onTimeUpdate);
+          if (activePlayCleanup === cleanup) {
+            activePlayCleanup = null;
+          }
+        };
+        activePlayCleanup = cleanup;
+
+        const finish = (success, state, diagnostic) => {
+          if (responded) return;
+          responded = true;
+          cleanup();
+          const currentStatus = getPlaybackStatus();
+          sendResponse({
+            success,
+            state,
+            error: success ? undefined : diagnostic,
+            status: currentStatus
+          });
+        };
+
+        const onPlaying = () => {
+          finish(true, 'playing');
+        };
+
+        const onTimeUpdate = () => {
+          if (!video.paused && (video.currentTime > initialTime || video.currentTime > 0)) {
+            finish(true, 'playing');
+          }
+        };
+
+        video.addEventListener('playing', onPlaying, { once: true });
+        video.addEventListener('timeupdate', onTimeUpdate);
+
+        playPromise.then(() => {
+          // Play request accepted by browser. Verify playback actually starts within bounded window
+          if (!video.paused && (video.readyState >= 3 || video.currentTime > initialTime)) {
+            finish(true, 'playing');
+            return;
+          }
+
+          const startTime = performance.now();
+          pollTimer = setInterval(() => {
+            if (responded) return;
+            if (!video.paused && (video.readyState >= 3 || video.currentTime > initialTime)) {
+              finish(true, 'playing');
+              return;
+            }
+            if (video.paused) {
+              finish(false, 'paused', 'Video remained paused after play request');
+              return;
+            }
+            if (performance.now() - startTime >= 1500) {
+              if (!video.paused) {
+                // Not paused, buffering or transitioning
+                finish(true, 'buffering_active');
+              } else {
+                finish(false, 'timeout', 'Playback verification timed out');
+              }
+            }
+          }, 100);
+        }).catch((err) => {
+          finish(false, 'rejected', `${err.name}: ${err.message}`);
+        });
+
+        safetyTimeout = setTimeout(() => {
+          if (!responded) {
+            const isPlaying = !video.paused && !video.ended && (video.readyState >= 3 || video.currentTime > initialTime);
+            finish(isPlaying, isPlaying ? 'playing' : (video.paused ? 'paused' : 'timeout'), isPlaying ? undefined : 'Playback request timed out before confirmation');
+          }
+        }, 2000);
+
+        return true; // Keep channel open for async response
       }
       case 'PAUSE': {
-        if (video) {
-          video.pause();
-          sendResponse({ success: true, status: getPlaybackStatus() });
-        } else {
-          sendResponse({ success: false, error: 'Video element not found' });
+        if (!video) {
+          sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
+          break;
         }
+        sendPlayerCommandToMainWorld('PAUSE');
+        video.pause();
+        const isPaused = video.paused;
+        const status = getPlaybackStatus();
+        sendResponse({
+          success: isPaused,
+          state: 'paused',
+          status: {
+            ...status,
+            isPlaying: false
+          }
+        });
         break;
       }
       case 'STOP': {
-        if (video) {
-          video.pause();
-          video.currentTime = 0;
-          sendResponse({ success: true, status: getPlaybackStatus() });
-        } else {
-          sendResponse({ success: false, error: 'Video element not found' });
+        if (!video) {
+          sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
+          break;
         }
+        sendPlayerCommandToMainWorld('STOP');
+        video.pause();
+        video.currentTime = 0;
+        const isPaused = video.paused;
+        const status = getPlaybackStatus();
+        sendResponse({
+          success: isPaused,
+          state: 'stopped',
+          status: {
+            ...status,
+            isPlaying: false,
+            currentTime: 0
+          }
+        });
         break;
       }
       case 'SEEK': {
         if (video && typeof message.time === 'number') {
+          sendPlayerCommandToMainWorld('SEEK', { time: message.time });
           video.currentTime = message.time;
           sendResponse({ success: true, status: getPlaybackStatus() });
         } else {

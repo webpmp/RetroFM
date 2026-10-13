@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "test:music": "tsx scripts/test-music-search.ts",
+    "test:boombox": "tsx scripts/test-boombox-integration.ts",
     "bump-extension": "tsx scripts/bump-extension.ts --bump",
     "sync-extension": "tsx scripts/bump-extension.ts",
     "test:kokoro": "tsx scripts/test-kokoro.ts",

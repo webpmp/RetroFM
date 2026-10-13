@@ -7,6 +7,7 @@
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
+  const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
   const STORAGE_KEY_SAVED_VOLUME = 'retrofm_saved_master_volume';
 
   // Restore remembered master volume from localStorage if available
@@ -134,7 +135,123 @@
     }
   });
 
-  // Also support window.postMessage for redundancy
+  let pendingPlayerCommand = null;
+  let playerCommandSeq = 0;
+  let playerReadyWaitTimer = null;
+
+  function isPlayerReady(player) {
+    if (!player) player = getPlayer();
+    return !!(player && typeof player.playVideo === 'function' && typeof player.pauseVideo === 'function');
+  }
+
+  function flushPendingPlayerCommand(reason = 'playerReady') {
+    if (!pendingPlayerCommand) return;
+    if (isPlayerReady()) {
+      const { command, payload, seq } = pendingPlayerCommand;
+      pendingPlayerCommand = null;
+      if (playerReadyWaitTimer) {
+        clearTimeout(playerReadyWaitTimer);
+        playerReadyWaitTimer = null;
+      }
+      console.log(`[RetroFM MainWorld] [${new Date().toISOString()}] Flushing pending player command #${seq}: ${command} (reason=${reason})`);
+      executePlayerCommandDirect(command, payload);
+    }
+  }
+
+  function executePlayerCommandDirect(cmd, payload) {
+    const player = getPlayer();
+    if (!player) return false;
+
+    if (cmd === 'PLAY') {
+      try {
+        if (typeof player.playVideo === 'function') {
+          player.playVideo();
+        }
+      } catch (e) {
+        console.warn('[RetroFM MainWorld] player.playVideo threw:', e);
+      }
+      return true;
+    } else if (cmd === 'PAUSE') {
+      try {
+        if (typeof player.pauseVideo === 'function') {
+          player.pauseVideo();
+        }
+      } catch (e) {
+        console.warn('[RetroFM MainWorld] player.pauseVideo threw:', e);
+      }
+      return true;
+    } else if (cmd === 'STOP') {
+      try {
+        if (typeof player.pauseVideo === 'function') {
+          player.pauseVideo();
+        }
+        if (typeof player.seekTo === 'function') {
+          player.seekTo(0, true);
+        }
+      } catch (e) {
+        console.warn('[RetroFM MainWorld] player STOP threw:', e);
+      }
+      return true;
+    } else if (cmd === 'SEEK') {
+      const time = typeof payload?.time === 'number' ? payload.time : (typeof payload === 'number' ? payload : 0);
+      try {
+        if (typeof player.seekTo === 'function') {
+          player.seekTo(time, true);
+        }
+      } catch (e) {
+        console.warn('[RetroFM MainWorld] player.seekTo threw:', e);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function executePlayerCommand(command, payload) {
+    const cmd = (command || '').toUpperCase();
+    const seq = ++playerCommandSeq;
+    console.log(`[RetroFM MainWorld] [${new Date().toISOString()}] Received player command #${seq}: ${cmd}`, payload || '');
+
+    if (isPlayerReady()) {
+      pendingPlayerCommand = null;
+      if (playerReadyWaitTimer) {
+        clearTimeout(playerReadyWaitTimer);
+        playerReadyWaitTimer = null;
+      }
+      executePlayerCommandDirect(cmd, payload);
+      return;
+    }
+
+    // Player not ready yet - queue command so newer commands supersede older ones
+    console.log(`[RetroFM MainWorld] [${new Date().toISOString()}] Player not ready for command #${seq} (${cmd}). Queueing pending command.`);
+    pendingPlayerCommand = { command: cmd, payload, seq };
+
+    if (!playerReadyWaitTimer) {
+      playerReadyWaitTimer = setTimeout(() => {
+        playerReadyWaitTimer = null;
+        if (pendingPlayerCommand && pendingPlayerCommand.seq === seq) {
+          console.warn(`[RetroFM MainWorld] Player readiness timed out for command #${seq} (${pendingPlayerCommand.command}). Dropping command.`);
+          pendingPlayerCommand = null;
+        }
+      }, 5000);
+    }
+  }
+
+  // Listen for playback commands via CustomEvent ONLY (single mechanism to avoid duplicate execution)
+  window.addEventListener(EVENT_PLAYER_COMMAND, (event) => {
+    try {
+      let data = event.detail;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch (e) { data = { command: data }; }
+      }
+      if (data && data.command) {
+        executePlayerCommand(data.command, data.payload);
+      }
+    } catch (err) {
+      console.warn('[RetroFM MainWorld] Error processing player command event:', err);
+    }
+  });
+
+  // Support window.postMessage strictly for VOLUME commands and status queries
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data) return;
     if (event.data.type === 'RETROFM_SET_VOLUME_MSG') {
@@ -209,6 +326,7 @@
     if (queuedVolume !== null) {
       applyVolume(queuedVolume, 'yt-player-updated');
     }
+    flushPendingPlayerCommand('yt-player-updated');
   });
 
   // Poll for player existence on initialization
@@ -222,6 +340,7 @@
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'playerReady');
       }
+      flushPendingPlayerCommand('checkPlayerInterval');
       broadcastStatus();
 
       const video = player.querySelector('video') || document.querySelector('video');
@@ -238,6 +357,7 @@
       checkPlayerInterval = setInterval(() => {
         const player = getPlayer();
         if (player) {
+          flushPendingPlayerCommand('intervalHeartbeat');
           const video = player.querySelector('video') || document.querySelector('video');
           if (video && !video.__retroFmListenersAttached) {
             attachMediaListeners(video);

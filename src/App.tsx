@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Radio,
   Play,
@@ -160,6 +160,8 @@ export default function App() {
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [isLaunchingGroup, setIsLaunchingGroup] = useState<boolean>(false);
+  const [isOpeningBoomBox, setIsOpeningBoomBox] = useState<boolean>(false);
+  const hasAutoOpenedBoomBoxRef = useRef<boolean>(false);
   const [launchMessage, setLaunchMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
@@ -468,6 +470,12 @@ export default function App() {
         } catch (e) {
           // Tabs query might require permissions or extension reload
         }
+
+        // Auto-open or focus Boom Box player tab on initial load
+        if (!hasAutoOpenedBoomBoxRef.current) {
+          hasAutoOpenedBoomBoxRef.current = true;
+          musicProviderRef.current.openBoomBox().catch(() => {});
+        }
       }
     };
 
@@ -476,6 +484,164 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // --- Open Boom Box Player Tab Handler ---
+  const handleOpenBoomBox = async () => {
+    setIsOpeningBoomBox(true);
+    logMessage('Opening or focusing Boom Box player tab...');
+    try {
+      const res = await musicProviderRef.current.openBoomBox();
+      if (res.success) {
+        logMessage(`✓ Boom Box player tab ${res.reused ? 'focused' : 'opened'}.`);
+        broadcastCurrentRadioState();
+      } else {
+        const errDetail = res.error || 'Extension did not respond or Boom Box tab failed to open. Ensure RetroFM Extension is reloaded in chrome://extensions.';
+        console.warn('[RetroFM] Failed to open Boom Box tab:', res);
+        logMessage(`[Boom Box Warning] ${errDetail}`);
+      }
+    } catch (err: any) {
+      console.error('[RetroFM] Boom Box launch error:', err);
+      logMessage(`[Boom Box Error] ${err.message || 'Failed to open Boom Box'}`);
+    } finally {
+      setIsOpeningBoomBox(false);
+    }
+  };
+
+  // Monotonically increasing command sequence number to eliminate race conditions
+  const transportCommandSeqRef = useRef<number>(0);
+  const isTransportCommandInFlightRef = useRef<boolean>(false);
+
+  // --- Broadcast Current Radio State to Boom Box ---
+  const broadcastCurrentRadioState = useCallback(() => {
+    const vc = volumeControllerRef.current;
+    const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
+    const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
+
+    // Preserve valid song metadata across playing, paused, and stopped states
+    let currentSong = null;
+    if (programSongResult && programSongResult.selectedTitle) {
+      currentSong = {
+        title: programSongResult.selectedTitle,
+        artist: programArtist || '',
+        year: programYear || '',
+        duration: programSongResult.selectedDuration
+      };
+    } else if (playbackStatus && playbackStatus.title && playbackStatus.title !== 'Unknown Title' && playbackStatus.title !== 'Unknown Video') {
+      currentSong = {
+        title: playbackStatus.title,
+        artist: programArtist || '',
+        year: programYear || ''
+      };
+    } else if (programSongTitle) {
+      currentSong = {
+        title: programSongTitle,
+        artist: programArtist || '',
+        year: programYear || ''
+      };
+    }
+
+    const yearNum = parseInt(programYear, 10);
+    const decade = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
+      ? Math.floor(yearNum / 10) * 10
+      : 1980;
+
+    // Default primary stations per decade from Boom Box ST table
+    const DECADE_STATIONS: Record<number, { freq: number; genre: string }> = {
+      1960: { freq: 95.1, genre: 'Top 40/Pop' },
+      1970: { freq: 95.5, genre: 'AOR' },
+      1980: { freq: 101.9, genre: 'CHR' },
+      1990: { freq: 100.3, genre: 'Teen Pop' },
+      2000: { freq: 102.3, genre: 'Electropop' },
+      2010: { freq: 101.1, genre: 'EDM' },
+      2020: { freq: 90.9, genre: 'Hyperpop' }
+    };
+
+    const station = DECADE_STATIONS[decade] || { freq: 101.9, genre: 'CHR' };
+
+    const statePayload = {
+      playbackStatus: playbackStatus.isPlaying ? 'playing' : (playbackStatus.available && playbackStatus.currentTime > 0 ? 'paused' : 'stopped'),
+      currentSong,
+      date: programYear ? `${programYear}-07-04` : '1985-07-13',
+      decade,
+      frequency: station.freq,
+      genre: station.genre,
+      masterVolume: currentVol,
+      duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
+      isDucking: isDuck,
+      appConnected: true,
+      timestamp: Date.now()
+    };
+
+    musicProviderRef.current.broadcastRadioState(statePayload).catch(() => {});
+  }, [playbackStatus, programSongResult, programArtist, programSongTitle, programYear, targetMusicVolume, isDuckingActive, duckVolumePercent]);
+
+  // Refs for action handlers to prevent stale closures in the Boom Box subscription
+  const handlePlayMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handlePauseMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handleStopMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handleRewindMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handleFastForwardMusicRef = useRef<() => Promise<void>>(async () => {});
+
+  // Synchronize state to Boom Box whenever session properties change
+  useEffect(() => {
+    broadcastCurrentRadioState();
+  }, [broadcastCurrentRadioState]);
+
+  // Listen for actions and state requests from Boom Box
+  useEffect(() => {
+    const unsubAction = musicProviderRef.current.onBoomBoxAction(async (action: any) => {
+      if (!action || !action.action) return;
+      logMessage(`[Boom Box Action] ${action.action}`);
+      switch (action.action) {
+        case 'PLAY':
+          await handlePlayMusicRef.current();
+          break;
+        case 'PAUSE':
+          await handlePauseMusicRef.current();
+          break;
+        case 'STOP':
+          await handleStopMusicRef.current();
+          break;
+        case 'REWIND':
+        case 'PREVIOUS':
+          await handleRewindMusicRef.current();
+          break;
+        case 'FAST_FORWARD':
+        case 'NEXT':
+          await handleFastForwardMusicRef.current();
+          break;
+        case 'SET_VOLUME':
+          if (typeof action.volume === 'number' && volumeControllerRef.current) {
+            await volumeControllerRef.current.setUserVolume(action.volume, 'Boom Box Knob');
+          }
+          break;
+        case 'SET_BALANCE':
+          if (typeof action.balance === 'number') {
+            logMessage(`[Boom Box Balance] Stereo balance set to ${action.balance.toFixed(2)} (Pan: ${Math.round(action.balance * 100)}%)`);
+          }
+          break;
+        case 'TUNE':
+          if (action.genre) {
+            logMessage(`[Boom Box Dial] Tuned: ${action.frequency} FM (${action.genre})`);
+          }
+          break;
+        case 'SELECT_DATE_GENRE':
+          if (action.date) {
+            logMessage(`[Boom Box Date] Date: ${action.date} | Station: ${action.genre || 'N/A'}`);
+          }
+          break;
+      }
+    });
+
+    const unsubReq = musicProviderRef.current.onRadioStateRequest(() => {
+      broadcastCurrentRadioState();
+    });
+
+    return () => {
+      unsubAction();
+      unsubReq();
+    };
+  }, [broadcastCurrentRadioState]);
+
   // --- Poll YouTube Tab Status ---
   useEffect(() => {
     if (!playbackStatus.connectedTabId) return;
@@ -483,7 +649,17 @@ export default function App() {
     const poll = async () => {
       try {
         const s = await musicProviderRef.current.getStatus();
-        setPlaybackStatus(s);
+        // If a transport command is currently in flight, merge metadata without overriding pending transport intent
+        if (isTransportCommandInFlightRef.current) {
+          setPlaybackStatus((prev) => ({
+            ...s,
+            isPlaying: prev.isPlaying,
+            currentTime: prev.currentTime === 0 && !prev.isPlaying ? 0 : s.currentTime
+          }));
+        } else {
+          setPlaybackStatus(s);
+        }
+
         if (s.available) {
           setTestResults((prev) => ({
             ...prev,
@@ -587,40 +763,159 @@ export default function App() {
 
   // --- Playback Controls ---
   const handlePlayMusic = async () => {
+    const seq = ++transportCommandSeqRef.current;
+    isTransportCommandInFlightRef.current = true;
     logMessage('Sending Play command to YouTube tab...');
-    const ok = await musicProviderRef.current.play();
-    if (ok) {
-      if (volumeControllerRef.current) {
-        await volumeControllerRef.current.syncInitialVolume('Play button pressed');
+
+    try {
+      // If not connected to a YouTube tab yet, launch RetroFM tab group and program the current song preset
+      if (!playbackStatus.connectedTabId) {
+        logMessage('No active YouTube tab connected. Launching tab group / programming selected song...');
+        const groupRes = await musicProviderRef.current.launchRetroFmGroup();
+        if (transportCommandSeqRef.current !== seq) return;
+        if (groupRes?.connectedTabId) {
+          if (groupRes.status) setPlaybackStatus(groupRes.status);
+        }
+        await handleProgramSong();
+        broadcastCurrentRadioState();
+        return;
       }
-      logMessage('▶ Playback started on YouTube tab.');
-      setTestResults((prev) => ({ ...prev, playbackControl: true }));
-    } else {
-      logMessage('Failed to trigger Play on YouTube tab. Make sure a YouTube video is open in another tab.');
+
+      // If currently stopped at position 0, seek to 0 and start playback
+      if (!playbackStatus.isPlaying && playbackStatus.currentTime === 0) {
+        await musicProviderRef.current.seek(0).catch(() => {});
+        if (transportCommandSeqRef.current !== seq) return;
+      }
+
+      const playRes = await musicProviderRef.current.playDetailed();
+      if (transportCommandSeqRef.current !== seq) {
+        logMessage('[Play] Superseded by newer command. Dropping result.');
+        return;
+      }
+
+      if (playRes.success && playRes.status) {
+        if (volumeControllerRef.current) {
+          await volumeControllerRef.current.syncInitialVolume('Play button pressed');
+        }
+        logMessage('▶ Playback started on YouTube tab.');
+        setPlaybackStatus(playRes.status);
+        setTestResults((prev) => ({ ...prev, playbackControl: true }));
+        broadcastCurrentRadioState();
+      } else {
+        const errMsg = playRes.error || 'Play command was not confirmed by YouTube tab.';
+        logMessage(`[Play Notice] ${errMsg}`);
+        // Do not reload or re-navigate the song on failed play; query true observed status
+        const current = await musicProviderRef.current.getStatus().catch(() => null);
+        if (transportCommandSeqRef.current !== seq) return;
+        if (current) {
+          setPlaybackStatus(current);
+        }
+        broadcastCurrentRadioState();
+      }
+    } finally {
+      if (transportCommandSeqRef.current === seq) {
+        isTransportCommandInFlightRef.current = false;
+      }
     }
   };
 
   const handlePauseMusic = async () => {
+    const seq = ++transportCommandSeqRef.current;
+    isTransportCommandInFlightRef.current = true;
     logMessage('Sending Pause command to YouTube tab...');
-    const ok = await musicProviderRef.current.pause();
-    if (ok) {
+
+    try {
+      const pauseRes = await musicProviderRef.current.pauseDetailed();
+      if (transportCommandSeqRef.current !== seq) {
+        logMessage('[Pause] Superseded by newer command. Dropping result.');
+        return;
+      }
+
+      if (pauseRes.status) {
+        setPlaybackStatus(pauseRes.status);
+      } else {
+        setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, currentTime: prev.currentTime > 0 ? prev.currentTime : 1 }));
+      }
       logMessage('⏸ Playback paused on YouTube tab.');
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
-    } else {
-      logMessage('Failed to trigger Pause on YouTube tab.');
+      broadcastCurrentRadioState();
+    } finally {
+      if (transportCommandSeqRef.current === seq) {
+        isTransportCommandInFlightRef.current = false;
+      }
     }
   };
 
   const handleStopMusic = async () => {
+    const seq = ++transportCommandSeqRef.current;
+    isTransportCommandInFlightRef.current = true;
     logMessage('Sending Stop command to YouTube tab...');
-    const ok = await musicProviderRef.current.stop();
-    if (ok) {
+
+    try {
+      const stopRes = await musicProviderRef.current.stopDetailed();
+      if (transportCommandSeqRef.current !== seq) {
+        logMessage('[Stop] Superseded by newer command. Dropping result.');
+        return;
+      }
+
+      if (stopRes.status) {
+        setPlaybackStatus({ ...stopRes.status, isPlaying: false, currentTime: 0 });
+      } else {
+        setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, currentTime: 0 }));
+      }
       logMessage('⏹ Playback stopped on YouTube tab.');
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
-    } else {
-      logMessage('Failed to trigger Stop on YouTube tab.');
+      broadcastCurrentRadioState();
+    } finally {
+      if (transportCommandSeqRef.current === seq) {
+        isTransportCommandInFlightRef.current = false;
+      }
     }
   };
+
+  const handleRewindMusic = async () => {
+    logMessage('Seeking backward 10s on YouTube tab...');
+    try {
+      const currentStatus = await musicProviderRef.current.getStatus();
+      const newPos = Math.max(0, (currentStatus?.currentTime || 0) - 10);
+      const ok = await musicProviderRef.current.seek(newPos);
+      if (ok) {
+        setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
+        logMessage(`⏪ Rewound to ${Math.round(newPos)}s.`);
+        broadcastCurrentRadioState();
+      } else {
+        logMessage('Failed to rewind on YouTube tab.');
+      }
+    } catch (e: any) {
+      logMessage(`Rewind error: ${e.message}`);
+    }
+  };
+
+  const handleFastForwardMusic = async () => {
+    logMessage('Seeking forward 10s on YouTube tab...');
+    try {
+      const currentStatus = await musicProviderRef.current.getStatus();
+      const currentPos = currentStatus?.currentTime || 0;
+      const duration = currentStatus?.duration || (currentPos + 30);
+      const newPos = Math.min(duration, currentPos + 10);
+      const ok = await musicProviderRef.current.seek(newPos);
+      if (ok) {
+        setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
+        logMessage(`⏩ Fast forwarded to ${Math.round(newPos)}s.`);
+        broadcastCurrentRadioState();
+      } else {
+        logMessage('Failed to fast forward on YouTube tab.');
+      }
+    } catch (e: any) {
+      logMessage(`Fast forward error: ${e.message}`);
+    }
+  };
+
+  handlePlayMusicRef.current = handlePlayMusic;
+  handlePauseMusicRef.current = handlePauseMusic;
+  handleStopMusicRef.current = handleStopMusic;
+  handleRewindMusicRef.current = handleRewindMusic;
+  handleFastForwardMusicRef.current = handleFastForwardMusic;
 
   // --- PROGRAM SONG Handler ---
   const handleProgramSong = async (customOverride?: { artist: string; song: string; year: string }) => {
@@ -1507,6 +1802,17 @@ export default function App() {
             >
               <VolumeX className="w-3.5 h-3.5 text-rose-400" />
               <span>SILENCE ALL AUDIO</span>
+            </button>
+
+            {/* Open Boom Box Player Tab */}
+            <button
+              onClick={handleOpenBoomBox}
+              disabled={isOpeningBoomBox}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono font-black text-xs uppercase tracking-wider transition-colors shadow cursor-pointer"
+              title="Open or focus the standalone Boom Box radio player tab"
+            >
+              <Radio className={`w-3.5 h-3.5 ${isOpeningBoomBox ? 'animate-pulse' : ''}`} />
+              <span>{isOpeningBoomBox ? 'Opening...' : 'Open Boom Box'}</span>
             </button>
 
             {/* Launch RetroFM (Chrome Tab Group) Button */}

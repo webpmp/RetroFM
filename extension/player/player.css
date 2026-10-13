@@ -6,28 +6,27 @@ body.dark{background:#000;--img:var(--imgB)}
 #panel{margin:6px 4% 0!important}
 #tgl{margin-left:6px;flex:none;align-self:center;width:26px;height:22px;padding:0;border:1px solid #4fbf7a;border-radius:4px;background:transparent;color:#8dffb0;font-size:13px;line-height:1;cursor:pointer}
 #panel.collapsed #chips,#panel.collapsed #status{display:none}
-#copy{flex:1;white-space:nowrap}
 #freq{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0}
-#sg{display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 1.5s ease}#sg.dim{opacity:.55}
+#sg{display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 1.2s ease-in-out}#sg.dim{opacity:.55}
+@media (prefers-reduced-motion: reduce){#sg{transition:none !important}}
 #sdot{flex:none;width:9px;height:9px;padding:0;border-radius:50%;border:1px solid #8dffb0;background:#8dffb0;cursor:pointer}#sdot[aria-pressed=false]{background:transparent}
-#panel.entry{background:#151311;color:#e9d9b8}
 #panel.entry #decades,#panel.entry #row,#panel.entry #chips,#panel.entry #status{display:none}
 #panel.live #board{display:none}
 #board{position:relative;cursor:text}
 #dIn{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0}
-.bl{font-size:10px;letter-spacing:.14em;opacity:.55;margin:2px 0 3px;position:relative;z-index:2;cursor:pointer;width:max-content}.bl:hover{opacity:1}
+.bl{font-size:10px;letter-spacing:.14em;opacity:.7;color:#8dffb0;margin:2px 0 3px;position:relative;z-index:2;cursor:pointer;width:max-content}.bl:hover{opacity:1}
 #fDate,#fGen{white-space:nowrap;font-size:0;line-height:0}#fGen{position:relative;z-index:2;cursor:pointer}
-.fl{display:inline-block;vertical-align:top;width:17px;height:28px;margin:0 1px 0 0;background:#2a2622;border-radius:3px;color:#f2e8d0;font:700 15px/28px ui-monospace,Menlo,Consolas,monospace;text-align:center;position:relative;box-shadow:inset 0 -2px 0 rgba(0,0,0,.35)}
-.fl::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,0,0,.7)}
+.fl{display:inline-block;vertical-align:top;width:17px;height:28px;margin:0 1px 0 0;background:#0d2417;border:1px solid #1a422b;border-radius:3px;color:#a3ffc2;font:700 15px/26px ui-monospace,Menlo,Consolas,monospace;text-align:center;position:relative;box-shadow:inset 0 -2px 0 rgba(0,0,0,.45)}
+.fl::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(8,24,16,.85)}
 .fl.f{animation:flip .3s ease-in-out both}
 @keyframes flip{0%,100%{transform:rotateX(0)}50%{transform:rotateX(90deg)}}
-.ph .fl{color:#7b7266}
-#board[data-s=date] #bDate,#board[data-s=genre] #bGen{opacity:1;color:#ffb347;font-weight:700}
-.foc[data-s=date] #fDate .fl.cur{box-shadow:inset 0 0 0 1px #ffb347}
-#bHint{font-size:11px;margin-top:8px;opacity:.7}#bHint.err{color:#ff9a6b;opacity:1}
+.ph .fl{color:#2a6341}
+#board[data-s=date] #bDate,#board[data-s=genre] #bGen{opacity:1;color:#6ee7b7;font-weight:700}
+.foc[data-s=date] #fDate .fl.cur{box-shadow:inset 0 0 0 1px #6ee7b7;border-color:#34d399}
+#bHint{font-size:11px;margin-top:8px;opacity:.75;color:#8dffb0}#bHint.err{color:#ff9a6b;opacity:1}
 #decades{gap:6px;align-items:center}
-button.tag{background:transparent;color:#8dffb0;font:inherit;font-size:11px;cursor:pointer;transition:background .15s}button.tag:hover,button.tag:focus-visible{background:rgba(141,255,176,.2)}
-.tag{border:1px solid #4fbf7a;border-radius:4px;padding:3px 8px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+button.tag{background:#0a1c12;color:#8dffb0;font:inherit;font-size:11px;cursor:pointer;transition:background .15s}button.tag:hover,button.tag:focus-visible{background:rgba(141,255,176,.25)}
+.tag{border:1px solid #235839;border-radius:4px;padding:3px 8px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
 #hUp{margin-left:auto;padding:3px 10px;border:1px solid #4fbf7a;border-radius:4px;background:#8dffb0;color:#0e2217;font:inherit;font-size:11px;cursor:pointer}
 #logoBar{order:3;height:62px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 4% 0;border-top:1px solid rgba(128,128,128,.35);cursor:pointer}
 #fb{font-size:16px!important}#copy{font-size:11px;line-height:1.25;color:#777;text-align:right;cursor:default}body.dark #copy{color:#9a9a9a}#logo{max-height:50px;max-width:32%;width:auto;height:auto;object-fit:contain;display:block}#fb{font:700 22px Georgia,serif;letter-spacing:.08em;color:#222;display:none}body.dark #fb{color:#eee}

@@ -24,6 +24,8 @@
     "matches": [
       "*://localhost/*",
       "*://127.0.0.1/*",
+      "http://localhost:3003/*",
+      "http://127.0.0.1:3003/*",
       "*://*.run.app/*",
       "https://*.google.com/*"
     ]

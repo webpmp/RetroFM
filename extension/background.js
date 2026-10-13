@@ -2,16 +2,79 @@
 // Reads version dynamically via chrome.runtime.getManifest().version
 
 let activeConnectedTabId = null;
+let activeRetroFmTabId = null;
+let activeBoomBoxTabId = null;
+let lastKnownRadioState = null;
+
+// Query for available Boom Box tabs
+async function resolveBoomBoxTab() {
+  if (activeBoomBoxTabId) {
+    try {
+      const tab = await chrome.tabs.get(activeBoomBoxTabId);
+      if (tab && tab.url && tab.url.includes('player/index.html')) {
+        return tab.id;
+      }
+    } catch (e) {
+      activeBoomBoxTabId = null;
+    }
+  }
+  try {
+    const tabs = await chrome.tabs.query({});
+    const found = tabs.find(t => t.url && t.url.includes('player/index.html'));
+    if (found) {
+      activeBoomBoxTabId = found.id;
+      return found.id;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Find best RetroFM web app tab (by tracked ID or localhost query)
+async function resolveRetroFmTab(requestedTabId) {
+  if (requestedTabId) {
+    try {
+      const tab = await chrome.tabs.get(requestedTabId);
+      if (tab) return tab.id;
+    } catch (e) {}
+  }
+  if (activeRetroFmTabId) {
+    try {
+      const tab = await chrome.tabs.get(activeRetroFmTabId);
+      if (tab) return tab.id;
+    } catch (e) {
+      activeRetroFmTabId = null;
+    }
+  }
+  try {
+    const tabs = await chrome.tabs.query({});
+    const matchingTabs = tabs.filter(t => t.url && (
+      t.url.includes('localhost') ||
+      t.url.includes('127.0.0.1') ||
+      t.url.includes('.run.app')
+    ));
+    if (matchingTabs.length > 0) {
+      const active = matchingTabs.find(t => t.active) || matchingTabs[0];
+      activeRetroFmTabId = active.id;
+      return active.id;
+    }
+  } catch (e) {}
+  return null;
+}
 
 // Query for available YouTube tabs
 async function listYouTubeTabs() {
-  const tabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
-  return tabs.map(tab => ({
-    id: tab.id,
-    title: tab.title,
-    url: tab.url,
-    active: tab.active
-  }));
+  try {
+    const tabs = await chrome.tabs.query({});
+    const ytTabs = tabs.filter(t => t.url && t.url.includes('youtube.com'));
+    return ytTabs.map(tab => ({
+      id: tab.id,
+      title: tab.title,
+      url: tab.url,
+      active: tab.active
+    }));
+  } catch (e) {
+    return [];
+  }
 }
 
 // Ensure the content_youtube script is injected into the target tab
@@ -109,6 +172,127 @@ function handleIncomingRequest(request, sender, sendResponse) {
       if (type === 'LIST_YOUTUBE_TABS') {
         const tabs = await listYouTubeTabs();
         sendResponse({ success: true, data: { tabs, connectedTabId: activeConnectedTabId } });
+        return;
+      }
+
+      // Feature: OPEN_BOOMBOX - opens or focuses existing Boom Box player tab
+      if (type === 'OPEN_BOOMBOX') {
+        try {
+          const boomBoxUrl = chrome.runtime.getURL('player/index.html');
+          const existingTabId = await resolveBoomBoxTab();
+          let targetTab = null;
+          let reused = false;
+
+          if (existingTabId) {
+            targetTab = await chrome.tabs.get(existingTabId);
+            await chrome.tabs.update(existingTabId, { active: true });
+            if (targetTab.windowId) {
+              try {
+                await chrome.windows.update(targetTab.windowId, { focused: true });
+              } catch (e) {}
+            }
+            reused = true;
+          } else {
+            const createProps = { url: boomBoxUrl, active: true };
+            if (sender?.tab?.windowId) {
+              createProps.windowId = sender.tab.windowId;
+              if (typeof sender.tab.index === 'number') {
+                createProps.index = sender.tab.index + 1;
+              }
+            }
+            targetTab = await chrome.tabs.create(createProps);
+            activeBoomBoxTabId = targetTab.id;
+          }
+
+          sendResponse({
+            success: true,
+            data: { success: true, tabId: targetTab.id, reused }
+          });
+        } catch (openErr) {
+          sendResponse({ success: false, error: openErr.message });
+        }
+        return;
+      }
+
+      // Feature: BOOMBOX_ACTION - routes user command from Boom Box tab to RetroFM app
+      if (type === 'BOOMBOX_ACTION') {
+        try {
+          if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
+          const retroTabId = await resolveRetroFmTab();
+          if (!retroTabId) {
+            sendResponse({ success: false, error: 'RetroFM app tab not found' });
+            return;
+          }
+
+          const res = await chrome.tabs.sendMessage(retroTabId, {
+            type: 'BOOMBOX_ACTION',
+            payload
+          });
+          sendResponse({ success: true, data: res });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+        return;
+      }
+
+      // Feature: BROADCAST_RADIO_STATE - caches and relays live radio state from app to Boom Box
+      if (type === 'BROADCAST_RADIO_STATE') {
+        try {
+          if (sender?.tab?.id) activeRetroFmTabId = sender.tab.id;
+          lastKnownRadioState = { ...payload, appConnected: true, timestamp: Date.now() };
+
+          // Forward to Boom Box tab if open
+          const bbTabId = await resolveBoomBoxTab();
+          if (bbTabId) {
+            try {
+              await chrome.tabs.sendMessage(bbTabId, {
+                type: 'RADIO_STATE',
+                payload: lastKnownRadioState
+              });
+            } catch (sendErr) {
+              // Tab might be busy or navigating
+            }
+          }
+
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+        return;
+      }
+
+      // Feature: GET_RADIO_STATE - Boom Box requests current state upon mount or reconnect
+      if (type === 'GET_RADIO_STATE') {
+        try {
+          if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
+          const retroTabId = await resolveRetroFmTab();
+          let freshState = null;
+
+          if (retroTabId) {
+            try {
+              await chrome.tabs.sendMessage(retroTabId, {
+                type: 'GET_RADIO_STATE_REQUEST'
+              });
+              if (lastKnownRadioState) {
+                lastKnownRadioState.appConnected = true;
+                freshState = lastKnownRadioState;
+              }
+            } catch (msgErr) {
+              activeRetroFmTabId = null;
+            }
+          }
+
+          if (!freshState && lastKnownRadioState) {
+            freshState = { ...lastKnownRadioState, appConnected: !!retroTabId };
+          }
+
+          sendResponse({
+            success: true,
+            data: freshState || { appConnected: false, playbackStatus: 'stopped' }
+          });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
         return;
       }
 
@@ -443,3 +627,29 @@ if (chrome.runtime.onMessageExternal) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return handleIncomingRequest(request, sender, sendResponse);
 });
+
+// 3. Monitor tab closures for reliable connection recovery
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  if (tabId === activeConnectedTabId) {
+    activeConnectedTabId = null;
+  }
+  if (tabId === activeBoomBoxTabId) {
+    activeBoomBoxTabId = null;
+  }
+  if (tabId === activeRetroFmTabId) {
+    activeRetroFmTabId = null;
+    if (lastKnownRadioState) {
+      lastKnownRadioState.appConnected = false;
+      const bbTabId = await resolveBoomBoxTab();
+      if (bbTabId) {
+        try {
+          chrome.tabs.sendMessage(bbTabId, {
+            type: 'RADIO_STATE',
+            payload: { ...lastKnownRadioState, appConnected: false }
+          });
+        } catch (e) {}
+      }
+    }
+  }
+});
+

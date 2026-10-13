@@ -8,6 +8,8 @@ export class YouTubeMusicProvider implements MusicProvider {
   private isExtensionDetected = false;
   private reportedExtensionVersion: string | null = null;
   private messageCounter = 0;
+  private boomBoxActionListeners: Set<(action: any) => void> = new Set();
+  private stateRequestListeners: Set<() => void> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -16,6 +18,16 @@ export class YouTubeMusicProvider implements MusicProvider {
           this.isExtensionDetected = true;
           if (event.data.version) {
             this.reportedExtensionVersion = event.data.version;
+          }
+          if (event.data.type === 'BOOMBOX_ACTION' && event.data.payload) {
+            for (const listener of this.boomBoxActionListeners) {
+              try { listener(event.data.payload); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'GET_RADIO_STATE_REQUEST') {
+            for (const listener of this.stateRequestListeners) {
+              try { listener(); } catch (e) {}
+            }
           }
         }
       });
@@ -178,6 +190,39 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
   }
 
+  public onBoomBoxAction(callback: (action: any) => void): () => void {
+    this.boomBoxActionListeners.add(callback);
+    return () => {
+      this.boomBoxActionListeners.delete(callback);
+    };
+  }
+
+  public onRadioStateRequest(callback: () => void): () => void {
+    this.stateRequestListeners.add(callback);
+    return () => {
+      this.stateRequestListeners.delete(callback);
+    };
+  }
+
+  public async openBoomBox(): Promise<{ success: boolean; tabId?: number; reused?: boolean; error?: string }> {
+    try {
+      const res: any = await this.sendExtensionMessage('OPEN_BOOMBOX', {}, 4000);
+      const isSuccess = Boolean(res?.success || res?.tabId || res?.reused !== undefined);
+      return { success: isSuccess, tabId: res?.tabId, reused: res?.reused };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to open Boom Box' };
+    }
+  }
+
+  public async broadcastRadioState(state: any): Promise<boolean> {
+    try {
+      const res = await this.sendExtensionMessage('BROADCAST_RADIO_STATE', state, 2000);
+      return !!res?.success;
+    } catch {
+      return false;
+    }
+  }
+
   public async connect(tabId?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     try {
       const res = await this.sendExtensionMessage('CONNECT_YOUTUBE_TAB', { tabId });
@@ -257,33 +302,73 @@ export class YouTubeMusicProvider implements MusicProvider {
   }
 
   public async play(): Promise<boolean> {
+    const res = await this.playDetailed();
+    return res.success;
+  }
+
+  public async playDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
-    if (!tabId) return false;
-    const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
-      tabId,
-      command: { action: 'PLAY' },
-    });
-    return !!res?.success;
+    if (!tabId) return { success: false, error: 'No YouTube tab connected' };
+    try {
+      const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
+        tabId,
+        command: { action: 'PLAY' },
+      });
+      const isPlaying = !!(res?.success && (res?.status?.isPlaying || res?.state === 'playing' || res?.state === 'already_playing' || res?.state === 'buffering_active'));
+      return {
+        success: isPlaying,
+        status: res?.status,
+        error: res?.error
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public async pause(): Promise<boolean> {
+    const res = await this.pauseDetailed();
+    return res.success;
+  }
+
+  public async pauseDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
-    if (!tabId) return false;
-    const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
-      tabId,
-      command: { action: 'PAUSE' },
-    });
-    return !!res?.success;
+    if (!tabId) return { success: false, error: 'No YouTube tab connected' };
+    try {
+      const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
+        tabId,
+        command: { action: 'PAUSE' },
+      });
+      return {
+        success: !!res?.success,
+        status: res?.status,
+        error: res?.error
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public async stop(): Promise<boolean> {
+    const res = await this.stopDetailed();
+    return res.success;
+  }
+
+  public async stopDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
-    if (!tabId) return false;
-    const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
-      tabId,
-      command: { action: 'STOP' },
-    });
-    return !!res?.success;
+    if (!tabId) return { success: false, error: 'No YouTube tab connected' };
+    try {
+      const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
+        tabId,
+        command: { action: 'STOP' },
+      });
+      return {
+        success: !!res?.success,
+        status: res?.status,
+        error: res?.error
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public async seek(seconds: number): Promise<boolean> {

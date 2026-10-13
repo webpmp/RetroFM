@@ -147,4 +147,26 @@
   }
 
   window.addEventListener('message', onWindowMessage);
+
+  // Relay push messages from background service worker to web page window
+  try {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
+      }
+      if (message && typeof message === 'object') {
+        const payload = {
+          source: SOURCE_EXT,
+          ...message
+        };
+        try {
+          window.postMessage(payload, '*');
+        } catch (e) {}
+      }
+      sendResponse({ received: true });
+      return true;
+    });
+  } catch (e) {}
 })();
+
