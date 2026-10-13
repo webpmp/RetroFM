@@ -24,6 +24,13 @@ async function ensureYouTubeScriptInjected(tabId) {
     // If receiving end does not exist, inject it dynamically via chrome.scripting
     try {
       if (chrome.scripting) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            files: ['player/yt_main_world.js']
+          });
+        } catch (mainErr) {}
         await chrome.scripting.executeScript({
           target: { tabId },
           files: ['content_youtube.js']
@@ -351,6 +358,16 @@ function handleIncomingRequest(request, sender, sendResponse) {
 
           // Ensure content script is injected into the newly loaded page
           await ensureYouTubeScriptInjected(tabId);
+
+          // 2.5 Apply requested targetVolume BEFORE telling video to play
+          const targetVol = typeof payload?.targetVolume === 'number' ? payload.targetVolume : null;
+          if (targetVol !== null) {
+            try {
+              await chrome.tabs.sendMessage(tabId, { action: 'SET_VOLUME', volume: targetVol, rampId: Date.now() });
+            } catch (volErr) {
+              console.warn('[Retro FM] Pre-play setVolume notice:', volErr);
+            }
+          }
 
           // 3. Start playback using the same message pattern as PLAY command
           let playResult = null;

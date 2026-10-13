@@ -11,7 +11,7 @@ export interface VolumeControllerOptions {
   musicProvider: MusicProvider;
   onLog: (msg: string) => void;
   initialUserVolume?: number; // 0 - 100, default 100
-  initialDuckLevel?: number;  // 0 - 100, default 30
+  initialDuckLevel?: number;  // 0 - 100, default 10
 }
 
 export type VolumeChangeListener = (
@@ -27,7 +27,7 @@ export type VolumeChangeListener = (
  * 
  * Rules:
  * 1. Tracks userVolume (normal level, set only by master slider or user action),
- *    duckLevel (default 30%), and state: idle | ducking | ducked | restoring.
+ *    duckLevel (default 10%), and state: idle | ducking | ducked | restoring.
  * 2. Baseline rule: Captures normal volume ONLY when state is idle.
  *    Never treats a mid-ramp value as baseline. Always restores to userVolume.
  * 3. Cancel stale ramps: Assigns unique rampId to each ramp. Stale timers/ramps are discarded.
@@ -42,7 +42,7 @@ export class VolumeController {
   private onLog: (msg: string) => void;
 
   private userVolume: number = 100;     // 0 to 100 (normal level, set ONLY by master slider or user action)
-  private duckLevel: number = 30;       // 0 to 100 (visible setting, default 30)
+  private duckLevel: number = 10;       // 0 to 100 (visible setting, default 10)
   private state: VolumeState = 'idle';
   private effectiveVolume: number = 100; // 0 to 100 (current animated output)
 
@@ -63,7 +63,7 @@ export class VolumeController {
     this.musicProvider = options.musicProvider;
     this.onLog = options.onLog;
     this.userVolume = typeof options.initialUserVolume === 'number' ? options.initialUserVolume : 100;
-    this.duckLevel = typeof options.initialDuckLevel === 'number' ? options.initialDuckLevel : 30;
+    this.duckLevel = typeof options.initialDuckLevel === 'number' ? options.initialDuckLevel : 10;
     this.effectiveVolume = this.userVolume;
     this.lastExpectedFraction = this.userVolume / 100;
   }
@@ -107,6 +107,35 @@ export class VolumeController {
   }
 
   /**
+   * Synchronize the authoritative master volume to YouTube player.
+   * Called when a song starts, playback initializes, navigation finishes, or tab connects.
+   */
+  public async syncInitialVolume(reason = 'Playback initialization'): Promise<boolean> {
+    const rampId = ++this.rampIdCounter;
+    this.activeRampId = rampId;
+
+    const targetFraction = this.userVolume / 100;
+    this.effectiveVolume = this.userVolume;
+    this.lastExpectedFraction = targetFraction;
+    this.cancelWatchdog();
+
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: SYNC_INITIAL_VOLUME | userVolume: ${this.userVolume}% | duckLevel: ${this.duckLevel}% | effectiveVolume: ${this.effectiveVolume}% | state: ${this.state} | rampId: ${rampId} | reason: ${reason}`
+    );
+
+    this.onLog(
+      `[VolumeController] Action: SYNC_INITIAL_VOLUME | Target: ${this.userVolume}% | Reason: ${reason} | rampId: ${rampId}`
+    );
+
+    this.notify();
+    const ok = await this.musicProvider.setVolume(targetFraction, rampId);
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] SET_VOLUME confirmed by provider: ${ok} | target: ${this.userVolume}% (${targetFraction}) | rampId: ${rampId}`
+    );
+    return ok;
+  }
+
+  /**
    * Set user volume: normal level, set ONLY by master slider or user action.
    */
   public async setUserVolume(percent: number, reason = 'Master volume slider'): Promise<boolean> {
@@ -116,6 +145,10 @@ export class VolumeController {
 
     const rampId = ++this.rampIdCounter;
     this.activeRampId = rampId;
+
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: SET_USER_VOLUME | ${oldVol}% -> ${clamped}% | state: ${this.state} | duckLevel: ${this.duckLevel}% | rampId: ${rampId} | reason: ${reason}`
+    );
 
     if (this.state === 'idle') {
       this.effectiveVolume = clamped;
@@ -127,7 +160,11 @@ export class VolumeController {
       );
 
       this.notify();
-      return await this.musicProvider.setVolume(clamped / 100, rampId);
+      const ok = await this.musicProvider.setVolume(clamped / 100, rampId);
+      console.log(
+        `[RetroFM Volume] [${new Date().toISOString()}] SET_VOLUME confirmed by provider: ${ok} | target: ${clamped}% | rampId: ${rampId}`
+      );
+      return ok;
     } else {
       this.onLog(
         `[VolumeController] Action: SET_USER_VOLUME (deferred) | ${oldVol}% -> ${clamped}% | Reason: ${reason} | State: ${this.state} (will restore to ${clamped}% after speech)`
@@ -138,12 +175,15 @@ export class VolumeController {
   }
 
   /**
-   * Keep duck level a single visible setting (default 30%).
+   * Keep duck level a single visible setting (default 10%).
    */
   public setDuckLevel(percent: number): void {
     const clamped = Math.max(0, Math.min(100, Math.round(percent)));
     const old = this.duckLevel;
     this.duckLevel = clamped;
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: SET_DUCK_LEVEL | ${old}% -> ${clamped}% | userVolume: ${this.userVolume}% | state: ${this.state}`
+    );
     this.onLog(`[VolumeController] Action: SET_DUCK_LEVEL | ${old}% -> ${clamped}%`);
     this.notify();
   }
@@ -155,6 +195,9 @@ export class VolumeController {
    */
   public async duck(fadeDownMs: number, reason: string): Promise<boolean> {
     if (this.isSequenceRunning || this.state !== 'idle') {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] Ignored duck request: Sequence already running or non-idle (state: ${this.state}) | reason: ${reason}`
+      );
       this.onLog(
         `[VolumeController] Ignored duck request: Sequence already running or non-idle (state: ${this.state}). Reason: ${reason}`
       );
@@ -170,6 +213,10 @@ export class VolumeController {
     const targetDuck = this.duckLevel;
     this.state = 'ducking';
 
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_START | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | duration: ${fadeDownMs}ms | rampId: ${rampId} | reason: ${reason}`
+    );
+
     this.onLog(
       `[VolumeController] Action: DUCK | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | Duration: ${fadeDownMs}ms | RampId: ${rampId} | Reason: ${reason}`
     );
@@ -181,6 +228,7 @@ export class VolumeController {
     try {
       await this.musicProvider.rampVolume(duckFraction, fadeDownMs, rampId);
     } catch (e: any) {
+      console.error(`[RetroFM Volume] Error sending duck ramp: ${e?.message}`);
       this.onLog(`[VolumeController] Error sending duck ramp: ${e?.message}`);
     }
 
@@ -189,6 +237,9 @@ export class VolumeController {
 
     // If ramp was cancelled during fade down, abort
     if (this.activeRampId !== rampId) {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] Stale duck ramp ${rampId} cancelled (active: ${this.activeRampId})`
+      );
       this.onLog(`[VolumeController] Stale duck ramp ${rampId} cancelled.`);
       return false;
     }
@@ -196,6 +247,11 @@ export class VolumeController {
     this.state = 'ducked';
     this.effectiveVolume = targetDuck;
     this.lastExpectedFraction = targetDuck / 100;
+
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId}`
+    );
+
     this.notify();
     return true;
   }
@@ -213,6 +269,10 @@ export class VolumeController {
     const startVol = this.effectiveVolume;
     const targetRestore = this.userVolume; // ALWAYS userVolume
 
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_START | From: ${startVol}% -> userVolume: ${targetRestore}% | duration: ${fadeUpMs}ms | rampId: ${rampId} | reason: ${reason}`
+    );
+
     this.onLog(
       `[VolumeController] Action: RESTORE | From: ${startVol}% -> userVolume: ${targetRestore}% | Duration: ${fadeUpMs}ms | RampId: ${rampId} | Reason: ${reason}`
     );
@@ -224,6 +284,7 @@ export class VolumeController {
     try {
       await this.musicProvider.rampVolume(restoreFraction, fadeUpMs, rampId);
     } catch (e: any) {
+      console.error(`[RetroFM Volume] Error sending restore ramp: ${e?.message}`);
       this.onLog(`[VolumeController] Error sending restore ramp: ${e?.message}`);
     }
 
@@ -232,6 +293,9 @@ export class VolumeController {
 
     // If ramp was cancelled during fade up, abort
     if (this.activeRampId !== rampId) {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] Stale restore ramp ${rampId} cancelled (active: ${this.activeRampId})`
+      );
       this.onLog(`[VolumeController] Stale restore ramp ${rampId} cancelled.`);
       return false;
     }
@@ -240,6 +304,11 @@ export class VolumeController {
     this.isSequenceRunning = false;
     this.effectiveVolume = targetRestore;
     this.lastExpectedFraction = targetRestore / 100;
+
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_COMPLETED | effectiveVolume: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId}`
+    );
+
     this.notify();
 
     // 3. Start 10-second watchdog monitoring
@@ -262,6 +331,10 @@ export class VolumeController {
     this.effectiveVolume = this.userVolume;
     this.lastExpectedFraction = this.userVolume / 100;
 
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: CANCEL | Restoring to userVolume: ${this.userVolume}% | rampId: ${rampId} | reason: ${reason}`
+    );
+
     this.onLog(
       `[VolumeController] Action: CANCEL | Restoring to userVolume: ${this.userVolume}% | RampId: ${rampId} | Reason: ${reason}`
     );
@@ -271,6 +344,7 @@ export class VolumeController {
     try {
       await this.musicProvider.setVolume(this.userVolume / 100, rampId);
     } catch (e: any) {
+      console.error(`[RetroFM Volume] Error cancelling volume: ${e?.message}`);
       this.onLog(`[VolumeController] Error cancelling volume: ${e?.message}`);
     }
 
@@ -291,18 +365,32 @@ export class VolumeController {
     }
 
     const polledPercent = Math.round(volumeFraction * 100);
+    const expectedPercent = Math.round(this.lastExpectedFraction * 100);
 
     // 2. Watchdog active (within 10 seconds of restore)
     if (Date.now() < this.watchdogUntil) {
-      const expectedPercent = Math.round(this.lastExpectedFraction * 100);
       if (Math.abs(polledPercent - expectedPercent) >= 3) {
+        console.warn(
+          `[RetroFM Volume] [${new Date().toISOString()}] External volume change detected (watchdog): expected ${expectedPercent}%, actual ${polledPercent}% | fraction: ${volumeFraction}`
+        );
         this.onLog(`External volume change detected: ${expectedPercent}% to ${polledPercent}%`);
         this.lastExpectedFraction = volumeFraction;
       }
       return;
     }
 
-    // 3. Normal idle: userVolume is the source of truth set only by master slider or user action.
+    // 3. Normal idle: log unexpected discrepancy between YouTube player and RetroFM authoritative master volume
+    const userPercent = this.userVolume;
+    if (Math.abs(polledPercent - userPercent) >= 3) {
+      if (Math.abs(polledPercent - expectedPercent) >= 3) {
+        console.warn(
+          `[RetroFM Volume] [${new Date().toISOString()}] YouTube reported volume ${polledPercent}%, RetroFM master is ${userPercent}% (no auto-sync to avoid command loops)`
+        );
+      }
+      this.lastExpectedFraction = volumeFraction;
+      return;
+    }
+
     this.lastExpectedFraction = volumeFraction;
   }
 
@@ -311,6 +399,9 @@ export class VolumeController {
     this.lastExpectedFraction = expectedFraction;
     this.watchdogUntil = Date.now() + 10000; // 10 seconds watchdog
 
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] Watchdog active for 10s. Monitoring for unexpected external YouTube volume changes.`
+    );
     this.onLog(`[VolumeController] Watchdog active for 10s. Monitoring for unexpected external YouTube volume changes.`);
 
     this.watchdogTimer = setTimeout(() => {
@@ -363,6 +454,9 @@ export class VolumeController {
       const step = () => {
         // Cancel animation if stale ramp
         if (this.activeRampId !== rampId) {
+          console.warn(
+            `[RetroFM Volume] UI animation cancelled for stale rampId ${rampId} (active: ${this.activeRampId})`
+          );
           return resolve();
         }
 

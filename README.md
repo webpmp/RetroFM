@@ -4,18 +4,51 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
 
 ---
 
-## Getting Started
+## Local Docker Development
 
 ### Prerequisites
-- Node.js (v18 or higher recommended)
-- npm
-- Google Chrome (to use the companion Chrome extension bridge)
+- Docker Desktop with Docker Compose
+- Google Chrome (to load the companion Chrome extension bridge)
 
-### Installation
-1. Clone the repository and install dependencies:
+### First-Time Setup
+1. Configure environment variables by copying `.env.example`:
    ```bash
-   npm install
+   cp .env.example .env
    ```
+   Add your API keys (`GEMINI_API_KEY`, `YOUTUBE_API_KEY`, `NYT_API_KEY`) to `.env`. Note: Never commit real API keys to version control.
+2. Build and start the container:
+   ```bash
+   docker compose up --build
+   ```
+3. Open the application in Google Chrome:
+   - Local Application URL: [http://localhost:3003](http://localhost:3003)
+   - Port mapping: Host `3003` -> Container `3000`
+
+### Daily Development Commands
+- **Start the application**:
+  ```bash
+  docker compose up
+  ```
+- **Stop the application**:
+  ```bash
+  docker compose down
+  ```
+- **View application logs**:
+  ```bash
+  docker compose logs -f retrofm
+  ```
+- **Check container status**:
+  ```bash
+  docker compose ps
+  ```
+- **Rebuild after dependency changes**:
+  ```bash
+  docker compose up --build
+  ```
+
+---
+
+## Getting Started (Local Node/npm)
 
 2. Configure environment variables:
    Copy the example environment file:

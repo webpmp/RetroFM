@@ -30,25 +30,34 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
 
     // Attempt 1: Direct Native Chrome Extension Messaging via externally_connectable
-    if ((window as any).chrome?.runtime?.sendMessage) {
+    if (typeof (window as any).chrome !== 'undefined' && (window as any).chrome?.runtime?.sendMessage) {
       try {
         const directResult = await new Promise((resolveDirect, rejectDirect) => {
-          (window as any).chrome.runtime.sendMessage(
-            FIXED_EXTENSION_ID,
-            { type, payload },
-            (response: any) => {
-              const lastErr = (window as any).chrome.runtime?.lastError;
-              if (lastErr) {
-                rejectDirect(lastErr);
-              } else if (response && response.success) {
-                resolveDirect(response.data !== undefined ? response.data : response);
-              } else if (response && response.error) {
-                rejectDirect(new Error(response.error));
-              } else {
-                rejectDirect(new Error('No response from direct messaging'));
+          try {
+            (window as any).chrome.runtime.sendMessage(
+              FIXED_EXTENSION_ID,
+              { type, payload },
+              (response: any) => {
+                let lastErr = null;
+                try {
+                  lastErr = (window as any).chrome.runtime?.lastError;
+                } catch (e) {
+                  lastErr = e;
+                }
+                if (lastErr) {
+                  rejectDirect(lastErr);
+                } else if (response && response.success) {
+                  resolveDirect(response.data !== undefined ? response.data : response);
+                } else if (response && response.error) {
+                  rejectDirect(new Error(response.error));
+                } else {
+                  rejectDirect(new Error('No response from direct messaging'));
+                }
               }
-            }
-          );
+            );
+          } catch (callErr) {
+            rejectDirect(callErr);
+          }
         });
 
         this.isExtensionDetected = true;
@@ -307,13 +316,14 @@ export class YouTubeMusicProvider implements MusicProvider {
     return !!res?.success;
   }
 
-  public async navigate(url: string, videoId?: string): Promise<boolean> {
+  public async navigate(url: string, videoId?: string, targetVolume?: number): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
     const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
       tabId,
       url,
       videoId,
+      targetVolume,
     });
     return !!res?.success;
   }

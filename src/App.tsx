@@ -70,6 +70,64 @@ export const CRITICAL_TEST_SONGS = [
   { artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986' },
 ];
 
+export interface HardcodedPresetInfo {
+  artist: string;
+  song: string;
+  year: string;
+  videoId: string;
+  title: string;
+  channel: string;
+  duration: string;
+}
+
+export const HARDCODED_PRESETS: Record<string, HardcodedPresetInfo> = {
+  'a-ha|take on me': {
+    artist: 'a-ha',
+    song: 'Take on Me',
+    year: '1985',
+    videoId: 'f-BDCwxBF9Q',
+    title: 'a-ha - Take on Me (1985)',
+    channel: 'Official Recording',
+    duration: '03:47',
+  },
+  'michael jackson|billie jean': {
+    artist: 'Michael Jackson',
+    song: 'Billie Jean',
+    year: '1983',
+    videoId: 'Kr4EQDVETuA',
+    title: 'Michael Jackson - Billie Jean (1983)',
+    channel: 'Official Recording',
+    duration: '04:54',
+  },
+  'prince|when doves cry': {
+    artist: 'Prince',
+    song: 'When Doves Cry',
+    year: '1984',
+    videoId: 'Izx6DQUrsag',
+    title: 'Prince - When Doves Cry (1984)',
+    channel: 'Official Recording',
+    duration: '05:52',
+  },
+  'u2|with or without you': {
+    artist: 'U2',
+    song: 'With or Without You',
+    year: '1987',
+    videoId: '6Q2mFw4VYBo',
+    title: 'U2 - With or Without You (1987)',
+    channel: 'Official Recording',
+    duration: '04:56',
+  },
+  'peter gabriel|sledgehammer': {
+    artist: 'Peter Gabriel',
+    song: 'Sledgehammer',
+    year: '1986',
+    videoId: 'OJWJE0x7T4Q',
+    title: 'Peter Gabriel - Sledgehammer (1986)',
+    channel: 'Official Recording',
+    duration: '04:58',
+  },
+};
+
 // Pre-defined DJ script templates
 const SCRIPT_PRESETS = [
   {
@@ -138,6 +196,7 @@ export default function App() {
     reason?: string;
     canonicalYear?: string;
     canonicalLength?: string;
+    source?: string;
     error?: string;
   } | null>(null);
   const [songPlaybackNotice, setSongPlaybackNotice] = useState<{
@@ -213,7 +272,7 @@ export default function App() {
   const [isPlayingDJPreview, setIsPlayingDJPreview] = useState<boolean>(false);
 
   // --- Radio Mix & Ducking Configuration ---
-  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(30); // 30% default
+  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(10); // 10% default
   const [fadeDownMs, setFadeDownMs] = useState<number>(500); // 500 ms default
   const [fadeUpMs, setFadeUpMs] = useState<number>(750); // 750 ms default
   const [isDuckingActive, setIsDuckingActive] = useState<boolean>(false);
@@ -294,7 +353,7 @@ export default function App() {
       musicProvider: musicProviderRef.current,
       onLog: (msg) => logMessage(msg),
       initialUserVolume: 100,
-      initialDuckLevel: 30,
+      initialDuckLevel: 10,
     });
   }
 
@@ -404,10 +463,10 @@ export default function App() {
       if (pingResult.active) {
         setTestResults((prev) => ({ ...prev, tabDetection: true }));
         try {
-          const tabs = await musicProviderRef.current.listTabs();
+          const tabs = await musicProviderRef.current.listTabs().catch(() => []);
           setAvailableTabs(tabs);
         } catch (e) {
-          // Tabs query might require permissions
+          // Tabs query might require permissions or extension reload
         }
       }
     };
@@ -472,6 +531,11 @@ export default function App() {
           : '✓ Connected: Reused existing YouTube tab inside "RetroFM" Chrome Tab Group.';
         setLaunchMessage({ text: successNotice, isError: false });
         logMessage(successNotice);
+
+        // Synchronize master volume to YouTube tab
+        if (volumeControllerRef.current) {
+          volumeControllerRef.current.syncInitialVolume('RetroFM tab group launched').catch(() => {});
+        }
       } else {
         const errorNotice = res.error || `Failed to create RetroFM Tab Group. Ensure the Chrome Extension (v${EXTENSION_VERSION}) is loaded.`;
         setLaunchMessage({ text: errorNotice, isError: true });
@@ -504,6 +568,11 @@ export default function App() {
           metadata: !!(res.status?.title && res.status.title !== 'Unknown Video')
         }));
         logMessage(`Connected to YouTube tab: "${res.status.title}"`);
+
+        // Synchronize master volume to YouTube tab
+        if (volumeControllerRef.current) {
+          volumeControllerRef.current.syncInitialVolume('YouTube tab connected').catch(() => {});
+        }
       } else {
         setConnectionError(res.error || 'No YouTube tab found');
         logMessage(`Connection failed: ${res.error || 'No tab found'}`);
@@ -521,6 +590,9 @@ export default function App() {
     logMessage('Sending Play command to YouTube tab...');
     const ok = await musicProviderRef.current.play();
     if (ok) {
+      if (volumeControllerRef.current) {
+        await volumeControllerRef.current.syncInitialVolume('Play button pressed');
+      }
       logMessage('▶ Playback started on YouTube tab.');
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
     } else {
@@ -573,11 +645,89 @@ export default function App() {
       return;
     }
 
+    const lookupKey = `${artist.toLowerCase()}|${song.toLowerCase()}`;
+    const preset = HARDCODED_PRESETS[lookupKey];
+
+    // If matches a hardcoded preset, skip API search entirely
+    if (preset) {
+      if (!preset.videoId || preset.videoId.includes('PLACEHOLDER') || preset.videoId.trim() === '') {
+        setProgramSongResult({
+          status: 'ERROR',
+          requested: requestedStr,
+          source: 'hardcoded preset',
+          error: 'No video ID set for this preset',
+        });
+        logMessage(`[Program Song Preset] No video ID set for preset: "${artist} - ${song}"`);
+        return;
+      }
+
+      setIsProgrammingSong(true);
+      setSongPlaybackNotice(null);
+      logMessage(`[Program Song] Hardcoded preset selected for "${preset.artist} - ${preset.song}". Skipping API search.`);
+
+      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetUrl = `https://www.youtube.com/watch?v=${preset.videoId}`;
+
+      setProgramSongResult({
+        status: 'NAVIGATING',
+        requested: requestedStr,
+        selectedTitle: preset.title,
+        selectedChannel: preset.channel,
+        selectedDuration: preset.duration,
+        selectedVideoId: preset.videoId,
+        selectedUrl: targetUrl,
+        confidenceScore: 100,
+        reason: 'Selected via hardcoded preset (no API search)',
+        source: 'hardcoded preset',
+      });
+
+      try {
+        const navOk = await musicProviderRef.current.navigate(targetUrl, preset.videoId, targetVolFraction);
+        if (!navOk) {
+          logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
+        }
+
+        // Allow YouTube player to mount and start playback
+        await new Promise((r) => setTimeout(r, 1200));
+        const playOk = await musicProviderRef.current.play();
+
+        // Synchronize authoritative master volume to YouTube player
+        if (volumeControllerRef.current) {
+          await volumeControllerRef.current.syncInitialVolume(`Program song preset playback start: "${preset.title}"`);
+        }
+
+        setProgramSongResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: 'PLAYING',
+              }
+            : null
+        );
+        if (playOk) {
+          setTestResults((prev) => ({ ...prev, playbackControl: true }));
+        }
+        logMessage(`[Program Song] Playing hardcoded preset: "${preset.title}".`);
+      } catch (err: any) {
+        logMessage(`[Program Song] Exception: ${err.message}`);
+        setProgramSongResult({
+          status: 'ERROR',
+          requested: requestedStr,
+          source: 'hardcoded preset',
+          error: err.message || 'Preset navigation failed.',
+        });
+      } finally {
+        setIsProgrammingSong(false);
+      }
+      return;
+    }
+
     setIsProgrammingSong(true);
     setSongPlaybackNotice(null);
     setProgramSongResult({
       status: 'SEARCHING',
       requested: requestedStr,
+      source: 'YouTube Data API v3',
     });
     logMessage(`[Program Song] Searching YouTube Data API for "${artist} - ${song}" (${year})...`);
 
@@ -599,6 +749,7 @@ export default function App() {
         setProgramSongResult({
           status: 'API_ERROR',
           requested: requestedStr,
+          source: 'YouTube Data API v3',
           error: quotaMsg,
         });
         setSongPlaybackNotice({
@@ -617,6 +768,7 @@ export default function App() {
         setProgramSongResult({
           status: 'NOT_FOUND',
           requested: requestedStr,
+          source: 'YouTube Data API v3',
           error: notFoundMsg,
         });
         setSongPlaybackNotice({
@@ -632,6 +784,8 @@ export default function App() {
       const sel = data.selected;
       logMessage(`[Program Song] Selected: "${sel.title}" on "${sel.channel}" (Score: ${sel.confidenceScore}). Navigating tab...`);
 
+      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+
       setProgramSongResult({
         status: 'NAVIGATING',
         requested: requestedStr,
@@ -644,17 +798,23 @@ export default function App() {
         reason: sel.reason,
         canonicalYear: data.canonicalInfo?.year,
         canonicalLength: data.canonicalInfo?.formattedLength,
+        source: 'YouTube Data API v3',
       });
 
       // Instruct connected YouTube tab to navigate
-      const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId);
+      const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId, targetVolFraction);
       if (!navOk) {
         logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
       }
 
       // Allow YouTube player to mount and start playback
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1200));
       const playOk = await musicProviderRef.current.play();
+
+      // Synchronize authoritative master volume to YouTube player
+      if (volumeControllerRef.current) {
+        await volumeControllerRef.current.syncInitialVolume(`Program song playback start: "${sel.title}"`);
+      }
 
       setProgramSongResult((prev) =>
         prev
@@ -964,11 +1124,14 @@ export default function App() {
       }
     }
 
-    setMixPhase('FADING_DOWN');
-    logMessage('▶ Step 1: Initiating DJ Over Music sequence.');
-
     const normalVol = vc.getUserVolume();
     const duckVol = vc.getDuckLevel();
+
+    setMixPhase('FADING_DOWN');
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] DJ Over Music sequence initiated | normalVol: ${normalVol}% | duckVol: ${duckVol}% | fadeDown: ${fadeDownMs}ms | fadeUp: ${fadeUpMs}ms`
+    );
+    logMessage('▶ Step 1: Initiating DJ Over Music sequence.');
 
     logMessage(`▶ Step 2: Smoothly ducking YouTube music from ${normalVol}% down to ${duckVol}% (${fadeDownMs}ms fade)...`);
 
@@ -981,6 +1144,9 @@ export default function App() {
 
     setTestResults((prev) => ({ ...prev, musicDucking: true }));
     setMixPhase('DJ_SPEAKING');
+    console.log(
+      `[RetroFM Volume] [${new Date().toISOString()}] DJ Speech started | ducked level active: ${duckVol}% | userVolume: ${normalVol}%`
+    );
 
     let hasEnded = false;
     let safetyTimeout: any = null;
@@ -994,13 +1160,16 @@ export default function App() {
       }
       (window as any).__retroFmDJUtterance = null;
 
+      console.log(
+        `[RetroFM Volume] [${new Date().toISOString()}] DJ Speech ended (${reason}) | triggering restoration to master volume: ${vc.getUserVolume()}%`
+      );
       logMessage(`DJ speech sequence finished (${reason}). Proceeding to restore music.`);
       logMessage(`▶ Step 5: DJ speech finished. Smoothly restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
       setMixPhase('FADING_UP');
 
       try {
         await vc.restore(fadeUpMs, reason);
-        logMessage('▶ Step 6: Radio mix transition complete! YouTube music returned to full volume.');
+        logMessage(`▶ Step 6: Radio mix transition complete! YouTube music returned to master volume (${normalVol}%).`);
         setMixPhase('COMPLETED');
         setTestResults((prev) => ({
           ...prev,
@@ -1720,6 +1889,17 @@ export default function App() {
                       </div>
                     )}
 
+                    {programSongResult.source && (
+                      <div className="flex justify-between items-center gap-2 pt-1 border-t border-zinc-900">
+                        <span className="text-zinc-500">Source:</span>
+                        <span className={`text-[11px] font-bold ${
+                          programSongResult.source === 'hardcoded preset' ? 'text-amber-400' : 'text-zinc-300'
+                        }`}>
+                          {programSongResult.source}
+                        </span>
+                      </div>
+                    )}
+
                     {programSongResult.reason && (
                       <div className="pt-1.5 border-t border-zinc-900 text-[11px] text-zinc-400 leading-normal">
                         <strong className="text-zinc-300">Selection Reason:</strong> {programSongResult.reason}
@@ -2207,7 +2387,7 @@ export default function App() {
                   Signal Ducking Pipeline:
                 </div>
                 <div className="text-amber-400/90 leading-relaxed font-mono">
-                  100% Music &rarr; ({fadeDownMs}ms fade down) &rarr; {duckVolumePercent}% Music + DJ Voice &rarr; ({fadeUpMs}ms fade up) &rarr; 100% Music
+                  {targetMusicVolume}% Music &rarr; ({fadeDownMs}ms fade down) &rarr; {duckVolumePercent}% Music + DJ Voice &rarr; ({fadeUpMs}ms fade up) &rarr; {targetMusicVolume}% Music
                 </div>
               </div>
             </div>
