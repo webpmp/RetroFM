@@ -10,12 +10,21 @@ export class YouTubeMusicProvider implements MusicProvider {
   private messageCounter = 0;
   private boomBoxActionListeners: Set<(action: any) => void> = new Set();
   private stateRequestListeners: Set<() => void> = new Set();
+  private ytStateChangedListeners: Set<(payload: any) => void> = new Set();
+  private revealListeners: Set<() => void> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
+      // Post app hello on load
+      window.postMessage({ type: 'RETROFM_APP_HELLO' }, '*');
+
       window.addEventListener('message', (event) => {
         if (event.data && event.data.source === 'RETRO_FM_EXTENSION') {
           this.isExtensionDetected = true;
+          if (event.data.type === 'EXTENSION_READY') {
+            // Post app hello each time extension is detected / announces ready
+            window.postMessage({ type: 'RETROFM_APP_HELLO' }, '*');
+          }
           if (event.data.version) {
             this.reportedExtensionVersion = event.data.version;
           }
@@ -26,6 +35,16 @@ export class YouTubeMusicProvider implements MusicProvider {
           }
           if (event.data.type === 'GET_RADIO_STATE_REQUEST') {
             for (const listener of this.stateRequestListeners) {
+              try { listener(); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'YT_STATE_CHANGED' && event.data.payload) {
+            for (const listener of this.ytStateChangedListeners) {
+              try { listener(event.data.payload); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'YOUTUBE_REVEALED_TO_START') {
+            for (const listener of this.revealListeners) {
               try { listener(); } catch (e) {}
             }
           }
@@ -204,6 +223,20 @@ export class YouTubeMusicProvider implements MusicProvider {
     };
   }
 
+  public onYouTubeStateChanged(callback: (payload: any) => void): () => void {
+    this.ytStateChangedListeners.add(callback);
+    return () => {
+      this.ytStateChangedListeners.delete(callback);
+    };
+  }
+
+  public onRevealYouTubeToStart(callback: () => void): () => void {
+    this.revealListeners.add(callback);
+    return () => {
+      this.revealListeners.delete(callback);
+    };
+  }
+
   public async openBoomBox(): Promise<{ success: boolean; tabId?: number; reused?: boolean; error?: string }> {
     try {
       const res: any = await this.sendExtensionMessage('OPEN_BOOMBOX', {}, 4000);
@@ -211,6 +244,44 @@ export class YouTubeMusicProvider implements MusicProvider {
       return { success: isSuccess, tabId: res?.tabId, reused: res?.reused };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to open Boom Box' };
+    }
+  }
+
+  public registerAppHello(): void {
+    if (typeof window !== 'undefined') {
+      window.postMessage({ type: 'RETROFM_APP_HELLO' }, '*');
+    }
+  }
+
+  public recordTrace(event: string, data?: Record<string, any>): void {
+    try {
+      this.sendExtensionMessage('RECORD_TRACE', {
+        ts: Date.now(),
+        source: 'app',
+        event,
+        data: data || {}
+      }, 2000).catch(() => {});
+    } catch (e) {}
+  }
+
+  public async getTransportTrace(): Promise<string> {
+    try {
+      const res = await this.sendExtensionMessage('GET_TRANSPORT_TRACE', {}, 4000);
+      const list = Array.isArray(res?.traceLog) ? res.traceLog : (Array.isArray(res?.data?.traceLog) ? res.data.traceLog : []);
+      if (!list || list.length === 0) {
+        return 'No transport trace entries recorded yet.';
+      }
+      return list
+        .map((entry: any) => {
+          const iso = new Date(entry.ts || Date.now()).toISOString();
+          const src = (entry.source || 'unknown').padEnd(14, ' ');
+          const evt = entry.event || 'UNKNOWN';
+          const details = entry.data && Object.keys(entry.data).length > 0 ? ' ' + JSON.stringify(entry.data) : '';
+          return `${iso} [${src}] ${evt}${details}`;
+        })
+        .join('\n');
+    } catch (err: any) {
+      return `Failed to fetch transport trace: ${err?.message || 'timeout/disconnected'}`;
     }
   }
 
@@ -301,18 +372,19 @@ export class YouTubeMusicProvider implements MusicProvider {
     return null;
   }
 
-  public async play(): Promise<boolean> {
-    const res = await this.playDetailed();
+  public async play(revealYouTubeToStart: boolean = true): Promise<boolean> {
+    const res = await this.playDetailed(revealYouTubeToStart);
     return res.success;
   }
 
-  public async playDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+  public async playDetailed(revealYouTubeToStart: boolean = true): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
       const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
         tabId,
         command: { action: 'PLAY' },
+        revealYouTubeToStart,
       });
       const isPlaying = !!(res?.success && (res?.status?.isPlaying || res?.state === 'playing' || res?.state === 'already_playing' || res?.state === 'buffering_active'));
       return {
@@ -401,7 +473,7 @@ export class YouTubeMusicProvider implements MusicProvider {
     return !!res?.success;
   }
 
-  public async navigate(url: string, videoId?: string, targetVolume?: number): Promise<boolean> {
+  public async navigate(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
     const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
@@ -409,6 +481,7 @@ export class YouTubeMusicProvider implements MusicProvider {
       url,
       videoId,
       targetVolume,
+      revealYouTubeToStart,
     });
     return !!res?.success;
   }

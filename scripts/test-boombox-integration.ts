@@ -192,15 +192,72 @@ console.log('\nTEST SUITE 6: Tab Resolution Pattern & Play Action Dispatch Safet
 const allOpenTabs = [
   { id: 1, url: 'https://www.youtube.com/watch?v=f-BDCwxBF9Q' },
   { id: 2, url: 'http://localhost:3003/' },
-  { id: 3, url: 'chrome-extension://hjphfmcilldbipolljlbjnnadeogocab/player/index.html' }
+  { id: 3, url: 'chrome-extension://hjphfmcilldbipolljlbjnnadeogocab/player/index.html' },
+  { id: 4, url: 'http://localhost:8080/other-service' }
 ];
 
-function resolveRetroTabSafe(tabs: Array<{ id: number; url: string }>): number | null {
-  const retroTab = tabs.find(t => t.url && (t.url.includes('localhost') || t.url.includes('127.0.0.1')));
-  return retroTab ? retroTab.id : null;
+// Test registration-only resolution with session storage simulation
+let inMemoryAppTabId: number | null = null;
+let sessionStorageAppTabId: number | null = null;
+const openTabsList = new Map<number, { id: number; url: string }>([
+  [1, { id: 1, url: 'https://www.youtube.com/watch?v=f-BDCwxBF9Q' }],
+  [2, { id: 2, url: 'http://localhost:3003/' }],
+  [3, { id: 3, url: 'chrome-extension://hjphfmcilldbipolljlbjnnadeogocab/player/index.html' }],
+  [4, { id: 4, url: 'http://localhost:1234/lm-studio' }], // Unregistered localhost tab
+  [5, { id: 5, url: 'http://localhost:8880/kokoro' }]     // Another unregistered localhost tab
+]);
+
+async function resolveRetroFmTabSimulated(requestedTabId?: number): Promise<number | null> {
+  if (requestedTabId) {
+    if (openTabsList.has(requestedTabId)) return requestedTabId;
+  }
+  let id = inMemoryAppTabId;
+  if (!id && sessionStorageAppTabId) {
+    id = sessionStorageAppTabId;
+    inMemoryAppTabId = id; // restored from session storage
+  }
+  if (id) {
+    if (openTabsList.has(id)) return id;
+    // Tab was closed, clear registration
+    inMemoryAppTabId = null;
+    sessionStorageAppTabId = null;
+  }
+  return null;
 }
 
-assert(resolveRetroTabSafe(allOpenTabs) === 2, 'resolveRetroTab safely finds http://localhost:3003 tab without invalid pattern errors');
+// (a) An unregistered localhost tab is never chosen
+assert((await resolveRetroFmTabSimulated()) === null, 'Proof (a): An unregistered localhost tab is never chosen (no search across localhost tabs)');
+
+// App registers via REGISTER_RETROFM_APP (or BROADCAST_RADIO_STATE)
+inMemoryAppTabId = 2;
+sessionStorageAppTabId = 2;
+assert((await resolveRetroFmTabSimulated()) === 2, 'Registered state: resolveRetroFmTab returns the registered app tab ID (2)');
+
+// (b) A registered tab survives a service worker restart (in-memory variable lost, restored from session storage)
+inMemoryAppTabId = null; // simulate service worker going to sleep / restarting
+assert(inMemoryAppTabId === null, 'Simulated service worker idle: in-memory tab ID is null');
+const restoredTabId = await resolveRetroFmTabSimulated();
+assert(restoredTabId === 2, 'Proof (b): Registered tab survives a service worker restart and is restored from session storage');
+assert(inMemoryAppTabId === 2, 'In-memory variable successfully repopulated from session storage');
+
+// (c) Closing the app tab clears the registration in memory and session storage
+openTabsList.delete(2); // simulate tab 2 closing in browser
+const afterClosedTabId = await resolveRetroFmTabSimulated();
+assert(afterClosedTabId === null, 'Proof (c): Closing the app tab clears the registration; returns null');
+assert(inMemoryAppTabId === null && sessionStorageAppTabId === null, 'Registration cleared in both memory and storage.session');
+
+function simulateDispatchBoomBoxAction(registeredTab: number | null): { success: boolean; error?: string } {
+  if (!registeredTab) {
+    return { success: false, error: 'RetroFM app not connected' };
+  }
+  return { success: true };
+}
+
+const noAppResult = simulateDispatchBoomBoxAction(null);
+assert(!noAppResult.success && noAppResult.error === 'RetroFM app not connected', 'No app registered: Boom Box action receives "RetroFM app not connected"');
+
+const appConnectedResult = simulateDispatchBoomBoxAction(2);
+assert(appConnectedResult.success, 'App registered: Boom Box action dispatches successfully');
 
 async function simulateBoomBoxPlayAction(connected: boolean): Promise<{ programSongCalled: boolean; playCommandSent: boolean }> {
   if (!connected) {
@@ -285,7 +342,7 @@ const c6 = formatScreens('Daft Punk', 'Get Lucky (feat. Pharrell Williams)');
 assert(c6.titleScreen === 'Get Lucky (feat. Pharrell Williams)', 'Case 6 Featured artist preserved in title');
 
 // --- 8. Transport Active States Contract Test Suite ---
-console.log('\nTEST SUITE 8: Transport Active States Contract & No Optimistic State Race');
+console.log('\nTEST SUITE 8: Transport Active States Contract & Optimistic UI Update with 1.5s Reconciliation');
 
 interface TransportActiveStates {
   playActive: boolean;
@@ -316,13 +373,42 @@ assert(stoppedStates.playActive === false, 'Stopped state: Play button is Inacti
 assert(stoppedStates.pauseActive === false, 'Stopped state: Pause button is Inactive');
 assert(stoppedStates.stopActive === false, 'Stopped state: Stop button is Inactive (no illuminated transport symbols)');
 
-// Verify that clicking Play does NOT optimistically change state
-let localState = 'paused';
-function simulateOptimisticClickPlay() {
-  // Previously: localState = 'playing'; Now: do not mutate localState until broadcast arrives
-  return localState; // Remains 'paused' until authoritative broadcast
+// Verify that clicking Play immediately updates local UI state
+let localUiState = 'paused';
+let lastUserAction: { state: string; time: number } | null = null;
+
+function clickPlayTransport() {
+  localUiState = 'playing'; // Immediate update
+  lastUserAction = { state: 'playing', time: Date.now() };
 }
-assert(simulateOptimisticClickPlay() === 'paused', 'Clicking Play does NOT optimistically flip local state before broadcast');
+clickPlayTransport();
+assert(localUiState === 'playing', 'Clicking Play immediately updates local UI state to playing');
+
+// Within 1.5s window, disagreeing incoming state (e.g. paused from polling) does NOT override user action
+function receiveBroadcastState(incoming: string, now: number) {
+  if (lastUserAction) {
+    if (incoming === lastUserAction.state) {
+      lastUserAction = null;
+      localUiState = incoming;
+      return;
+    }
+    if (now - lastUserAction.time < 1500) {
+      // Disagreeing within 1.5s: keep local state
+      return;
+    }
+    // Disagreeing for > 1.5s: correct state
+    lastUserAction = null;
+    localUiState = incoming;
+    return;
+  }
+  localUiState = incoming;
+}
+
+receiveBroadcastState('paused', lastUserAction!.time + 500);
+assert(localUiState === 'playing', 'Disagreeing broadcast within 1.5s (at 500ms) is held, keeping optimistic playing state');
+
+receiveBroadcastState('paused', lastUserAction!.time + 1600);
+assert(localUiState === 'paused', 'Disagreeing broadcast after 1.5s (at 1600ms) reconciles to incoming authoritative state');
 
 // --- 9. Deck Transport Action Routing (Rewind / Fast Forward / Seek) ---
 console.log('\nTEST SUITE 9: Rewind / Fast Forward Seek Position Math');
@@ -340,18 +426,18 @@ assert(simulateSeek(5, 180, 'rewind') === 0, 'Rewind clamps cleanly to 0s at tra
 assert(simulateSeek(25, 180, 'forward') === 35, 'Fast Forward seeks forward by 10 seconds');
 assert(simulateSeek(175, 180, 'forward') === 180, 'Fast Forward clamps cleanly to duration at track end');
 
-// --- 10. CSS Theme & Dark Green Styling Verification ---
-console.log('\nTEST SUITE 10: Date & Genre Dark Green CSS Properties');
+// --- 10. CSS Theme & Original Styling Verification ---
+console.log('\nTEST SUITE 10: Original Styling & Tile Color Properties');
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const cssContent = readFileSync(resolve(process.cwd(), 'extension/player/player.css'), 'utf-8');
 
-assert(cssContent.includes('.fl{') && cssContent.includes('background:#0d2417'), 'Flap cells (.fl) have dark green background (#0d2417)');
-assert(cssContent.includes('border:1px solid #1a422b'), 'Flap cells (.fl) have dark green border (#1a422b)');
-assert(cssContent.includes('color:#a3ffc2'), 'Flap cells (.fl) have light-green legible text (#a3ffc2)');
-assert(cssContent.includes('button.tag{background:#0a1c12'), 'Date/Genre tag buttons have dark green background (#0a1c12)');
-assert(cssContent.includes('.tag{border:1px solid #235839'), 'Date/Genre tag buttons have muted green border (#235839)');
+assert(cssContent.includes('#copy{flex:1;white-space:nowrap}'), 'CSS includes #copy{flex:1;white-space:nowrap}');
+assert(cssContent.includes('#panel.entry{background:#151311;color:#e9d9b8}'), 'CSS includes dark #panel.entry background (#151311)');
+assert(cssContent.includes('.fl{') && cssContent.includes('background:#2a2622'), 'Original tile flap cells (.fl) have dark background (#2a2622)');
+assert(cssContent.includes('color:#f2e8d0'), 'Original tile flap cells (.fl) have cream color text (#f2e8d0)');
+assert(cssContent.includes('button.tag{background:transparent;color:#8dffb0'), 'Date/Genre tag buttons have transparent background');
 
 // --- 11. Metadata Retention Across Transport States ---
 console.log('\nTEST SUITE 11: Metadata Retention Across Play, Pause, Resume, and Stop');
@@ -761,6 +847,190 @@ function simulateVolumeMessage(msg: { type: string; volume: number }) {
 }
 simulateVolumeMessage({ type: 'RETROFM_SET_VOLUME_MSG', volume: 80 });
 assert(volumeReceived, 'Existing volume postMessage bridge remains intact');
+
+// --- 14. Transport Trace Log Integrity & Formatting ---
+console.log('\nTEST SUITE 14: Transport Trace Buffer Capacity & Plain-Text Formatting');
+interface TraceEntry {
+  ts: number;
+  source: string;
+  event: string;
+  data?: Record<string, any>;
+}
+
+const traceBuffer: TraceEntry[] = [];
+const MAX_TRACE = 300;
+
+function pushTrace(entry: TraceEntry) {
+  traceBuffer.push(entry);
+  if (traceBuffer.length > MAX_TRACE) {
+    traceBuffer.splice(0, traceBuffer.length - MAX_TRACE);
+  }
+}
+
+// 14.1 Test capacity boundary: push 350 entries, ensure exactly 300 retained
+for (let i = 1; i <= 350; i++) {
+  pushTrace({
+    ts: 1000 + i,
+    source: i % 2 === 0 ? 'boombox' : 'background',
+    event: `EVENT_${i}`,
+    data: { index: i }
+  });
+}
+assert(traceBuffer.length === 300, 'Trace log caps buffer at exactly 300 entries');
+assert(traceBuffer[0].event === 'EVENT_51', 'Trace log maintains FIFO ring order (entry #51 is earliest after 350 pushes)');
+assert(traceBuffer[299].event === 'EVENT_350', 'Trace log retains latest entry (#350 at end)');
+
+// 14.2 Test formatting for clipboard export
+function formatTracePlain(entries: TraceEntry[]): string {
+  if (!entries || entries.length === 0) return 'No transport trace entries recorded yet.';
+  return entries
+    .map((e) => {
+      const iso = new Date(e.ts).toISOString();
+      const src = (e.source || 'unknown').padEnd(14, ' ');
+      const evt = e.event || 'UNKNOWN';
+      const details = e.data && Object.keys(e.data).length > 0 ? ' ' + JSON.stringify(e.data) : '';
+      return `${iso} [${src}] ${evt}${details}`;
+    })
+    .join('\n');
+}
+
+const formattedSample = formatTracePlain(traceBuffer.slice(-2));
+const lines = formattedSample.split('\n');
+assert(lines.length === 2, 'Trace export formats one line per entry');
+assert(lines[0].includes('EVENT_349') && lines[0].includes('background'), 'Trace line contains ISO timestamp, padded source, and event name');
+assert(lines[0].includes('{"index":349}'), 'Trace line contains serialized data details');
+
+// --- 15. Playback Reliability & Pushed State Transport Contracts ---
+console.log('\nTEST SUITE 15: Playback Reliability & Pushed State Transport Contracts');
+
+// 15.1 Play with loaded video sends no navigation
+let navigationInvoked: boolean = false;
+let playCommandSent: boolean = false;
+async function simulateHandlePlayMusic(params: {
+  connectedTabId: number | null;
+  loadedVideoId: string | null;
+  desiredVideoId: string;
+}) {
+  navigationInvoked = false;
+  playCommandSent = false;
+  let activeTabId = params.connectedTabId;
+
+  // Reconnection check
+  if (!activeTabId) {
+    // If no tab, would connect or launch
+    return;
+  }
+
+  // Video ID check
+  if (params.desiredVideoId && params.loadedVideoId && params.loadedVideoId !== params.desiredVideoId) {
+    navigationInvoked = true;
+    return;
+  }
+
+  // Already loaded: send only play command
+  playCommandSent = true;
+}
+
+await simulateHandlePlayMusic({
+  connectedTabId: 101,
+  loadedVideoId: 'f-BDCwxBF9Q',
+  desiredVideoId: 'f-BDCwxBF9Q'
+});
+assert(Boolean(playCommandSent) && !navigationInvoked, '(a) Play with loaded video sends direct play command and no navigation');
+
+await simulateHandlePlayMusic({
+  connectedTabId: 101,
+  loadedVideoId: 'DIFFERENT_ID',
+  desiredVideoId: 'f-BDCwxBF9Q'
+});
+assert(!playCommandSent && Boolean(navigationInvoked), '(a.2) Play with different video ID navigates new song');
+
+// 15.2 Pushed state 3 (buffering) keeps Boom Box in playing
+function mapPushedPlayerState(state: number): 'playing' | 'paused' | 'stopped' {
+  if (state === 1 || state === 3) return 'playing';
+  if (state === 2) return 'paused';
+  return 'stopped';
+}
+assert(mapPushedPlayerState(1) === 'playing', '(b.1) Pushed state 1 maps to playing');
+assert(mapPushedPlayerState(3) === 'playing', '(b.2) Pushed state 3 (buffering) keeps Boom Box in playing');
+assert(mapPushedPlayerState(2) === 'paused', '(b.3) Pushed state 2 maps to paused');
+assert(mapPushedPlayerState(0) === 'stopped', '(b.4) Pushed state 0 (ended) maps to stopped');
+assert(mapPushedPlayerState(-1) === 'stopped', '(b.5) Pushed state -1 (unstarted) maps to stopped');
+assert(mapPushedPlayerState(5) === 'stopped', '(b.6) Pushed state 5 (cued) maps to stopped');
+
+// 15.3 Failed poll keeps last state and never reverts to stopped
+let currentBoomBoxState = 'playing';
+function handleStatusPollResult(pollResult: { available: boolean; isPlaying: boolean } | null) {
+  if (!pollResult || !pollResult.available) {
+    // Treat as unknown: keep last known state
+    return;
+  }
+  currentBoomBoxState = pollResult.isPlaying ? 'playing' : 'paused';
+}
+
+handleStatusPollResult(null); // Failed poll / timeout
+assert(currentBoomBoxState === 'playing', '(c.1) Failed / timed-out poll keeps last state (remains playing)');
+handleStatusPollResult({ available: false, isPlaying: false }); // Unavailable poll
+assert(currentBoomBoxState === 'playing', '(c.2) Unavailable poll preserves last state and never sets stopped');
+
+// 15.4 Hidden-tab start switches to YouTube tab and back, and skips switch-back if user changed tabs
+interface WindowTab {
+  id: number;
+  active: boolean;
+}
+let tabsInWindow: WindowTab[] = [
+  { id: 10, active: true },   // User active tab
+  { id: 20, active: false }  // YouTube tab (hidden)
+];
+let activeSwitchedHistory: number[] = [];
+
+async function simulateHiddenTabRecovery(params: {
+  ytTabId: number;
+  userSwitchedDuringWait: boolean;
+}) {
+  activeSwitchedHistory = [];
+  const ytTab = tabsInWindow.find(t => t.id === params.ytTabId);
+  if (!ytTab || ytTab.active) return;
+
+  const originalActive = tabsInWindow.find(t => t.active);
+  const originalActiveTabId = originalActive?.id;
+
+  // 1. Activate YouTube tab
+  ytTab.active = true;
+  if (originalActive) originalActive.active = false;
+  activeSwitchedHistory.push(ytTab.id);
+
+  // 2. Wait up to 4s (simulated)
+  if (!params.userSwitchedDuringWait && originalActiveTabId) {
+    // Re-activate original tab
+    ytTab.active = false;
+    const orig = tabsInWindow.find(t => t.id === originalActiveTabId);
+    if (orig) orig.active = true;
+    activeSwitchedHistory.push(originalActiveTabId);
+  } else if (params.userSwitchedDuringWait) {
+    // User switched tabs themselves, do NOT restore original
+    // Simulate user switched to tab 30
+    activeSwitchedHistory.push(30);
+  }
+}
+
+// Case 1: Normal recovery (user did not switch tabs)
+tabsInWindow = [{ id: 10, active: true }, { id: 20, active: false }];
+await simulateHiddenTabRecovery({ ytTabId: 20, userSwitchedDuringWait: false });
+assert(
+  activeSwitchedHistory.length === 2 &&
+  activeSwitchedHistory[0] === 20 &&
+  activeSwitchedHistory[1] === 10,
+  '(d.1) Hidden-tab start switches to YouTube tab (20) and back to original tab (10)'
+);
+
+// Case 2: User switched tabs during recovery
+tabsInWindow = [{ id: 10, active: true }, { id: 20, active: false }];
+await simulateHiddenTabRecovery({ ytTabId: 20, userSwitchedDuringWait: true });
+assert(
+  activeSwitchedHistory[activeSwitchedHistory.length - 1] !== 10,
+  '(d.2) Hidden-tab recovery does not switch back if user changed tabs in the meantime'
+);
 
 // --- Summary ---
 console.log('\n================================================================================');

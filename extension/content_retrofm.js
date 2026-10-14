@@ -62,7 +62,17 @@
 
   // Listen to requests from web page
   function onWindowMessage(event) {
-    // Only accept messages with proper source marker
+    // 1. Handle app self-registration: { type: 'RETROFM_APP_HELLO' }
+    if (event.data && event.data.type === 'RETROFM_APP_HELLO') {
+      if (isContextValid()) {
+        try {
+          chrome.runtime.sendMessage({ type: 'REGISTER_RETROFM_APP' });
+        } catch (e) {}
+      }
+      return;
+    }
+
+    // Only accept other messages with proper source marker
     if (!event.data || event.data.source !== SOURCE_PAGE) {
       return;
     }

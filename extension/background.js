@@ -5,6 +5,40 @@ let activeConnectedTabId = null;
 let activeRetroFmTabId = null;
 let activeBoomBoxTabId = null;
 let lastKnownRadioState = null;
+let latestYouTubeState = null;
+
+// Unified Transport Trace Log (max 300 entries, stored in memory and persisted to chrome.storage.session)
+const MAX_TRANSPORT_TRACE_ENTRIES = 300;
+let transportTraceLog = [];
+
+function recordTrace(source, event, data) {
+  try {
+    const entry = {
+      ts: Date.now(),
+      source: source || 'background',
+      event: event || 'UNKNOWN',
+      data: data || {}
+    };
+    transportTraceLog.push(entry);
+    if (transportTraceLog.length > MAX_TRANSPORT_TRACE_ENTRIES) {
+      transportTraceLog.splice(0, transportTraceLog.length - MAX_TRANSPORT_TRACE_ENTRIES);
+    }
+    if (chrome.storage?.session) {
+      chrome.storage.session.set({ transportTraceLog }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
+// Restore trace log from session storage on worker startup
+try {
+  if (chrome.storage?.session) {
+    chrome.storage.session.get('transportTraceLog').then((res) => {
+      if (Array.isArray(res?.transportTraceLog)) {
+        transportTraceLog = res.transportTraceLog.slice(-MAX_TRANSPORT_TRACE_ENTRIES);
+      }
+    }).catch(() => {});
+  }
+} catch (e) {}
 
 // Query for available Boom Box tabs
 async function resolveBoomBoxTab() {
@@ -29,7 +63,40 @@ async function resolveBoomBoxTab() {
   return null;
 }
 
-// Find best RetroFM web app tab (by tracked ID or localhost query)
+// Helpers to manage registered app tab ID with chrome.storage.session persistence
+async function getStoredRegisteredAppTabId() {
+  if (activeRetroFmTabId) return activeRetroFmTabId;
+  try {
+    if (chrome.storage?.session) {
+      const data = await chrome.storage.session.get('registeredAppTabId');
+      if (typeof data?.registeredAppTabId === 'number') {
+        activeRetroFmTabId = data.registeredAppTabId;
+        return activeRetroFmTabId;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function setStoredRegisteredAppTabId(tabId) {
+  activeRetroFmTabId = tabId;
+  try {
+    if (chrome.storage?.session) {
+      await chrome.storage.session.set({ registeredAppTabId: tabId });
+    }
+  } catch (e) {}
+}
+
+async function clearStoredRegisteredAppTabId() {
+  activeRetroFmTabId = null;
+  try {
+    if (chrome.storage?.session) {
+      await chrome.storage.session.remove('registeredAppTabId');
+    }
+  } catch (e) {}
+}
+
+// Find registered RetroFM web app tab (only a tab that has registered itself)
 async function resolveRetroFmTab(requestedTabId) {
   if (requestedTabId) {
     try {
@@ -37,27 +104,16 @@ async function resolveRetroFmTab(requestedTabId) {
       if (tab) return tab.id;
     } catch (e) {}
   }
-  if (activeRetroFmTabId) {
+
+  const tabId = await getStoredRegisteredAppTabId();
+  if (tabId) {
     try {
-      const tab = await chrome.tabs.get(activeRetroFmTabId);
+      const tab = await chrome.tabs.get(tabId);
       if (tab) return tab.id;
     } catch (e) {
-      activeRetroFmTabId = null;
+      await clearStoredRegisteredAppTabId();
     }
   }
-  try {
-    const tabs = await chrome.tabs.query({});
-    const matchingTabs = tabs.filter(t => t.url && (
-      t.url.includes('localhost') ||
-      t.url.includes('127.0.0.1') ||
-      t.url.includes('.run.app')
-    ));
-    if (matchingTabs.length > 0) {
-      const active = matchingTabs.find(t => t.active) || matchingTabs[0];
-      activeRetroFmTabId = active.id;
-      return active.id;
-    }
-  } catch (e) {}
   return null;
 }
 
@@ -157,6 +213,118 @@ async function findRetroFmTabGroup(windowId) {
   }
 }
 
+// Track active tab changes to respect user tab switches during hidden-tab recovery
+let userSwitchedTabDuringRecovery = false;
+let isRecoveryInProgress = false;
+
+if (chrome.tabs?.onActivated) {
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    if (isRecoveryInProgress) {
+      userSwitchedTabDuringRecovery = true;
+    }
+  });
+}
+
+// Hidden-tab playback recovery helper
+async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = true) {
+  if (!revealSetting || !ytTabId) return;
+
+  // Step 1: Wait up to 2.5s for player to reach state 1 (playing)
+  const startTime = Date.now();
+  let reachedStateOne = false;
+
+  while (Date.now() - startTime < 2500) {
+    if (latestYouTubeState && latestYouTubeState.state === 1) {
+      reachedStateOne = true;
+      break;
+    }
+    // Also check status from tab directly if state hasn't been pushed
+    try {
+      const stat = await chrome.tabs.sendMessage(ytTabId, { action: 'GET_STATUS' });
+      if (stat && (stat.isPlaying || stat.playerState === 1)) {
+        reachedStateOne = true;
+        break;
+      }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  if (reachedStateOne) return;
+
+  // Step 2: Check if YouTube tab document is hidden
+  let ytTab = null;
+  try {
+    ytTab = await chrome.tabs.get(ytTabId);
+  } catch (e) {
+    return;
+  }
+
+  // If the YouTube tab is already the active tab in its window, activation won't help
+  if (ytTab.active) return;
+
+  recordTrace('background', 'HIDDEN_TAB_RECOVERY_TRIGGERED', { ytTabId, active: ytTab.active });
+
+  // Find currently active tab in the YouTube tab's window so we can switch back
+  let originalActiveTabId = null;
+  try {
+    const activeTabs = await chrome.tabs.query({ windowId: ytTab.windowId, active: true });
+    if (activeTabs.length > 0) {
+      originalActiveTabId = activeTabs[0].id;
+    }
+  } catch (e) {}
+
+  isRecoveryInProgress = true;
+  userSwitchedTabDuringRecovery = false;
+
+  try {
+    // Briefly make the YouTube tab active
+    await chrome.tabs.update(ytTabId, { active: true });
+    recordTrace('background', 'HIDDEN_TAB_ACTIVATED', { ytTabId, originalActiveTabId });
+
+    // Wait up to 4s for state 1
+    const actStartTime = Date.now();
+    while (Date.now() - actStartTime < 4000) {
+      if (latestYouTubeState && latestYouTubeState.state === 1) {
+        break;
+      }
+      try {
+        const stat = await chrome.tabs.sendMessage(ytTabId, { action: 'GET_STATUS' });
+        if (stat && (stat.isPlaying || stat.playerState === 1)) {
+          break;
+        }
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    // Re-activate the tab that was active before, UNLESS the user has switched tabs themselves
+    if (!userSwitchedTabDuringRecovery && originalActiveTabId && originalActiveTabId !== ytTabId) {
+      try {
+        await chrome.tabs.update(originalActiveTabId, { active: true });
+        recordTrace('background', 'HIDDEN_TAB_RESTORED_ORIGINAL', { originalActiveTabId });
+      } catch (e) {}
+    } else {
+      recordTrace('background', 'HIDDEN_TAB_SKIPPED_RESTORE', {
+        userSwitchedTabDuringRecovery,
+        originalActiveTabId
+      });
+    }
+
+    // Notify registered RetroFM app tab so it can log to Experimental Event Log
+    const retroTabId = await resolveRetroFmTab();
+    if (retroTabId) {
+      try {
+        await chrome.tabs.sendMessage(retroTabId, {
+          type: 'YOUTUBE_REVEALED_TO_START'
+        });
+      } catch (e) {}
+    }
+  } catch (err) {
+    recordTrace('background', 'HIDDEN_TAB_RECOVERY_ERROR', { error: err.message });
+  } finally {
+    isRecoveryInProgress = false;
+  }
+}
+
 // Central dispatcher for handling requests from webpage or content script
 function handleIncomingRequest(request, sender, sendResponse) {
   const { type, payload } = request;
@@ -204,6 +372,31 @@ function handleIncomingRequest(request, sender, sendResponse) {
             activeBoomBoxTabId = targetTab.id;
           }
 
+          // Add Boom Box tab to the RETRO FM tab group if available
+          if (chrome.tabs.group && chrome.tabGroups && targetTab?.id) {
+            try {
+              const windowId = targetTab.windowId || sender?.tab?.windowId;
+              const existingGroup = await findRetroFmTabGroup(windowId);
+              if (existingGroup) {
+                await chrome.tabs.group({
+                  groupId: existingGroup.id,
+                  tabIds: [targetTab.id]
+                });
+              } else if (sender?.tab?.groupId && sender.tab.groupId !== -1) {
+                await chrome.tabs.group({
+                  groupId: sender.tab.groupId,
+                  tabIds: [targetTab.id]
+                });
+                await chrome.tabGroups.update(sender.tab.groupId, {
+                  title: 'Retro FM',
+                  color: 'orange'
+                });
+              }
+            } catch (groupErr) {
+              console.warn('[Retro FM] Boom Box tab grouping warning:', groupErr);
+            }
+          }
+
           sendResponse({
             success: true,
             data: { success: true, tabId: targetTab.id, reused }
@@ -214,13 +407,94 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: REGISTER_RETROFM_APP / APP_HELLO - RetroFM app registers itself with the extension
+      if (type === 'REGISTER_RETROFM_APP' || type === 'APP_HELLO') {
+        try {
+          if (sender?.tab?.id) {
+            await setStoredRegisteredAppTabId(sender.tab.id);
+          }
+          sendResponse({
+            success: true,
+            data: { registered: true, tabId: activeRetroFmTabId }
+          });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+        return;
+      }
+
+      // Feature: YT_STATE_CHANGED - Pushed YouTube player state update
+      if (type === 'YT_STATE_CHANGED') {
+        const statePayload = payload || {};
+        latestYouTubeState = statePayload;
+        const rawState = statePayload.state;
+        const normalizedMode = (rawState === 1 || rawState === 3) ? 'playing' : (rawState === 2 ? 'paused' : 'stopped');
+        recordTrace('background', 'YT_STATE_CHANGED_PUSHED', {
+          rawState,
+          normalizedMode,
+          videoId: statePayload.videoId,
+          currentTime: statePayload.currentTime,
+          duration: statePayload.duration
+        });
+
+        // Forward to registered RetroFM app tab
+        const retroTabId = await resolveRetroFmTab();
+        if (retroTabId) {
+          try {
+            await chrome.tabs.sendMessage(retroTabId, {
+              type: 'YT_STATE_CHANGED',
+              payload: statePayload
+            });
+          } catch (e) {}
+        }
+
+        // Forward to Boom Box tab
+        const bbTabId = await resolveBoomBoxTab();
+        if (bbTabId) {
+          try {
+            await chrome.tabs.sendMessage(bbTabId, {
+              type: 'YT_STATE_CHANGED',
+              payload: statePayload
+            });
+          } catch (e) {}
+        }
+
+        sendResponse({ success: true });
+        return;
+      }
+
+      // Feature: RECORD_TRACE - receives trace entry from any context and appends to unified log
+      if (type === 'RECORD_TRACE') {
+        const entry = payload || request.entry;
+        if (entry && typeof entry === 'object') {
+          recordTrace(entry.source, entry.event, entry.data);
+        }
+        sendResponse({ success: true });
+        return;
+      }
+
+      // Feature: GET_TRANSPORT_TRACE - returns complete unified time-ordered trace log
+      if (type === 'GET_TRANSPORT_TRACE') {
+        sendResponse({ success: true, data: { traceLog: [...transportTraceLog] } });
+        return;
+      }
+
       // Feature: BOOMBOX_ACTION - routes user command from Boom Box tab to RetroFM app
       if (type === 'BOOMBOX_ACTION') {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
           const retroTabId = await resolveRetroFmTab();
+          recordTrace('background', 'BOOMBOX_ACTION_ARRIVED', {
+            action: payload?.action,
+            payload,
+            forwardTarget: retroTabId ? `tab:${retroTabId}` : 'none'
+          });
           if (!retroTabId) {
-            sendResponse({ success: false, error: 'RetroFM app tab not found' });
+            recordTrace('background', 'BOOMBOX_ACTION_ROUTING_FAILED', {
+              action: payload?.action,
+              reason: 'RetroFM app not connected'
+            });
+            sendResponse({ success: false, error: 'RetroFM app not connected' });
             return;
           }
 
@@ -228,8 +502,16 @@ function handleIncomingRequest(request, sender, sendResponse) {
             type: 'BOOMBOX_ACTION',
             payload
           });
+          recordTrace('background', 'BOOMBOX_ACTION_FORWARDED_SUCCESS', {
+            action: payload?.action,
+            targetTab: retroTabId
+          });
           sendResponse({ success: true, data: res });
         } catch (err) {
+          recordTrace('background', 'BOOMBOX_ACTION_FORWARDED_ERROR', {
+            action: payload?.action,
+            error: err.message
+          });
           sendResponse({ success: false, error: err.message });
         }
         return;
@@ -238,16 +520,26 @@ function handleIncomingRequest(request, sender, sendResponse) {
       // Feature: BROADCAST_RADIO_STATE - caches and relays live radio state from app to Boom Box
       if (type === 'BROADCAST_RADIO_STATE') {
         try {
-          if (sender?.tab?.id) activeRetroFmTabId = sender.tab.id;
+          if (sender?.tab?.id) {
+            await setStoredRegisteredAppTabId(sender.tab.id);
+          }
           lastKnownRadioState = { ...payload, appConnected: true, timestamp: Date.now() };
 
           // Forward to Boom Box tab if open
           const bbTabId = await resolveBoomBoxTab();
+          recordTrace('background', 'BROADCAST_RADIO_STATE_ARRIVED', {
+            playbackStatus: payload?.playbackStatus,
+            currentSong: payload?.currentSong?.title || null,
+            forwardTarget: bbTabId ? `tab:${bbTabId}` : 'none'
+          });
           if (bbTabId) {
             try {
               await chrome.tabs.sendMessage(bbTabId, {
                 type: 'RADIO_STATE',
                 payload: lastKnownRadioState
+              });
+              recordTrace('background', 'BROADCAST_RADIO_STATE_FORWARDED', {
+                targetTab: bbTabId
               });
             } catch (sendErr) {
               // Tab might be busy or navigating
@@ -266,29 +558,41 @@ function handleIncomingRequest(request, sender, sendResponse) {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
           const retroTabId = await resolveRetroFmTab();
-          let freshState = null;
+          if (!retroTabId) {
+            sendResponse({
+              success: false,
+              error: 'RetroFM app not connected',
+              data: { appConnected: false, playbackStatus: 'stopped' }
+            });
+            return;
+          }
 
-          if (retroTabId) {
-            try {
-              await chrome.tabs.sendMessage(retroTabId, {
-                type: 'GET_RADIO_STATE_REQUEST'
-              });
-              if (lastKnownRadioState) {
-                lastKnownRadioState.appConnected = true;
-                freshState = lastKnownRadioState;
-              }
-            } catch (msgErr) {
-              activeRetroFmTabId = null;
+          let freshState = null;
+          try {
+            await chrome.tabs.sendMessage(retroTabId, {
+              type: 'GET_RADIO_STATE_REQUEST'
+            });
+            if (lastKnownRadioState) {
+              lastKnownRadioState.appConnected = true;
+              freshState = lastKnownRadioState;
             }
+          } catch (msgErr) {
+            await clearStoredRegisteredAppTabId();
+            sendResponse({
+              success: false,
+              error: 'RetroFM app not connected',
+              data: { appConnected: false, playbackStatus: 'stopped' }
+            });
+            return;
           }
 
           if (!freshState && lastKnownRadioState) {
-            freshState = { ...lastKnownRadioState, appConnected: !!retroTabId };
+            freshState = { ...lastKnownRadioState, appConnected: true };
           }
 
           sendResponse({
             success: true,
-            data: freshState || { appConnected: false, playbackStatus: 'stopped' }
+            data: freshState || { appConnected: true, playbackStatus: 'stopped' }
           });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
@@ -500,12 +804,17 @@ function handleIncomingRequest(request, sender, sendResponse) {
             sendResponse({ success: false, error: 'Failed communicating with YouTube tab: ' + retryErr.message });
           }
         }
+
+        if (payload?.command?.action === 'PLAY') {
+          checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
+        }
         return;
       }
 
       if (type === 'NAVIGATE_YOUTUBE') {
         const tabId = await resolveYouTubeTab(payload?.tabId);
         if (!tabId) {
+          recordTrace('background', 'NAVIGATE_YOUTUBE_FAILED', { reason: 'No YouTube tab connected' });
           sendResponse({ success: false, error: 'No YouTube tab connected. Please open youtube.com in another tab.' });
           return;
         }
@@ -513,11 +822,18 @@ function handleIncomingRequest(request, sender, sendResponse) {
         const videoId = payload?.videoId;
         const targetUrl = payload?.url || (videoId ? ('https://www.youtube.com/watch?v=' + videoId) : null);
         if (!targetUrl) {
+          recordTrace('background', 'NAVIGATE_YOUTUBE_FAILED', { reason: 'No video ID or URL' });
           sendResponse({ success: false, error: 'No YouTube video ID or URL provided for navigation.' });
           return;
         }
 
         activeConnectedTabId = tabId;
+        recordTrace('background', 'NAVIGATE_YOUTUBE_START', {
+          tabId,
+          videoId: videoId || null,
+          targetUrl,
+          reason: payload?.reason || 'program_song'
+        });
 
         try {
           // 1. Navigate connected YouTube tab to the target video URL
@@ -568,6 +884,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
           }
 
           if (playResult && playResult.success) {
+            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
             sendResponse({
               success: true,
               data: {
@@ -577,6 +894,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
               }
             });
           } else {
+            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
             // Retrieve current status if playback command completed or autoplay triggered
             try {
               const currentStatus = await chrome.tabs.sendMessage(tabId, { action: 'GET_STATUS' });
@@ -636,8 +954,9 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (tabId === activeBoomBoxTabId) {
     activeBoomBoxTabId = null;
   }
-  if (tabId === activeRetroFmTabId) {
-    activeRetroFmTabId = null;
+  const currentRegisteredId = await getStoredRegisteredAppTabId();
+  if (tabId === activeRetroFmTabId || tabId === currentRegisteredId) {
+    await clearStoredRegisteredAppTabId();
     if (lastKnownRadioState) {
       lastKnownRadioState.appConnected = false;
       const bbTabId = await resolveBoomBoxTab();

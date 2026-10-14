@@ -8,7 +8,24 @@
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
+  const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
+  const EVENT_TRACE = 'RETROFM_TRACE';
   const STORAGE_KEY_SAVED_VOLUME = 'retrofm_saved_master_volume';
+
+  function trace(event, data) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(EVENT_TRACE, {
+          detail: {
+            ts: Date.now(),
+            source: 'yt_main_world',
+            event,
+            data: data || {}
+          }
+        })
+      );
+    } catch (e) {}
+  }
 
   // Restore remembered master volume from localStorage if available
   let queuedVolume = null;
@@ -162,6 +179,8 @@
     const player = getPlayer();
     if (!player) return false;
 
+    const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+
     if (cmd === 'PLAY') {
       try {
         if (typeof player.playVideo === 'function') {
@@ -170,7 +189,6 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.playVideo threw:', e);
       }
-      return true;
     } else if (cmd === 'PAUSE') {
       try {
         if (typeof player.pauseVideo === 'function') {
@@ -179,7 +197,6 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.pauseVideo threw:', e);
       }
-      return true;
     } else if (cmd === 'STOP') {
       try {
         if (typeof player.pauseVideo === 'function') {
@@ -191,7 +208,6 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player STOP threw:', e);
       }
-      return true;
     } else if (cmd === 'SEEK') {
       const time = typeof payload?.time === 'number' ? payload.time : (typeof payload === 'number' ? payload : 0);
       try {
@@ -201,9 +217,11 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.seekTo threw:', e);
       }
-      return true;
     }
-    return false;
+
+    const stateAfter = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+    trace('EXECUTE_PLAYER_COMMAND', { cmd, stateBefore, stateAfter, payload });
+    return true;
   }
 
   function executePlayerCommand(command, payload) {
@@ -329,6 +347,61 @@
     flushPendingPlayerCommand('yt-player-updated');
   });
 
+  function attachPlayerStateListener(player) {
+    if (!player || player.__retroFmStateListenerAttached) return;
+    player.__retroFmStateListenerAttached = true;
+    try {
+      if (typeof player.addEventListener === 'function') {
+        player.addEventListener('onStateChange', (state) => {
+          trace('YT_PLAYER_ON_STATE_CHANGE', { state });
+          let videoId = null;
+          let title = '';
+          let currentTime = 0;
+          let duration = 0;
+          try {
+            if (typeof player.getVideoData === 'function') {
+              const vd = player.getVideoData();
+              videoId = vd?.video_id || null;
+              title = vd?.title || '';
+            }
+          } catch (e) {}
+          if (!videoId) {
+            try {
+              const url = window.location.href;
+              const match = url.match(/[?&]v=([^&#]+)/);
+              if (match) videoId = match[1];
+            } catch (e) {}
+          }
+          if (!title) {
+            try {
+              const h1 = document.querySelector('h1.ytd-watch-metadata yt-formatted-string') ||
+                         document.querySelector('h1.title yt-formatted-string');
+              title = h1?.textContent?.trim() || document.title.replace(' - YouTube', '').trim() || '';
+            } catch (e) {}
+          }
+          try {
+            if (typeof player.getCurrentTime === 'function') {
+              currentTime = Math.floor(player.getCurrentTime() || 0);
+            }
+          } catch (e) {}
+          try {
+            if (typeof player.getDuration === 'function') {
+              duration = Math.floor(player.getDuration() || 0);
+            }
+          } catch (e) {}
+
+          const detail = { state, videoId, title, currentTime, duration };
+          try {
+            window.dispatchEvent(new CustomEvent(EVENT_STATE_CHANGE, { detail }));
+          } catch (e) {}
+          try {
+            window.postMessage({ type: 'RETROFM_YT_STATE_CHANGED_MSG', ...detail }, '*');
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
+  }
+
   // Poll for player existence on initialization
   let checkPlayerInterval = setInterval(() => {
     const player = getPlayer();
@@ -337,6 +410,7 @@
         playerFound = true;
         console.log(`[RetroFM MainWorld] YouTube player element detected.`);
       }
+      attachPlayerStateListener(player);
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'playerReady');
       }

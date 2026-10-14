@@ -8,13 +8,90 @@ if (!window.__retroFmContentLoaded) {
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
+  const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
+  const EVENT_TRACE = 'RETROFM_TRACE';
+
+  function trace(event, data) {
+    try {
+      if (chrome?.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'RECORD_TRACE',
+          payload: {
+            ts: Date.now(),
+            source: 'content_youtube',
+            event,
+            data: data || {}
+          }
+        }, () => {
+          if (chrome.runtime?.lastError) {}
+        });
+      }
+    } catch (e) {}
+  }
+
+  let latestPlayerVolume = 100;
+  let latestPlayerMuted = false;
+  let latestPlayerState = null;
+  let latestVideoId = null;
+
+  function getVideoId() {
+    if (latestVideoId) return latestVideoId;
+    try {
+      const match = window.location.href.match(/[?&]v=([^&#]+)/);
+      if (match) return match[1];
+    } catch (e) {}
+    return null;
+  }
+
+  function handleStateChangeFromMainWorld(data) {
+    if (!data || typeof data.state === 'undefined') return;
+    latestPlayerState = data.state;
+    if (data.videoId) latestVideoId = data.videoId;
+    try {
+      if (chrome?.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'YT_STATE_CHANGED',
+          payload: {
+            state: data.state,
+            videoId: data.videoId || getVideoId(),
+            title: data.title || '',
+            currentTime: typeof data.currentTime === 'number' ? data.currentTime : 0,
+            duration: typeof data.duration === 'number' ? data.duration : 0
+          }
+        }, () => {
+          if (chrome.runtime?.lastError) {}
+        });
+      }
+    } catch (e) {}
+  }
+
+  window.addEventListener(EVENT_STATE_CHANGE, (e) => {
+    handleStateChangeFromMainWorld(e.detail);
+  });
+
+  window.addEventListener('message', (e) => {
+    if (e.source === window && e.data && e.data.type === 'RETROFM_YT_STATE_CHANGED_MSG') {
+      handleStateChangeFromMainWorld(e.data);
+    }
+  });
+
+  // Forward main-world trace events to background
+  window.addEventListener(EVENT_TRACE, (e) => {
+    try {
+      const entry = e.detail;
+      if (entry && chrome?.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'RECORD_TRACE',
+          payload: entry
+        }, () => {
+          if (chrome.runtime?.lastError) {}
+        });
+      }
+    } catch (err) {}
+  });
 
   let rampInterval = null;
   let activeRampId = null;
-
-  // Track latest main-world volume status (0-100)
-  let latestPlayerVolume = 100;
-  let latestPlayerMuted = false;
 
   // Listen for volume status broadcast from player/yt_main_world.js
   window.addEventListener(EVENT_VOLUME_STATUS, (event) => {
@@ -49,6 +126,8 @@ if (!window.__retroFmContentLoaded) {
         available: false,
         title: getTitle(),
         url: window.location.href,
+        videoId: getVideoId(),
+        playerState: latestPlayerState,
         isPlaying: false,
         currentTime: 0,
         duration: 0,
@@ -61,6 +140,8 @@ if (!window.__retroFmContentLoaded) {
       available: true,
       title: getTitle(),
       url: window.location.href,
+      videoId: getVideoId(),
+      playerState: latestPlayerState,
       isPlaying: !video.paused && !video.ended && video.readyState > 2,
       currentTime: Math.floor(video.currentTime),
       duration: Math.floor(video.duration || 0),
@@ -217,6 +298,7 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'PLAY': {
+        trace('RECV_PLAY_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
           break;
@@ -337,6 +419,7 @@ if (!window.__retroFmContentLoaded) {
         return true; // Keep channel open for async response
       }
       case 'PAUSE': {
+        trace('RECV_PAUSE_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
           break;
@@ -356,6 +439,7 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'STOP': {
+        trace('RECV_STOP_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
           break;
@@ -377,6 +461,7 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'SEEK': {
+        trace('RECV_SEEK_COMMAND', { time: message.time, hasVideo: !!video });
         if (video && typeof message.time === 'number') {
           sendPlayerCommandToMainWorld('SEEK', { time: message.time });
           video.currentTime = message.time;

@@ -8,6 +8,8 @@ export interface MusicPlaybackStatus {
   volume: number; // 0.0 to 1.0
   muted: boolean;
   connectedTabId?: number | null;
+  videoId?: string | null;
+  playerState?: number | null;
 }
 
 export interface SongTimingStructure {

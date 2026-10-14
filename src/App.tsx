@@ -180,6 +180,7 @@ export default function App() {
 
   // Local volume slider state
   const [targetMusicVolume, setTargetMusicVolume] = useState<number>(100);
+  const [revealYouTubeToStart, setRevealYouTubeToStart] = useState<boolean>(true);
 
   // --- PROGRAM SONG Test State ---
   const [programArtist, setProgramArtist] = useState<string>('a-ha');
@@ -325,6 +326,7 @@ export default function App() {
   const [copiedFileKey, setCopiedFileKey] = useState<string | null>(null);
   const [updateSuccessVersion, setUpdateSuccessVersion] = useState<string | null>(null);
   const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState<boolean>(false);
+  const [copiedTransportTrace, setCopiedTransportTrace] = useState<boolean>(false);
   const previousReportedVersionRef = useRef<string | null>(null);
   const hadOutdatedBannerRef = useRef<boolean>(false);
 
@@ -332,6 +334,18 @@ export default function App() {
     navigator.clipboard.writeText('chrome://extensions');
     setCopiedExtensionsUrl(true);
     setTimeout(() => setCopiedExtensionsUrl(false), 2500);
+  };
+
+  const handleCopyTransportTrace = async () => {
+    try {
+      const traceText = await musicProviderRef.current.getTransportTrace();
+      await navigator.clipboard.writeText(traceText);
+      setCopiedTransportTrace(true);
+      logMessage('Copied transport trace to clipboard.');
+      setTimeout(() => setCopiedTransportTrace(false), 2500);
+    } catch (err: any) {
+      logMessage(`Failed to copy transport trace: ${err?.message || 'unknown error'}`);
+    }
   };
 
   const loadExtensionFiles = () => {
@@ -464,6 +478,8 @@ export default function App() {
 
       if (pingResult.active) {
         setTestResults((prev) => ({ ...prev, tabDetection: true }));
+        // Register app tab with extension worker
+        musicProviderRef.current.registerAppHello();
         try {
           const tabs = await musicProviderRef.current.listTabs().catch(() => []);
           setAvailableTabs(tabs);
@@ -509,9 +525,10 @@ export default function App() {
   // Monotonically increasing command sequence number to eliminate race conditions
   const transportCommandSeqRef = useRef<number>(0);
   const isTransportCommandInFlightRef = useRef<boolean>(false);
+  const lastBroadcastStateKeyRef = useRef<string>('');
 
   // --- Broadcast Current Radio State to Boom Box ---
-  const broadcastCurrentRadioState = useCallback(() => {
+  const broadcastCurrentRadioState = useCallback((force: boolean = false) => {
     const vc = volumeControllerRef.current;
     const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
     const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
@@ -556,9 +573,28 @@ export default function App() {
     };
 
     const station = DECADE_STATIONS[decade] || { freq: 101.9, genre: 'CHR' };
+    const playbackMode = playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped');
+
+    // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
+    const stateFingerprint = JSON.stringify({
+      playbackStatus: playbackMode,
+      currentSongTitle: currentSong?.title || '',
+      currentSongArtist: currentSong?.artist || '',
+      currentSongYear: currentSong?.year || '',
+      masterVolume: currentVol,
+      decade,
+      freq: station.freq,
+      isDuck,
+      duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent
+    });
+
+    if (!force && stateFingerprint === lastBroadcastStateKeyRef.current) {
+      return; // Data has not changed; skip redundant broadcast
+    }
+    lastBroadcastStateKeyRef.current = stateFingerprint;
 
     const statePayload = {
-      playbackStatus: playbackStatus.isPlaying ? 'playing' : (playbackStatus.available && playbackStatus.currentTime > 0 ? 'paused' : 'stopped'),
+      playbackStatus: playbackMode,
       currentSong,
       date: programYear ? `${programYear}-07-04` : '1985-07-13',
       decade,
@@ -571,6 +607,11 @@ export default function App() {
       timestamp: Date.now()
     };
 
+    musicProviderRef.current.recordTrace('BROADCAST_RADIO_STATE', {
+      playbackMode,
+      stateFingerprint,
+      force
+    });
     musicProviderRef.current.broadcastRadioState(statePayload).catch(() => {});
   }, [playbackStatus, programSongResult, programArtist, programSongTitle, programYear, targetMusicVolume, isDuckingActive, duckVolumePercent]);
 
@@ -633,7 +674,7 @@ export default function App() {
     });
 
     const unsubReq = musicProviderRef.current.onRadioStateRequest(() => {
-      broadcastCurrentRadioState();
+      broadcastCurrentRadioState(true);
     });
 
     return () => {
@@ -642,13 +683,60 @@ export default function App() {
     };
   }, [broadcastCurrentRadioState]);
 
-  // --- Poll YouTube Tab Status ---
+  // Listen for pushed YouTube player state and hidden tab reveal notifications
+  useEffect(() => {
+    const unsubYtState = musicProviderRef.current.onYouTubeStateChanged((payload: any) => {
+      if (!payload) return;
+      const rawState = payload.state;
+      // Map states: 1 playing and 3 buffering mean 'playing'; 2 means 'paused'; 0 ended and -1 or 5 unstarted mean 'stopped'
+      const isPlaying = rawState === 1 || rawState === 3;
+      setPlaybackStatus((prev) => ({
+        ...prev,
+        available: true,
+        isPlaying,
+        videoId: payload.videoId || prev.videoId,
+        title: payload.title || prev.title,
+        currentTime: typeof payload.currentTime === 'number' ? payload.currentTime : prev.currentTime,
+        duration: typeof payload.duration === 'number' ? payload.duration : prev.duration,
+      }));
+    });
+
+    const unsubReveal = musicProviderRef.current.onRevealYouTubeToStart(() => {
+      logMessage('YouTube tab had to be visible to start');
+    });
+
+    return () => {
+      unsubYtState();
+      unsubReveal();
+    };
+  }, []);
+
+  // --- Poll YouTube Tab Status (Fallback every 5 seconds) ---
+  const lastPolledStatusFingerprintRef = useRef<string>('');
   useEffect(() => {
     if (!playbackStatus.connectedTabId) return;
 
     const poll = async () => {
       try {
         const s = await musicProviderRef.current.getStatus();
+        // A failed or timed-out poll must be treated as unknown and keep the last known state
+        if (!s || !s.available) {
+          return;
+        }
+
+        const pollFingerprint = `${s.available}|${s.isPlaying}|${s.currentTime}|${s.duration}|${s.title}|${s.volume}|${s.muted}`;
+        if (pollFingerprint !== lastPolledStatusFingerprintRef.current) {
+          lastPolledStatusFingerprintRef.current = pollFingerprint;
+          musicProviderRef.current.recordTrace('STATUS_POLL_CHANGED', {
+            available: s.available,
+            isPlaying: s.isPlaying,
+            currentTime: s.currentTime,
+            duration: s.duration,
+            title: s.title,
+            volume: s.volume,
+            muted: s.muted
+          });
+        }
         // If a transport command is currently in flight, merge metadata without overriding pending transport intent
         if (isTransportCommandInFlightRef.current) {
           setPlaybackStatus((prev) => ({
@@ -660,24 +748,22 @@ export default function App() {
           setPlaybackStatus(s);
         }
 
-        if (s.available) {
-          setTestResults((prev) => ({
-            ...prev,
-            playbackState: true,
-            currentPosition: s.currentTime > 0 || prev.currentPosition,
-            metadata: !!(s.title && s.title !== 'Unknown Title') || prev.metadata
-          }));
-          if (s.volume !== undefined && volumeControllerRef.current) {
-            volumeControllerRef.current.handlePolledVolume(s.volume);
-          }
+        setTestResults((prev) => ({
+          ...prev,
+          playbackState: true,
+          currentPosition: s.currentTime > 0 || prev.currentPosition,
+          metadata: !!(s.title && s.title !== 'Unknown Title') || prev.metadata
+        }));
+        if (s.volume !== undefined && volumeControllerRef.current) {
+          volumeControllerRef.current.handlePolledVolume(s.volume);
         }
       } catch (err) {
-        // Status fetch error
+        // Status fetch error: preserve last known state, never revert to stopped
       }
     };
 
     poll();
-    const timer = setInterval(poll, 1000);
+    const timer = setInterval(poll, 5000);
     return () => clearInterval(timer);
   }, [playbackStatus.connectedTabId]);
 
@@ -765,11 +851,41 @@ export default function App() {
   const handlePlayMusic = async () => {
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
+    musicProviderRef.current.recordTrace('HANDLE_PLAY_START', { seq, connectedTabId: playbackStatus.connectedTabId });
     logMessage('Sending Play command to YouTube tab...');
 
     try {
-      // If not connected to a YouTube tab yet, launch RetroFM tab group and program the current song preset
-      if (!playbackStatus.connectedTabId) {
+      // Determine the target video ID for the current song selection
+      let desiredVideoId: string | null = null;
+      const lookupKey = `${(programArtist || '').trim().toLowerCase()}|${(programSongTitle || '').trim().toLowerCase()}`;
+      const preset = HARDCODED_PRESETS[lookupKey];
+      if (preset && preset.videoId) {
+        desiredVideoId = preset.videoId;
+      } else if (programSongResult && programSongResult.selectedVideoId) {
+        desiredVideoId = programSongResult.selectedVideoId;
+      }
+
+      // Check current connection. If connectedTabId is missing, check if a YouTube tab already exists and reconnect
+      let activeTabId = playbackStatus.connectedTabId;
+      let currentStatus = playbackStatus;
+
+      if (!activeTabId) {
+        try {
+          const ytTabs = await musicProviderRef.current.listTabs();
+          if (ytTabs && ytTabs.length > 0) {
+            const connectRes = await musicProviderRef.current.connect(ytTabs[0].id);
+            if (connectRes.success && connectRes.status) {
+              activeTabId = ytTabs[0].id;
+              currentStatus = connectRes.status;
+              setPlaybackStatus(connectRes.status);
+              logMessage(`Reconnected to existing YouTube tab: "${connectRes.status.title}"`);
+            }
+          }
+        } catch (e) {}
+      }
+
+      // If still no connected tab, launch tab group and program song
+      if (!activeTabId) {
         logMessage('No active YouTube tab connected. Launching tab group / programming selected song...');
         const groupRes = await musicProviderRef.current.launchRetroFmGroup();
         if (transportCommandSeqRef.current !== seq) return;
@@ -778,18 +894,36 @@ export default function App() {
         }
         await handleProgramSong();
         broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, result: 'launched_group_and_programmed' });
         return;
       }
 
-      // If currently stopped at position 0, seek to 0 and start playback
-      if (!playbackStatus.isPlaying && playbackStatus.currentTime === 0) {
+      // If there is a connected tab, compare current loaded video ID with desired song's video ID
+      let currentLoadedVideoId: string | null = (currentStatus as any)?.videoId || null;
+      if (!currentLoadedVideoId && currentStatus.url) {
+        const m = currentStatus.url.match(/[?&]v=([^&#]+)/);
+        if (m) currentLoadedVideoId = m[1];
+      }
+
+      // If current video is not the one the current selection calls for, program or navigate the song
+      if (desiredVideoId && currentLoadedVideoId && currentLoadedVideoId !== desiredVideoId) {
+        logMessage(`Connected YouTube video (${currentLoadedVideoId}) does not match desired song (${desiredVideoId}). Navigating...`);
+        await handleProgramSong();
+        broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, result: 'navigated_new_song' });
+        return;
+      }
+
+      // Song is already loaded! Send only the play command (never reload)
+      if (!currentStatus.isPlaying && currentStatus.currentTime === 0) {
         await musicProviderRef.current.seek(0).catch(() => {});
         if (transportCommandSeqRef.current !== seq) return;
       }
 
-      const playRes = await musicProviderRef.current.playDetailed();
+      const playRes = await musicProviderRef.current.playDetailed(revealYouTubeToStart);
       if (transportCommandSeqRef.current !== seq) {
         logMessage('[Play] Superseded by newer command. Dropping result.');
+        musicProviderRef.current.recordTrace('HANDLE_PLAY_SUPERSEDED', { seq });
         return;
       }
 
@@ -801,6 +935,7 @@ export default function App() {
         setPlaybackStatus(playRes.status);
         setTestResults((prev) => ({ ...prev, playbackControl: true }));
         broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: true, status: playRes.status });
       } else {
         const errMsg = playRes.error || 'Play command was not confirmed by YouTube tab.';
         logMessage(`[Play Notice] ${errMsg}`);
@@ -811,7 +946,11 @@ export default function App() {
           setPlaybackStatus(current);
         }
         broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, error: errMsg, currentStatus: current });
       }
+    } catch (err: any) {
+      musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, error: err?.message });
+      throw err;
     } finally {
       if (transportCommandSeqRef.current === seq) {
         isTransportCommandInFlightRef.current = false;
@@ -822,12 +961,14 @@ export default function App() {
   const handlePauseMusic = async () => {
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
+    musicProviderRef.current.recordTrace('HANDLE_PAUSE_START', { seq });
     logMessage('Sending Pause command to YouTube tab...');
 
     try {
       const pauseRes = await musicProviderRef.current.pauseDetailed();
       if (transportCommandSeqRef.current !== seq) {
         logMessage('[Pause] Superseded by newer command. Dropping result.');
+        musicProviderRef.current.recordTrace('HANDLE_PAUSE_SUPERSEDED', { seq });
         return;
       }
 
@@ -839,6 +980,10 @@ export default function App() {
       logMessage('⏸ Playback paused on YouTube tab.');
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
       broadcastCurrentRadioState();
+      musicProviderRef.current.recordTrace('HANDLE_PAUSE_FINISH', { seq, success: pauseRes.success, status: pauseRes.status });
+    } catch (err: any) {
+      musicProviderRef.current.recordTrace('HANDLE_PAUSE_FINISH', { seq, success: false, error: err?.message });
+      throw err;
     } finally {
       if (transportCommandSeqRef.current === seq) {
         isTransportCommandInFlightRef.current = false;
@@ -849,12 +994,14 @@ export default function App() {
   const handleStopMusic = async () => {
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
+    musicProviderRef.current.recordTrace('HANDLE_STOP_START', { seq });
     logMessage('Sending Stop command to YouTube tab...');
 
     try {
       const stopRes = await musicProviderRef.current.stopDetailed();
       if (transportCommandSeqRef.current !== seq) {
         logMessage('[Stop] Superseded by newer command. Dropping result.');
+        musicProviderRef.current.recordTrace('HANDLE_STOP_SUPERSEDED', { seq });
         return;
       }
 
@@ -866,6 +1013,10 @@ export default function App() {
       logMessage('⏹ Playback stopped on YouTube tab.');
       setTestResults((prev) => ({ ...prev, playbackControl: true }));
       broadcastCurrentRadioState();
+      musicProviderRef.current.recordTrace('HANDLE_STOP_FINISH', { seq, success: stopRes.success, status: stopRes.status });
+    } catch (err: any) {
+      musicProviderRef.current.recordTrace('HANDLE_STOP_FINISH', { seq, success: false, error: err?.message });
+      throw err;
     } finally {
       if (transportCommandSeqRef.current === seq) {
         isTransportCommandInFlightRef.current = false;
@@ -874,6 +1025,7 @@ export default function App() {
   };
 
   const handleRewindMusic = async () => {
+    musicProviderRef.current.recordTrace('HANDLE_REWIND_START');
     logMessage('Seeking backward 10s on YouTube tab...');
     try {
       const currentStatus = await musicProviderRef.current.getStatus();
@@ -883,15 +1035,19 @@ export default function App() {
         setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
         logMessage(`⏪ Rewound to ${Math.round(newPos)}s.`);
         broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, newPos });
       } else {
         logMessage('Failed to rewind on YouTube tab.');
+        musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: false });
       }
     } catch (e: any) {
       logMessage(`Rewind error: ${e.message}`);
+      musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: false, error: e.message });
     }
   };
 
   const handleFastForwardMusic = async () => {
+    musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_START');
     logMessage('Seeking forward 10s on YouTube tab...');
     try {
       const currentStatus = await musicProviderRef.current.getStatus();
@@ -903,11 +1059,14 @@ export default function App() {
         setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
         logMessage(`⏩ Fast forwarded to ${Math.round(newPos)}s.`);
         broadcastCurrentRadioState();
+        musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, newPos });
       } else {
         logMessage('Failed to fast forward on YouTube tab.');
+        musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: false });
       }
     } catch (e: any) {
       logMessage(`Fast forward error: ${e.message}`);
+      musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: false, error: e.message });
     }
   };
 
@@ -977,14 +1136,14 @@ export default function App() {
       });
 
       try {
-        const navOk = await musicProviderRef.current.navigate(targetUrl, preset.videoId, targetVolFraction);
+        const navOk = await musicProviderRef.current.navigate(targetUrl, preset.videoId, targetVolFraction, revealYouTubeToStart);
         if (!navOk) {
           logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
         }
 
         // Allow YouTube player to mount and start playback
         await new Promise((r) => setTimeout(r, 1200));
-        const playOk = await musicProviderRef.current.play();
+        const playOk = await musicProviderRef.current.play(revealYouTubeToStart);
 
         // Synchronize authoritative master volume to YouTube player
         if (volumeControllerRef.current) {
@@ -1097,14 +1256,14 @@ export default function App() {
       });
 
       // Instruct connected YouTube tab to navigate
-      const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId, targetVolFraction);
+      const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId, targetVolFraction, revealYouTubeToStart);
       if (!navOk) {
         logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
       }
 
       // Allow YouTube player to mount and start playback
       await new Promise((r) => setTimeout(r, 1200));
-      const playOk = await musicProviderRef.current.play();
+      const playOk = await musicProviderRef.current.play(revealYouTubeToStart);
 
       // Synchronize authoritative master volume to YouTube player
       if (volumeControllerRef.current) {
@@ -2316,6 +2475,20 @@ export default function App() {
                   />
                 </div>
               </div>
+
+              {/* Reveal YouTube tab setting toggle */}
+              <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400 pt-1 border-t border-zinc-800/80">
+                <label htmlFor="revealYouTubeToggle" className="cursor-pointer select-none">
+                  Reveal YouTube tab if playback is blocked while hidden:
+                </label>
+                <input
+                  id="revealYouTubeToggle"
+                  type="checkbox"
+                  checked={revealYouTubeToStart}
+                  onChange={(e) => setRevealYouTubeToStart(e.target.checked)}
+                  className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+              </div>
             </div>
 
           </div>
@@ -3312,12 +3485,21 @@ export default function App() {
               <FileText className="w-3.5 h-3.5 text-amber-400" />
               EXPERIMENTAL EVENT LOG &amp; AUDIO TELEMETRY
             </span>
-            <button
-              onClick={() => setStatusLog([])}
-              className="text-[11px] text-zinc-500 hover:text-zinc-300"
-            >
-              Clear Log
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleCopyTransportTrace}
+                className="text-[11px] text-amber-400 hover:text-amber-300 transition-colors font-medium cursor-pointer"
+                title="Fetch combined transport trace log from extension background and copy to clipboard"
+              >
+                {copiedTransportTrace ? '✓ Copied trace!' : 'Copy transport trace'}
+              </button>
+              <button
+                onClick={() => setStatusLog([])}
+                className="text-[11px] text-zinc-500 hover:text-zinc-300"
+              >
+                Clear Log
+              </button>
+            </div>
           </div>
           <div className="h-32 bg-[#08090d] border border-zinc-900 rounded p-2.5 font-mono text-[11px] text-zinc-400 overflow-y-auto space-y-1">
             {statusLog.length === 0 ? (

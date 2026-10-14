@@ -40,16 +40,48 @@ function setState(s,quiet){
  if (!vuRunning) { vuRunning = true; requestAnimationFrame(vu); }
  if (!quiet) emit('transport', { state: normalized });
 }
+let lastUserTransportAction = null; // { state, time }
+let transportReconcileTimer = null;
+
+function trace(event, data) {
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'RECORD_TRACE',
+        payload: {
+          ts: Date.now(),
+          source: 'boombox',
+          event,
+          data: data || {}
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    }
+  } catch (e) {}
+}
+
 const act=(el,f)=>{el.onclick=f;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();f()}}};
 act($('bPlay'),()=>{
+  if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
+  lastUserTransportAction = { state: 'playing', time: Date.now() };
+  setState('playing', true);
+  trace('CLICK_PLAY', { optimisticState: 'playing' });
   sendBoomBoxAction('PLAY');
 });
 act($('bPause'),()=>{
-  sendBoomBoxAction('PAUSE');
+  if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
+  const next = S.state === 'playing' ? 'paused' : 'playing';
+  lastUserTransportAction = { state: next, time: Date.now() };
+  setState(next, true);
+  trace('CLICK_PAUSE', { optimisticState: next });
+  sendBoomBoxAction(next === 'paused' ? 'PAUSE' : 'PLAY');
 });
 act($('bStop'),()=>{
-  $('gStop').classList.add('on');
-  setTimeout(() => $('gStop').classList.remove('on'), 700);
+  if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
+  lastUserTransportAction = { state: 'stopped', time: Date.now() };
+  setState('stopped', true);
+  trace('CLICK_STOP', { optimisticState: 'stopped' });
   sendBoomBoxAction('STOP');
 });
 
@@ -374,10 +406,48 @@ function setVisualVolume(fraction) {
   $('kVol').style.transform = 'rotate(' + (-140 + S.vol * 280 - (-163)) + 'deg)';
 }
 
-function setVisualTransport(state) {
-  if (state === 'playing' || state === 'paused' || state === 'stopped') {
-    setState(state, true);
+function setVisualTransport(incomingState) {
+  if (incomingState !== 'playing' && incomingState !== 'paused' && incomingState !== 'stopped') return;
+
+  const prevState = S.state;
+
+  // If user clicked a transport button recently, allow up to ~1.5s for app/YouTube to synchronize
+  if (lastUserTransportAction) {
+    const elapsed = Date.now() - lastUserTransportAction.time;
+    if (incomingState === lastUserTransportAction.state) {
+      // Dispatched state agrees with user action: clear guard
+      lastUserTransportAction = null;
+      if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
+      const changed = S.state !== incomingState;
+      setState(incomingState, true);
+      trace('RECONCILE_AGREED', { incomingState, prevState, changedUI: changed, elapsed });
+      return;
+    }
+
+    if (elapsed < 1500) {
+      // Incoming state still disagrees and within the 1.5s window: retain local state and schedule correction if still disagreeing after timeout
+      trace('RECONCILE_DEFERRED', { incomingState, pendingUserAction: lastUserTransportAction.state, elapsed });
+      if (!transportReconcileTimer) {
+        const remaining = Math.max(50, 1500 - elapsed);
+        transportReconcileTimer = setTimeout(() => {
+          transportReconcileTimer = null;
+          lastUserTransportAction = null;
+          const changed = S.state !== incomingState;
+          setState(incomingState, true);
+          trace('RECONCILE_TIMEOUT_CORRECTED', { incomingState, prevState: S.state, changedUI: changed });
+        }, remaining);
+      }
+      return;
+    }
+
+    // Window exceeded (>1.5s): reconcile to incoming authoritative state
+    lastUserTransportAction = null;
+    if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
   }
+
+  const changed = S.state !== incomingState;
+  setState(incomingState, true);
+  trace('APPLY_TRANSPORT_STATE', { incomingState, prevState, changedUI: changed });
 }
 
 function sendBoomBoxAction(action, data) {
@@ -432,27 +502,6 @@ function applyRadioState(state) {
   } else if (!song) {
     renderSong();
   }
-
-  // 4. Frequency & Station
-  if (typeof state.frequency === 'number' && state.decade) {
-    if (S.dec !== state.decade && ST[state.decade]) {
-      setDec(state.decade);
-    }
-    const targetTun = (state.frequency - MIN) / SPAN;
-    if (Math.abs(S.tun - targetTun) > 0.01) {
-      S.tun = clamp(targetTun);
-      tune();
-    }
-  }
-
-  // 5. Date
-  if (state.date) {
-    const parsed = parseDate(state.date);
-    if (parsed) {
-      D = parsed;
-      $('hDate').textContent = MON[D.getMonth()] + ' ' + D.getDate() + ', ' + D.getFullYear();
-    }
-  }
 }
 
 function requestRadioState() {
@@ -476,6 +525,16 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message && message.type === 'RADIO_STATE') {
       applyRadioState(message.payload);
+      sendResponse({ received: true });
+    } else if (message && message.type === 'YT_STATE_CHANGED' && message.payload) {
+      const rawState = message.payload.state;
+      // Map states: 1 playing and 3 buffering mean 'playing'; 2 means 'paused'; 0 ended and -1 or 5 unstarted mean 'stopped'
+      const mapped = (rawState === 1 || rawState === 3) ? 'playing' : (rawState === 2 ? 'paused' : 'stopped');
+      trace('YT_STATE_CHANGED_RECV', { rawState, mapped, title: message.payload.title });
+      setVisualTransport(mapped);
+      if (message.payload.title && !song) {
+        setSong({ title: message.payload.title });
+      }
       sendResponse({ received: true });
     }
     return true;
