@@ -12,6 +12,8 @@ export class YouTubeMusicProvider implements MusicProvider {
   private stateRequestListeners: Set<() => void> = new Set();
   private ytStateChangedListeners: Set<(payload: any) => void> = new Set();
   private revealListeners: Set<() => void> = new Set();
+  private needsUserClickListeners: Set<() => void> = new Set();
+  private ytTabActivatedListeners: Set<() => void> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -45,6 +47,16 @@ export class YouTubeMusicProvider implements MusicProvider {
           }
           if (event.data.type === 'YOUTUBE_REVEALED_TO_START') {
             for (const listener of this.revealListeners) {
+              try { listener(); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'NEEDS_USER_CLICK') {
+            for (const listener of this.needsUserClickListeners) {
+              try { listener(); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'YT_TAB_ACTIVATED') {
+            for (const listener of this.ytTabActivatedListeners) {
               try { listener(); } catch (e) {}
             }
           }
@@ -237,6 +249,20 @@ export class YouTubeMusicProvider implements MusicProvider {
     };
   }
 
+  public onNeedsUserClick(callback: () => void): () => void {
+    this.needsUserClickListeners.add(callback);
+    return () => {
+      this.needsUserClickListeners.delete(callback);
+    };
+  }
+
+  public onYtTabActivated(callback: () => void): () => void {
+    this.ytTabActivatedListeners.add(callback);
+    return () => {
+      this.ytTabActivatedListeners.delete(callback);
+    };
+  }
+
   public async openBoomBox(): Promise<{ success: boolean; tabId?: number; reused?: boolean; error?: string }> {
     try {
       const res: any = await this.sendExtensionMessage('OPEN_BOOMBOX', {}, 4000);
@@ -285,6 +311,19 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
   }
 
+  public async getAudioDiagnostics(): Promise<{ snapshot: any; events: any[] } | null> {
+    try {
+      const res = await this.sendExtensionMessage('GET_AUDIO_DIAGNOSTICS', {}, 3000);
+      const data = res?.data || res;
+      return {
+        snapshot: data?.snapshot || null,
+        events: Array.isArray(data?.events) ? data.events : []
+      };
+    } catch {
+      return null;
+    }
+  }
+
   public async broadcastRadioState(state: any): Promise<boolean> {
     try {
       const res = await this.sendExtensionMessage('BROADCAST_RADIO_STATE', state, 2000);
@@ -294,9 +333,15 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
   }
 
-  public async connect(tabId?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+  public async connect(
+    tabId?: number,
+    options?: { askForOneTimeClick?: boolean }
+  ): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     try {
-      const res = await this.sendExtensionMessage('CONNECT_YOUTUBE_TAB', { tabId });
+      const res = await this.sendExtensionMessage('CONNECT_YOUTUBE_TAB', {
+        tabId,
+        askForOneTimeClick: options?.askForOneTimeClick
+      });
       if (res?.tabId) {
         this.connectedTabId = res.tabId;
         const status = res.status || (await this.getStatus());

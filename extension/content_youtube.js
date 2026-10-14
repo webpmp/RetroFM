@@ -10,23 +10,119 @@ if (!window.__retroFmContentLoaded) {
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
   const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
   const EVENT_TRACE = 'RETROFM_TRACE';
+  const EVENT_AUDIO_DIAGNOSTICS = 'RETROFM_AUDIO_DIAGNOSTICS';
+  const EVENT_MAIN_WORLD_ERROR = 'RETROFM_MAIN_WORLD_ERROR';
+
+  let isInvalidated = false;
+  let activePlayCleanup = null;
+  let rampInterval = null;
+  let activeRampId = null;
+  let ensureVolumeInterval = null;
+
+  function isContextValid() {
+    try {
+      return !isInvalidated && !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function cleanupInvalidatedContext() {
+    if (isInvalidated) return;
+    isInvalidated = true;
+    try {
+      if (rampInterval) {
+        clearInterval(rampInterval);
+        rampInterval = null;
+      }
+      if (ensureVolumeInterval) {
+        clearInterval(ensureVolumeInterval);
+        ensureVolumeInterval = null;
+      }
+      if (activePlayCleanup) {
+        activePlayCleanup();
+        activePlayCleanup = null;
+      }
+      window.removeEventListener(EVENT_STATE_CHANGE, onStateChangeEvent);
+      window.removeEventListener('message', onWindowMessageEvent);
+      window.removeEventListener(EVENT_TRACE, onTraceEvent);
+      window.removeEventListener(EVENT_AUDIO_DIAGNOSTICS, onAudioDiagnosticsEvent);
+      window.removeEventListener(EVENT_VOLUME_STATUS, onVolumeStatusEvent);
+      window.removeEventListener(EVENT_MAIN_WORLD_ERROR, onMainWorldErrorEvent);
+    } catch (e) {}
+  }
+
+  function reportError(err, context = '') {
+    if (!isContextValid()) {
+      cleanupInvalidatedContext();
+      return;
+    }
+    try {
+      const message = err?.message || String(err || 'Unknown error');
+      const stack = err?.stack || '';
+      chrome.runtime.sendMessage({
+        type: 'EXTENSION_ERROR',
+        payload: {
+          source: 'content_youtube' + (context ? `:${context}` : ''),
+          message,
+          stack,
+          time: Date.now()
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (e) {
+      cleanupInvalidatedContext();
+    }
+  }
+
+  window.addEventListener('error', (event) => {
+    try {
+      reportError(event.error || event.message, 'window.onerror');
+    } catch (e) {}
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    try {
+      reportError(event.reason, 'window.unhandledrejection');
+    } catch (e) {}
+  });
+
+  function safeParseDetail(detail) {
+    if (detail === null || detail === undefined) return null;
+    if (typeof detail === 'object') return detail;
+    if (typeof detail === 'string') {
+      try {
+        const parsed = JSON.parse(detail);
+        return (parsed && typeof parsed === 'object') ? parsed : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
 
   function trace(event, data) {
+    if (!isContextValid()) {
+      cleanupInvalidatedContext();
+      return;
+    }
     try {
-      if (chrome?.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: 'RECORD_TRACE',
-          payload: {
-            ts: Date.now(),
-            source: 'content_youtube',
-            event,
-            data: data || {}
-          }
-        }, () => {
-          if (chrome.runtime?.lastError) {}
-        });
-      }
-    } catch (e) {}
+      chrome.runtime.sendMessage({
+        type: 'RECORD_TRACE',
+        payload: {
+          ts: Date.now(),
+          source: 'content_youtube',
+          event,
+          data: data || {}
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (e) {
+      cleanupInvalidatedContext();
+      reportError(e, 'trace');
+    }
   }
 
   let latestPlayerVolume = 100;
@@ -39,7 +135,9 @@ if (!window.__retroFmContentLoaded) {
     try {
       const match = window.location.href.match(/[?&]v=([^&#]+)/);
       if (match) return match[1];
-    } catch (e) {}
+    } catch (e) {
+      reportError(e, 'getVideoId');
+    }
     return null;
   }
 
@@ -47,62 +145,126 @@ if (!window.__retroFmContentLoaded) {
     if (!data || typeof data.state === 'undefined') return;
     latestPlayerState = data.state;
     if (data.videoId) latestVideoId = data.videoId;
+    if (!isContextValid()) {
+      cleanupInvalidatedContext();
+      return;
+    }
     try {
-      if (chrome?.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: 'YT_STATE_CHANGED',
-          payload: {
-            state: data.state,
-            videoId: data.videoId || getVideoId(),
-            title: data.title || '',
-            currentTime: typeof data.currentTime === 'number' ? data.currentTime : 0,
-            duration: typeof data.duration === 'number' ? data.duration : 0
-          }
-        }, () => {
-          if (chrome.runtime?.lastError) {}
-        });
-      }
-    } catch (e) {}
+      chrome.runtime.sendMessage({
+        type: 'YT_STATE_CHANGED',
+        payload: {
+          state: data.state,
+          videoId: data.videoId || getVideoId(),
+          title: data.title || '',
+          currentTime: typeof data.currentTime === 'number' ? data.currentTime : 0,
+          duration: typeof data.duration === 'number' ? data.duration : 0
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (e) {
+      cleanupInvalidatedContext();
+      reportError(e, 'handleStateChangeFromMainWorld');
+    }
   }
 
-  window.addEventListener(EVENT_STATE_CHANGE, (e) => {
-    handleStateChangeFromMainWorld(e.detail);
-  });
-
-  window.addEventListener('message', (e) => {
-    if (e.source === window && e.data && e.data.type === 'RETROFM_YT_STATE_CHANGED_MSG') {
-      handleStateChangeFromMainWorld(e.data);
+  function onStateChangeEvent(e) {
+    try {
+      const data = safeParseDetail(e ? e.detail : null);
+      if (data) {
+        handleStateChangeFromMainWorld(data);
+      }
+    } catch (err) {
+      reportError(err, 'onStateChangeEvent');
     }
-  });
+  }
+  window.addEventListener(EVENT_STATE_CHANGE, onStateChangeEvent);
+
+  function onWindowMessageEvent(e) {
+    try {
+      if (e && e.source === window && e.data && e.data.type === 'RETROFM_YT_STATE_CHANGED_MSG') {
+        handleStateChangeFromMainWorld(e.data);
+      }
+    } catch (err) {
+      reportError(err, 'onWindowMessageEvent');
+    }
+  }
+  window.addEventListener('message', onWindowMessageEvent);
 
   // Forward main-world trace events to background
-  window.addEventListener(EVENT_TRACE, (e) => {
+  function onTraceEvent(e) {
     try {
-      const entry = e.detail;
-      if (entry && chrome?.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({
-          type: 'RECORD_TRACE',
-          payload: entry
-        }, () => {
-          if (chrome.runtime?.lastError) {}
-        });
+      const entry = safeParseDetail(e ? e.detail : null);
+      if (!entry) return;
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
       }
-    } catch (err) {}
-  });
+      chrome.runtime.sendMessage({
+        type: 'RECORD_TRACE',
+        payload: entry
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (err) {
+      cleanupInvalidatedContext();
+      reportError(err, 'onTraceEvent');
+    }
+  }
+  window.addEventListener(EVENT_TRACE, onTraceEvent);
 
-  let rampInterval = null;
-  let activeRampId = null;
+  function onAudioDiagnosticsEvent(e) {
+    try {
+      const data = safeParseDetail(e ? e.detail : null);
+      if (!data || !data.snapshot) return;
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
+      }
+      chrome.runtime.sendMessage({
+        type: 'AUDIO_DIAGNOSTICS_SNAPSHOT',
+        payload: data
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (err) {
+      cleanupInvalidatedContext();
+      reportError(err, 'onAudioDiagnosticsEvent');
+    }
+  }
+  window.addEventListener(EVENT_AUDIO_DIAGNOSTICS, onAudioDiagnosticsEvent);
 
   // Listen for volume status broadcast from player/yt_main_world.js
-  window.addEventListener(EVENT_VOLUME_STATUS, (event) => {
+  function onVolumeStatusEvent(event) {
     try {
-      const detail = event.detail;
+      const detail = safeParseDetail(event ? event.detail : null);
       if (detail && typeof detail.volume === 'number') {
         latestPlayerVolume = detail.volume;
         latestPlayerMuted = !!detail.muted;
       }
-    } catch (e) {}
-  });
+    } catch (e) {
+      reportError(e, 'onVolumeStatusEvent');
+    }
+  }
+  window.addEventListener(EVENT_VOLUME_STATUS, onVolumeStatusEvent);
+
+  // Forward main-world errors to background
+  function onMainWorldErrorEvent(event) {
+    try {
+      const detail = safeParseDetail(event ? event.detail : null);
+      if (!detail) return;
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
+      }
+      chrome.runtime.sendMessage(detail, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (e) {
+      cleanupInvalidatedContext();
+    }
+  }
+  window.addEventListener(EVENT_MAIN_WORLD_ERROR, onMainWorldErrorEvent);
 
   function getVideoElement() {
     return document.querySelector('video.video-stream.html5-main-video') || document.querySelector('video');
@@ -247,50 +409,46 @@ if (!window.__retroFmContentLoaded) {
     }, stepMs);
   }
 
-  // Monitor native volume changes to detect external/YouTube interventions
-  let lastObservedVideo = null;
-  let ensureVolumeInterval = null;
-
-  function isContextValid() {
-    try {
-      return !!(chrome && chrome.runtime && chrome.runtime.id);
-    } catch (e) {
-      return false;
-    }
-  }
-
   function ensureVolumeListener() {
-    if (!isContextValid()) {
-      if (ensureVolumeInterval) {
-        clearInterval(ensureVolumeInterval);
-        ensureVolumeInterval = null;
+    try {
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
       }
-      return;
-    }
-    const video = getVideoElement();
-    if (video && video !== lastObservedVideo) {
-      lastObservedVideo = video;
-      video.addEventListener('volumechange', () => {
-        console.log(
-          `[RetroFM Volume] [${new Date().toISOString()}] Native video.volumechange event: video.volume=${video.volume.toFixed(2)}, muted=${video.muted}, playerVolume=${latestPlayerVolume}%, currentTime=${Math.floor(video.currentTime)}s`
-        );
-      });
+      const video = getVideoElement();
+      if (video && video !== lastObservedVideo) {
+        lastObservedVideo = video;
+        video.addEventListener('volumechange', () => {
+          try {
+            console.log(
+              `[RetroFM Volume] [${new Date().toISOString()}] Native video.volumechange event: video.volume=${video.volume.toFixed(2)}, muted=${video.muted}, playerVolume=${latestPlayerVolume}%, currentTime=${Math.floor(video.currentTime)}s`
+            );
+          } catch (err) {
+            reportError(err, 'video.volumechange');
+          }
+        });
+      }
+    } catch (e) {
+      reportError(e, 'ensureVolumeListener');
     }
   }
   ensureVolumeListener();
   ensureVolumeInterval = setInterval(ensureVolumeListener, 2000);
 
-  let activePlayCleanup = null;
-
   // Listen for messages from background service worker
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    const video = getVideoElement();
+    try {
+      if (!isContextValid()) {
+        cleanupInvalidatedContext();
+        return;
+      }
+      const video = getVideoElement();
 
-    // If an action arrives (e.g. PAUSE, STOP, or another PLAY), cancel any pending play polling
-    if (activePlayCleanup && (message.action === 'PLAY' || message.action === 'PAUSE' || message.action === 'STOP')) {
-      activePlayCleanup();
-      activePlayCleanup = null;
-    }
+      // If an action arrives (e.g. PAUSE, STOP, or another PLAY), cancel any pending play polling
+      if (activePlayCleanup && (message?.action === 'PLAY' || message?.action === 'PAUSE' || message?.action === 'STOP')) {
+        activePlayCleanup();
+        activePlayCleanup = null;
+      }
 
     switch (message.action) {
       case 'GET_STATUS': {
@@ -550,10 +708,106 @@ if (!window.__retroFmContentLoaded) {
         }
         break;
       }
+      case 'GET_DIAGNOSTICS_SNAPSHOT': {
+        try {
+          window.dispatchEvent(new CustomEvent('RETROFM_REQ_AUDIO_DIAGNOSTICS'));
+        } catch (e) {}
+        sendResponse({ success: true });
+        break;
+      }
       default:
         sendResponse({ success: false, error: 'Unknown action' });
     }
-
-    return true;
+  } catch (err) {
+    reportError(err, 'chrome.runtime.onMessage');
+    try {
+      sendResponse({ success: false, error: err?.message || 'Internal content script error' });
+    } catch (e) {}
+  }
   });
+
+  // 3. One-time session activation overlay ("Click anywhere to start RetroFM")
+  function setupActivationOverlay() {
+    try {
+      if (navigator.userActivation && navigator.userActivation.hasBeenActive) {
+        return; // Activation already exists
+      }
+      if (document.getElementById('retrofm-activation-overlay')) return;
+
+      function onActivatedClick() {
+        try {
+          const overlay = document.getElementById('retrofm-activation-overlay');
+          if (overlay) {
+            overlay.remove();
+          }
+          window.removeEventListener('click', onActivatedClick, true);
+          if (!isContextValid()) {
+            cleanupInvalidatedContext();
+            return;
+          }
+          chrome.runtime.sendMessage({ type: 'YT_TAB_ACTIVATED' }, () => {
+            if (chrome.runtime?.lastError) {}
+          });
+        } catch (e) {
+          cleanupInvalidatedContext();
+          reportError(e, 'onActivatedClick');
+        }
+      }
+
+      const overlay = document.createElement('div');
+      overlay.id = 'retrofm-activation-overlay';
+      overlay.setAttribute(
+        'style',
+        'position: fixed; inset: 0; z-index: 2147483647; ' +
+        'background: rgba(18, 16, 14, 0.88); backdrop-filter: blur(4px); ' +
+        'display: flex; flex-direction: column; align-items: center; justify-content: center; ' +
+        'cursor: pointer; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'
+      );
+
+      const contentBox = document.createElement('div');
+      contentBox.setAttribute(
+        'style',
+        'background: #1e1b18; border: 2px solid #d48b28; border-radius: 12px; ' +
+        'padding: 32px 48px; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.7); pointer-events: none;'
+      );
+
+      const title = document.createElement('div');
+      title.textContent = 'Click anywhere to start RetroFM';
+      title.setAttribute(
+        'style',
+        'color: #f2e8d0; font-size: 22px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 8px;'
+      );
+
+      const subtitle = document.createElement('div');
+      subtitle.textContent = 'Enables audio playback for the RetroFM radio broadcast';
+      subtitle.setAttribute(
+        'style',
+        'color: #a89f91; font-size: 14px;'
+      );
+
+      contentBox.appendChild(title);
+      contentBox.appendChild(subtitle);
+      overlay.appendChild(contentBox);
+
+      overlay.addEventListener('click', onActivatedClick, true);
+      window.addEventListener('click', onActivatedClick, true);
+
+      const target = document.body || document.documentElement;
+      if (target) {
+        target.appendChild(overlay);
+      } else {
+        window.addEventListener('DOMContentLoaded', () => {
+          try {
+            (document.body || document.documentElement)?.appendChild(overlay);
+          } catch (err) {
+            reportError(err, 'DOMContentLoaded.overlay');
+          }
+        });
+      }
+    } catch (err) {
+      reportError(err, 'setupActivationOverlay');
+    }
+  }
+
+  setupActivationOverlay();
 }

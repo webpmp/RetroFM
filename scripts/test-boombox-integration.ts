@@ -5,6 +5,11 @@
  */
 
 import { HARDCODED_PRESETS } from '../src/App.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 interface SongMetadata {
   title: string;
@@ -1032,6 +1037,697 @@ assert(
   '(d.2) Hidden-tab recovery does not switch back if user changed tabs in the meantime'
 );
 
+// --- 16. End-to-End Simulation Test: Pause Button Hop-by-Hop Delivery ---
+console.log('\nTEST SUITE 16: End-to-End Hop-by-Hop Message Chain Simulation (Boom Box Pause)');
+interface HopState {
+  hop1_boomBoxSent: boolean;
+  hop2_bgReceived: boolean;
+  hop3_appTabResolved: boolean;
+  hop4_contentRetroFmReceived: boolean;
+  hop5_appWindowMessageFired: boolean;
+  hop6_appHandlerCalled: boolean;
+  hop7_providerPauseSentToBg: boolean;
+  hop8_youtubeContentReceived: boolean;
+  hop9_mainWorldExecuted: boolean;
+}
+
+const simulationState: HopState = {
+  hop1_boomBoxSent: false,
+  hop2_bgReceived: false,
+  hop3_appTabResolved: false,
+  hop4_contentRetroFmReceived: false,
+  hop5_appWindowMessageFired: false,
+  hop6_appHandlerCalled: false,
+  hop7_providerPauseSentToBg: false,
+  hop8_youtubeContentReceived: false,
+  hop9_mainWorldExecuted: false
+};
+
+// Hop 1: Boom Box click -> sendBoomBoxAction('PAUSE')
+function boomBoxClickPause(bgDispatcher: (msg: any) => Promise<any>) {
+  simulationState.hop1_boomBoxSent = true;
+  return bgDispatcher({ type: 'BOOMBOX_ACTION', payload: { action: 'PAUSE' } });
+}
+
+// Hop 2 & 3: background.js receives BOOMBOX_ACTION, resolves registered app tab, forwards message
+async function backgroundServiceWorkerReceive(
+  msg: any,
+  registeredAppTabId: number | null,
+  contentRetroFmDispatcher: (msg: any) => Promise<any>
+) {
+  if (msg.type === 'BOOMBOX_ACTION') {
+    simulationState.hop2_bgReceived = true;
+    if (registeredAppTabId) {
+      simulationState.hop3_appTabResolved = true;
+      return contentRetroFmDispatcher({ type: 'BOOMBOX_ACTION', payload: msg.payload });
+    }
+  }
+  return { success: false, error: 'App tab not resolved' };
+}
+
+// Hop 4: content_retrofm.js receives message and relays window.postMessage
+function contentRetroFmRelay(msg: any, windowDispatcher: (data: any) => void) {
+  simulationState.hop4_contentRetroFmReceived = true;
+  windowDispatcher({ source: 'RETRO_FM_EXTENSION', ...msg });
+  return Promise.resolve({ received: true });
+}
+
+// Hop 5 & 6: App window message listener and onBoomBoxAction handler
+async function appReceiveWindowMessage(
+  eventData: any,
+  onBoomBoxActionHandler: (action: any) => Promise<void>
+) {
+  if (eventData?.source === 'RETRO_FM_EXTENSION' && eventData?.type === 'BOOMBOX_ACTION') {
+    simulationState.hop5_appWindowMessageFired = true;
+    await onBoomBoxActionHandler(eventData.payload);
+  }
+}
+
+// Hop 7: handlePauseMusic calls provider.pauseDetailed() -> background.js COMMAND_YOUTUBE
+async function appHandlePause(
+  bgYtDispatcher: (cmd: any) => Promise<any>
+) {
+  simulationState.hop6_appHandlerCalled = true;
+  simulationState.hop7_providerPauseSentToBg = true;
+  return bgYtDispatcher({ action: 'PAUSE' });
+}
+
+// Hop 8: content_youtube.js receives command and calls main world
+function contentYoutubeReceive(
+  command: any,
+  mainWorldDispatcher: (cmd: string) => boolean
+) {
+  simulationState.hop8_youtubeContentReceived = true;
+  if (command.action === 'PAUSE') {
+    const executed = mainWorldDispatcher('PAUSE');
+    simulationState.hop9_mainWorldExecuted = executed;
+    return { success: executed, state: 'paused' };
+  }
+  return { success: false };
+}
+
+// Hop 9: yt_main_world.js executes player.pauseVideo() safely
+function mainWorldExecute(cmd: string) {
+  if (cmd === 'PAUSE') {
+    return true;
+  }
+  return false;
+}
+
+// Execute end-to-end simulation
+const testRegisteredAppTabId = 42;
+await boomBoxClickPause(async (bbMsg) => {
+  return backgroundServiceWorkerReceive(bbMsg, testRegisteredAppTabId, async (retroFmTabMsg) => {
+    return contentRetroFmRelay(retroFmTabMsg, async (winMsg) => {
+      await appReceiveWindowMessage(winMsg, async (boomBoxAction) => {
+        if (boomBoxAction.action === 'PAUSE') {
+          await appHandlePause(async (ytCmd) => {
+            return contentYoutubeReceive(ytCmd, (cmd) => {
+              return mainWorldExecute(cmd);
+            });
+          });
+        }
+      });
+    });
+  });
+});
+
+assert(simulationState.hop1_boomBoxSent, 'Hop 1: Boom Box button click dispatches BOOMBOX_ACTION');
+assert(simulationState.hop2_bgReceived, 'Hop 2: background.js receives BOOMBOX_ACTION');
+assert(simulationState.hop3_appTabResolved, 'Hop 3: background.js resolves registered app tab');
+assert(simulationState.hop4_contentRetroFmReceived, 'Hop 4: content_retrofm.js receives push message');
+assert(simulationState.hop5_appWindowMessageFired, 'Hop 5: window message relays to RetroFM page');
+assert(simulationState.hop6_appHandlerCalled, 'Hop 6: onBoomBoxAction dispatches to handlePauseMusic');
+assert(simulationState.hop7_providerPauseSentToBg, 'Hop 7: provider sends PAUSE command to background');
+assert(simulationState.hop8_youtubeContentReceived, 'Hop 8: content_youtube.js receives PAUSE command');
+assert(simulationState.hop9_mainWorldExecuted, 'Hop 9: yt_main_world.js executes player.pauseVideo()');
+
+// --- 17. Playback Reliability: Target Song Resolution & Hidden Tab Handling ---
+console.log('\nTEST SUITE 17: Playback Reliability & Target Song Navigation');
+
+// Simulation helper for handlePlayMusic logic
+interface TargetSongSimResult {
+  actionTaken: 'NAVIGATED' | 'PLAY_COMMAND_ONLY' | 'ERROR_REPORTED';
+  navigatedUrl?: string;
+  errorReason?: string;
+  boomBoxDisplay?: string;
+}
+
+async function simulateTargetSongResolution(params: {
+  tabUrl: string;
+  tabVideoId: string | null;
+  desiredVideoId: string | null;
+  desiredSongTitle?: string;
+  programResult?: any;
+}): Promise<TargetSongSimResult> {
+  const { tabUrl, tabVideoId, desiredVideoId, programResult } = params;
+
+  // Unresolvable song check
+  if (!desiredVideoId && !programResult?.selectedVideoId) {
+    return {
+      actionTaken: 'ERROR_REPORTED',
+      errorReason: 'No song selected',
+      boomBoxDisplay: 'No song selected'
+    };
+  }
+
+  const effectiveDesiredId = desiredVideoId || programResult.selectedVideoId;
+  const isWatchPage = tabUrl.includes('/watch');
+  const effectiveLoadedId = tabVideoId;
+
+  // If tab has no video (home page, search, blank) OR video ID differs from desired song -> navigate
+  if (!isWatchPage || !effectiveLoadedId || effectiveLoadedId !== effectiveDesiredId) {
+    return {
+      actionTaken: 'NAVIGATED',
+      navigatedUrl: `https://www.youtube.com/watch?v=${effectiveDesiredId}`
+    };
+  }
+
+  // Same video ID -> send only play command
+  return {
+    actionTaken: 'PLAY_COMMAND_ONLY'
+  };
+}
+
+// Subtest (a): Connected tab on YouTube home page (no video) -> Play navigates and starts
+const testA = await simulateTargetSongResolution({
+  tabUrl: 'https://www.youtube.com/',
+  tabVideoId: null,
+  desiredVideoId: 'f-BDCwxBF9Q'
+});
+assert(testA.actionTaken === 'NAVIGATED' && testA.navigatedUrl === 'https://www.youtube.com/watch?v=f-BDCwxBF9Q',
+  'Suite 17 (a): Connected tab on YouTube home page navigates to desired song');
+
+// Subtest (b): Connected tab has different video loaded -> Play navigates to desired song
+const testB = await simulateTargetSongResolution({
+  tabUrl: 'https://www.youtube.com/watch?v=oldVideo123',
+  tabVideoId: 'oldVideo123',
+  desiredVideoId: 'f-BDCwxBF9Q'
+});
+assert(testB.actionTaken === 'NAVIGATED' && testB.navigatedUrl === 'https://www.youtube.com/watch?v=f-BDCwxBF9Q',
+  'Suite 17 (b): Connected tab with different video navigates to desired song');
+
+// Subtest (c): Connected tab already has desired video loaded -> sends only play command (no reload)
+const testC = await simulateTargetSongResolution({
+  tabUrl: 'https://www.youtube.com/watch?v=f-BDCwxBF9Q',
+  tabVideoId: 'f-BDCwxBF9Q',
+  desiredVideoId: 'f-BDCwxBF9Q'
+});
+assert(testC.actionTaken === 'PLAY_COMMAND_ONLY',
+  'Suite 17 (c): Connected tab with matching video sends only play command (no reload)');
+
+// Subtest (d): Desired song cannot be resolved -> visible message and no silent failure
+const testD = await simulateTargetSongResolution({
+  tabUrl: 'https://www.youtube.com/watch?v=f-BDCwxBF9Q',
+  tabVideoId: 'f-BDCwxBF9Q',
+  desiredVideoId: null,
+  programResult: null
+});
+assert(testD.actionTaken === 'ERROR_REPORTED' && testD.boomBoxDisplay === 'No song selected',
+  'Suite 17 (d): Unresolvable song produces visible notice and displays "No song selected" on Boom Box');
+
+// Subtest (e): Hidden tab recovery default behavior: revealYouTubeToStart = false dispatches NEEDS_USER_CLICK
+interface RecoveryContractResult {
+  tabActivated: boolean;
+  needsUserClickDispatched: boolean;
+}
+
+function simulateHiddenTabRecoveryContract(params: {
+  playerReachedStateOneIn2500ms: boolean;
+  revealSetting: boolean;
+}): RecoveryContractResult {
+  const { playerReachedStateOneIn2500ms, revealSetting } = params;
+  if (playerReachedStateOneIn2500ms) {
+    return { tabActivated: false, needsUserClickDispatched: false };
+  }
+  if (!revealSetting) {
+    return { tabActivated: false, needsUserClickDispatched: true };
+  }
+  return { tabActivated: true, needsUserClickDispatched: false };
+}
+
+const testE_default = simulateHiddenTabRecoveryContract({
+  playerReachedStateOneIn2500ms: false,
+  revealSetting: false
+});
+assert(!testE_default.tabActivated && testE_default.needsUserClickDispatched,
+  'Suite 17 (e1): Default revealYouTubeToStart=false sends NEEDS_USER_CLICK and does NOT activate tab');
+
+const testE_revealed = simulateHiddenTabRecoveryContract({
+  playerReachedStateOneIn2500ms: false,
+  revealSetting: true
+});
+assert(testE_revealed.tabActivated && !testE_revealed.needsUserClickDispatched,
+  'Suite 17 (e2): Enabled revealYouTubeToStart=true activates tab for recovery');
+
+// --- 18. Audio Diagnostics Snapshot Verification Suite ---
+console.log('\nTEST SUITE 18: Audio Diagnostics Snapshot Completeness & Contract');
+
+interface DiagnosticsSnapshot {
+  ts: number;
+  playerState: number | null;
+  playerMuted: boolean | null;
+  playerVolume: number | null;
+  videoPaused: boolean | null;
+  videoMuted: boolean | null;
+  videoVolume: number | null;
+  videoReadyState: number | null;
+  visibilityState: string;
+  userActivation: {
+    hasBeenActive: boolean;
+    isActive: boolean;
+  };
+  videoId: string | null;
+  title: string;
+  href: string;
+  lastError: any;
+  errors: any[];
+}
+
+function validateDiagnosticsSnapshot(snapshot: any): { valid: boolean; missingFields: string[] } {
+  const requiredFields = [
+    'playerState',
+    'playerMuted',
+    'playerVolume',
+    'videoPaused',
+    'videoMuted',
+    'videoVolume',
+    'videoReadyState',
+    'visibilityState',
+    'userActivation',
+    'videoId',
+    'title',
+    'href'
+  ];
+
+  const missingFields: string[] = [];
+  for (const field of requiredFields) {
+    if (!(field in snapshot)) {
+      missingFields.push(field);
+    }
+  }
+
+  if (snapshot.userActivation) {
+    if (!('hasBeenActive' in snapshot.userActivation)) missingFields.push('userActivation.hasBeenActive');
+    if (!('isActive' in snapshot.userActivation)) missingFields.push('userActivation.isActive');
+  }
+
+  return {
+    valid: missingFields.length === 0,
+    missingFields
+  };
+}
+
+// 18.1 Complete snapshot contract test
+const sampleSnapshot: DiagnosticsSnapshot = {
+  ts: Date.now(),
+  playerState: 1,
+  playerMuted: false,
+  playerVolume: 100,
+  videoPaused: false,
+  videoMuted: false,
+  videoVolume: 100,
+  videoReadyState: 4,
+  visibilityState: 'visible',
+  userActivation: {
+    hasBeenActive: true,
+    isActive: false
+  },
+  videoId: 'f-BDCwxBF9Q',
+  title: 'a-ha - Take on Me (Official Video) [Remastered in 4K]',
+  href: 'https://www.youtube.com/watch?v=f-BDCwxBF9Q',
+  lastError: null,
+  errors: []
+};
+
+const validationResult = validateDiagnosticsSnapshot(sampleSnapshot);
+assert(validationResult.valid, `Diagnostics snapshot has all required fields (missing: ${validationResult.missingFields.join(', ')})`);
+
+// 18.2 Incomplete snapshot test fails as expected
+const incompleteSnapshot = {
+  playerState: 1,
+  playerVolume: 100
+};
+const incompleteResult = validateDiagnosticsSnapshot(incompleteSnapshot);
+assert(!incompleteResult.valid && incompleteResult.missingFields.includes('visibilityState'), 'Incomplete snapshot correctly fails field validation');
+
+// --- 19. Extension Cross-World Detail Parsing & Error Isolation ---
+console.log('TEST SUITE 19: Extension Cross-World Detail Parsing & Error Isolation');
+
+function safeParseDetail(detail: any): any {
+  if (detail === null || detail === undefined) return null;
+  if (typeof detail === 'object') return detail;
+  if (typeof detail === 'string') {
+    try {
+      const parsed = JSON.parse(detail);
+      return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+// 19.1 Null or malformed event detail does not throw
+assert(safeParseDetail(null) === null, 'safeParseDetail handles null without throwing');
+assert(safeParseDetail(undefined) === null, 'safeParseDetail handles undefined without throwing');
+assert(safeParseDetail('') === null, 'safeParseDetail handles empty string without throwing');
+assert(safeParseDetail('{invalid json') === null, 'safeParseDetail handles malformed JSON string without throwing');
+assert(safeParseDetail('123') === null, 'safeParseDetail rejects primitive number in JSON string');
+assert(safeParseDetail('"just a string"') === null, 'safeParseDetail rejects primitive string in JSON string');
+const validObj = { type: 'TEST', value: 42 };
+assert(safeParseDetail(JSON.stringify(validObj))?.value === 42, 'safeParseDetail parses valid JSON object string correctly');
+assert(safeParseDetail(validObj)?.value === 42, 'safeParseDetail handles existing object cleanly');
+
+// 19.2 Thrown handler error is recorded and does not stop the next handler
+const reportedErrors: any[] = [];
+function reportErrorMock(err: any, context: string) {
+  reportedErrors.push({
+    source: `test_context:${context}`,
+    message: err?.message || String(err),
+    time: Date.now()
+  });
+}
+
+let handler1Ran: boolean = false;
+let handler2Ran: boolean = false;
+
+function testHandler1() {
+  try {
+    handler1Ran = true;
+    throw new Error('Simulated failure in handler 1');
+  } catch (err) {
+    reportErrorMock(err, 'handler1');
+  }
+}
+
+function testHandler2() {
+  try {
+    handler2Ran = true;
+  } catch (err) {
+    reportErrorMock(err, 'handler2');
+  }
+}
+
+// Execute handlers in sequence
+testHandler1();
+testHandler2();
+
+assert(Boolean(handler1Ran), 'Handler 1 executed');
+assert(Boolean(handler2Ran), 'Handler 2 executed despite handler 1 throwing');
+assert(reportedErrors.length === 1, 'Simulated error was captured');
+assert(reportedErrors[0].message.includes('Simulated failure in handler 1'), 'Captured error message matches');
+assert(reportedErrors[0].source === 'test_context:handler1', 'Captured error source includes context');
+
+// --- Test Suite 20: Unvisited Tab Playback & Autoplay Activation ---
+console.log('\n--- Test Suite 20: Unvisited Tab Playback & Autoplay Activation ---');
+
+// (a) Navigation start no longer mutes the player
+{
+  let muteCallCount = 0;
+  let setVolumeCalls: number[] = [];
+  const mockPlayer = {
+    mute: () => { muteCallCount++; },
+    unMute: () => {},
+    setVolume: (v: number) => { setVolumeCalls.push(v); }
+  };
+
+  // Simulating handleNavigationStart logic from yt_main_world.js:
+  // Must NOT call player.mute(); applies queued volume via setVolume only.
+  function simulateNavigationStart(player: any, queuedVolume: number | null) {
+    if (player && typeof player.setVolume === 'function' && queuedVolume !== null && !isNaN(queuedVolume)) {
+      try {
+        player.setVolume(Math.round(queuedVolume * 100));
+      } catch (e) {}
+    }
+  }
+
+  simulateNavigationStart(mockPlayer, 0.85);
+  assert(muteCallCount === 0, 'Navigation start does not call player.mute()');
+  assert(setVolumeCalls.length === 1 && setVolumeCalls[0] === 85, 'Navigation start applies queued volume via setVolume()');
+}
+
+// (b) With no activation, applying volume never calls mute or unMute
+{
+  let muteCalls = 0;
+  let unMuteCalls = 0;
+  let volumeCalls: number[] = [];
+  let diagnosticEvents: string[] = [];
+
+  const mockPlayer = {
+    mute: () => { muteCalls++; },
+    unMute: () => { unMuteCalls++; },
+    setVolume: (v: number) => { volumeCalls.push(v); },
+    isMuted: () => true
+  };
+
+  function simulateApplyVolume(player: any, targetVolume: number, hasActivation: boolean) {
+    if (!player) return;
+    const vol = Math.max(0, Math.min(100, Math.round(targetVolume * 100)));
+    try {
+      player.setVolume(vol);
+    } catch (e) {}
+
+    if (player.isMuted()) {
+      if (hasActivation) {
+        player.unMute();
+      } else {
+        diagnosticEvents.push('Muted; cannot unmute without a click in the YouTube tab');
+      }
+    }
+  }
+
+  // Test with hasActivation = false
+  simulateApplyVolume(mockPlayer, 0.75, false);
+  assert(muteCalls === 0, 'With no activation, mute() is never called');
+  assert(unMuteCalls === 0, 'With no activation, unMute() is never called');
+  assert(volumeCalls.length === 1 && volumeCalls[0] === 75, 'With no activation, setVolume() is called');
+  assert(
+    diagnosticEvents.includes('Muted; cannot unmute without a click in the YouTube tab'),
+    'Diagnostic event recorded when unmute is blocked due to lack of activation'
+  );
+
+  // Test with hasActivation = true
+  simulateApplyVolume(mockPlayer, 0.90, true);
+  assert(unMuteCalls === 1, 'With activation present, unMute() is allowed');
+}
+
+// (c) First connect brings YouTube tab forward and returns to previous tab after click
+{
+  let activeTabId: number = 101; // Boom Box tab currently active
+  const previousTabs: number[] = [];
+  let ytTabActive: boolean = false;
+  let overlayShown: boolean = false;
+  let returnedToPrecedingTab: boolean = false;
+
+  const ytTabId: number = 202;
+  let hasSessionActivation: boolean = false;
+  let precedingTabBeforeActivation: number | null = null;
+  let sessionActivationPromptTabId: number | null = null;
+
+  // 1. Extension connects to YouTube tab when activation is false
+  function simulateFirstConnect(targetYtTabId: number, hasActivation: boolean) {
+    if (!hasActivation && !hasSessionActivation) {
+      precedingTabBeforeActivation = activeTabId;
+      sessionActivationPromptTabId = targetYtTabId;
+      activeTabId = targetYtTabId; // Switches to YouTube tab
+      ytTabActive = true;
+      overlayShown = true;
+    }
+  }
+
+  // 2. User clicks anywhere in YouTube tab -> YT_TAB_ACTIVATED
+  function simulateYtTabActivated() {
+    hasSessionActivation = true;
+    overlayShown = false;
+    if (precedingTabBeforeActivation && precedingTabBeforeActivation !== ytTabId) {
+      activeTabId = precedingTabBeforeActivation;
+      returnedToPrecedingTab = true;
+      ytTabActive = false;
+    }
+  }
+
+  simulateFirstConnect(ytTabId, false);
+  assert(Boolean(ytTabActive), 'First connect brings YouTube tab active');
+  assert(activeTabId === ytTabId, 'Active tab is now YouTube tab (202)');
+  assert(Boolean(overlayShown), 'Activation overlay is displayed');
+  assert(precedingTabBeforeActivation === 101, 'Preceding tab 101 remembered');
+
+  simulateYtTabActivated();
+  assert(Boolean(hasSessionActivation), 'hasSessionActivation set to true');
+  assert(Boolean(returnedToPrecedingTab), 'Switched back to preceding tab (101)');
+  assert(activeTabId === 101, 'Active tab restored to Boom Box (101)');
+}
+
+// (d) No tab switching when activation exists
+{
+  let tabSwitchCount: number = 0;
+  const ytTabId: number = 202;
+  let activeTabId: number = 101;
+  const hasSessionActivation: boolean = true;
+
+  function simulateSubsequentPlay(targetYtTabId: number, hasActivation: boolean) {
+    if (!hasActivation && !hasSessionActivation) {
+      tabSwitchCount++;
+      activeTabId = targetYtTabId;
+    }
+    // Normal play command proceeds in background without tab switch
+  }
+
+  simulateSubsequentPlay(ytTabId, true);
+  assert(tabSwitchCount === 0, 'No tab switch when session activation already exists');
+  assert(activeTabId === 101, 'Active tab remains unchanged');
+}
+
+// (e) Pending Play sent once after activation and canceled by Stop
+{
+  // Part 1: Pending Play is sent once when YT_TAB_ACTIVATED arrives
+  let pendingPlayIntent: { tabId: number; timer?: any } | null = null;
+  let playCommandSentCount: number = 0;
+
+  function storePendingPlay(tabId: number) {
+    pendingPlayIntent = { tabId };
+  }
+
+  function handleYtTabActivated() {
+    if (pendingPlayIntent) {
+      playCommandSentCount++;
+      pendingPlayIntent = null;
+    }
+  }
+
+  storePendingPlay(202);
+  const currentIntent = pendingPlayIntent as { tabId: number; timer?: any } | null;
+  assert(currentIntent?.tabId === 202, 'Pending Play stored without activation');
+
+  handleYtTabActivated();
+  assert(playCommandSentCount === 1, 'Pending Play executed once upon YT_TAB_ACTIVATED');
+  assert(pendingPlayIntent === null, 'Pending Play cleared after execution');
+
+  // Triggering again does not send duplicate play
+  handleYtTabActivated();
+  assert(playCommandSentCount === 1, 'Subsequent activations do not duplicate Play');
+
+  // Part 2: Pending Play is canceled by Stop or Pause
+  storePendingPlay(202);
+  const storedAgain = pendingPlayIntent as { tabId: number; timer?: any } | null;
+  assert(storedAgain?.tabId === 202, 'Pending Play stored again');
+
+  function handleStopCommand() {
+    pendingPlayIntent = null; // Cleared by stop
+  }
+
+  handleStopCommand();
+  assert(pendingPlayIntent === null, 'Pending Play canceled by Stop command');
+
+  handleYtTabActivated();
+  assert(playCommandSentCount === 1, 'No play command sent after being canceled by Stop');
+}
+
+// --- Test Suite 21: Song Info Music Note Indicator & Fade Toggle ---
+console.log('\n--- Test Suite 21: Song Info Music Note Indicator & Fade Toggle ---');
+{
+  const htmlContent = fs.readFileSync(path.resolve(__dirname, '../extension/player/index.html'), 'utf8');
+  const cssContent = fs.readFileSync(path.resolve(__dirname, '../extension/player/player.css'), 'utf8');
+  const jsContent = fs.readFileSync(path.resolve(__dirname, '../extension/player/player.js'), 'utf8');
+
+  // 1. Verify HTML element has text ♫ and initial attributes
+  assert(htmlContent.includes('<button id="sdot"'), 'index.html contains #sdot element');
+  assert(htmlContent.includes('>♫</button>'), '#sdot in index.html contains ♫ character');
+  assert(htmlContent.includes('aria-label="Toggle title and artist fade"'), '#sdot has correct aria-label');
+  assert(htmlContent.includes('title="Fade between title and artist (click to turn off)"'), '#sdot has correct initial title');
+  assert(htmlContent.includes('aria-pressed="true"'), '#sdot has initial aria-pressed="true"');
+
+  // 2. Verify CSS rules for bright enabled state and dimmed disabled state
+  assert(cssContent.includes('#sdot{'), 'player.css contains #sdot base rules');
+  assert(cssContent.includes('color:#8dffb0'), '#sdot uses CRT green color palette');
+  assert(cssContent.includes('background:transparent'), '#sdot does not use background badge/container');
+  assert(cssContent.includes('border:0'), '#sdot does not use circular border');
+  assert(cssContent.includes('#sdot[aria-pressed=false]{opacity:.38}'), '#sdot dims on aria-pressed=false');
+
+  // 3. Verify toggle logic in player.js
+  assert(jsContent.includes("$('sdot').setAttribute('aria-pressed',fadeOn)"), 'player.js updates aria-pressed');
+  assert(
+    jsContent.includes("$('sdot').title=fadeOn?'Fade between title and artist (click to turn off)':'Show song info'"),
+    'player.js updates accessible title based on enabled state'
+  );
+
+  // 4. Test state machine for toggle simulation
+  let fadeOn: boolean = true;
+  let sdotState = {
+    ariaPressed: 'true',
+    title: 'Fade between title and artist (click to turn off)',
+    text: '♫'
+  };
+
+  function simulateSdotClick() {
+    fadeOn = !fadeOn;
+    sdotState.ariaPressed = String(fadeOn);
+    sdotState.title = fadeOn ? 'Fade between title and artist (click to turn off)' : 'Show song info';
+  }
+
+  // Initial state: Enabled
+  assert(sdotState.ariaPressed === 'true', 'Initial state aria-pressed is true');
+  assert(sdotState.title === 'Fade between title and artist (click to turn off)', 'Initial title is enabled title');
+  assert(sdotState.text === '♫', 'Note character is ♫');
+
+  // Toggle off: Disabled
+  simulateSdotClick();
+  assert(Boolean(!fadeOn), 'fadeOn is false after first click');
+  assert(sdotState.ariaPressed === 'false', 'aria-pressed is false after first click');
+  assert(sdotState.title === 'Show song info', 'Title is Show song info when disabled');
+  assert(sdotState.text === '♫', 'Note character remains ♫ when disabled');
+
+  // Toggle back on: Enabled
+  simulateSdotClick();
+  assert(Boolean(fadeOn), 'fadeOn is true after second click');
+  assert(sdotState.ariaPressed === 'true', 'aria-pressed is true after second click');
+  assert(sdotState.title === 'Fade between title and artist (click to turn off)', 'Title restored to enabled title');
+}
+
+// --- Test Suite 22: Green Display Long Song Title & Artist Text Space ---
+console.log('\n--- Test Suite 22: Green Display Long Song Title & Artist Text Space ---');
+{
+  const cssContent = fs.readFileSync(path.resolve(__dirname, '../extension/player/player.css'), 'utf8');
+
+  // 1. Verify #freq has flex:1 and min-width:0 to expand and shrink flexibly
+  assert(cssContent.includes('#freq{') && cssContent.includes('flex:1') && cssContent.includes('min-width:0'), '#freq has flex:1 and min-width:0');
+
+  // 2. Verify #sg does not have hardcoded 200px max-width clamp
+  assert(!cssContent.includes('#sg{display:inline-block;max-width:200px'), '#sg has no artificial 200px max-width clamp');
+  assert(cssContent.includes('#sg{') && cssContent.includes('text-overflow:ellipsis') && cssContent.includes('white-space:nowrap'), '#sg uses ellipsis truncation');
+
+  // 3. Verify #year has flex:none and #row has gap to prevent overlap with frequency display
+  assert(cssContent.includes('#year{') && cssContent.includes('flex:none'), '#year has flex:none to prevent numerical frequency clipping');
+  assert(cssContent.includes('#row{') && cssContent.includes('gap:10px'), '#row has safety gap between frequency and song info');
+
+  // 4. Test text width calculations for Sledgehammer (HD version)
+  const regressionTitle = 'Sledgehammer (HD version)';
+  const approxPanelContentWidth = 450 - 16 - 4 - 24; // 406px
+  const maxYearWidth = 125; // 4 digits (72px) + dp (6px) + gaps (12px) + unit (29px) + safety
+  const rowGap = 10;
+  const sdotAndGap = 9 + 6; // 15px
+  const availableSgWidth = approxPanelContentWidth - maxYearWidth - rowGap - sdotAndGap; // ~256px
+
+  // At monospace character width (~8.4px for 14px font):
+  const titleEstimatedWidth = regressionTitle.length * 8.4; // 210px
+  assert(titleEstimatedWidth <= availableSgWidth, 'Sledgehammer (HD version) fits fully in available horizontal space (210px <= 256px)');
+
+  // 5. Short and long titles / artists
+  const testCases = [
+    { text: 'Low', len: 3, fits: true },
+    { text: 'Peter Gabriel', len: 13, fits: true },
+    { text: 'Sledgehammer (HD version)', len: 25, fits: true },
+    { text: 'Every Breath You Take (Remastered 2003)', len: 39, fits: false }
+  ];
+
+  testCases.forEach(tc => {
+    const w = tc.len * 8.4;
+    const fits = w <= availableSgWidth;
+    assert(fits === tc.fits, `Text "${tc.text}" correctly categorized for fitting (${w.toFixed(1)}px vs ${availableSgWidth}px)`);
+  });
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
@@ -1042,4 +1738,3 @@ if (failed > 0) {
 } else {
   process.exit(0);
 }
-

@@ -10,21 +10,53 @@
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
   const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
   const EVENT_TRACE = 'RETROFM_TRACE';
+  const EVENT_ERROR = 'RETROFM_MAIN_WORLD_ERROR';
   const STORAGE_KEY_SAVED_VOLUME = 'retrofm_saved_master_volume';
+
+  function reportError(err, context = '') {
+    try {
+      const message = err?.message || String(err || 'Unknown error');
+      const stack = err?.stack || '';
+      const payload = {
+        type: 'EXTENSION_ERROR',
+        source: 'yt_main_world' + (context ? `:${context}` : ''),
+        message,
+        stack,
+        time: Date.now()
+      };
+      window.dispatchEvent(new CustomEvent(EVENT_ERROR, {
+        detail: JSON.stringify(payload)
+      }));
+    } catch (e) {}
+  }
+
+  window.addEventListener('error', (event) => {
+    try {
+      reportError(event.error || event.message, 'window.onerror');
+    } catch (e) {}
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    try {
+      reportError(event.reason, 'window.unhandledrejection');
+    } catch (e) {}
+  });
 
   function trace(event, data) {
     try {
       window.dispatchEvent(
         new CustomEvent(EVENT_TRACE, {
-          detail: {
+          detail: JSON.stringify({
             ts: Date.now(),
             source: 'yt_main_world',
             event,
             data: data || {}
-          }
+          })
         })
       );
-    } catch (e) {}
+    } catch (e) {
+      reportError(e, 'trace');
+    }
   }
 
   // Restore remembered master volume from localStorage if available
@@ -40,8 +72,7 @@
   } catch (e) {}
 
   let playerFound = false;
-  let navigationMuted = false;
-  let muteSafetyTimer = null;
+  let lastUnmuteTime = 0;
 
   function getPlayer() {
     return document.querySelector('.html5-video-player') ||
@@ -49,10 +80,11 @@
            null;
   }
 
-  function clearMuteSafety() {
-    if (muteSafetyTimer) {
-      clearTimeout(muteSafetyTimer);
-      muteSafetyTimer = null;
+  function hasActivation() {
+    try {
+      return !!(typeof navigator !== 'undefined' && navigator.userActivation && navigator.userActivation.hasBeenActive);
+    } catch (e) {
+      return false;
     }
   }
 
@@ -71,14 +103,24 @@
         const prevVol = typeof player.getVolume === 'function' ? player.getVolume() : 'unknown';
         player.setVolume(clampedVol);
 
-        // If temporarily muted during navigation, or player is muted while target > 0, unMute now
-        if (clampedVol > 0 && typeof player.isMuted === 'function' && player.isMuted()) {
-          if (typeof player.unMute === 'function') {
-            player.unMute();
+        const isPlayerMuted = typeof player.isMuted === 'function' ? player.isMuted() : false;
+        if (clampedVol > 0 && isPlayerMuted) {
+          if (hasActivation()) {
+            if (typeof player.unMute === 'function') {
+              lastUnmuteTime = Date.now();
+              player.unMute();
+            }
+          } else {
+            recordDiagnosticEvent('Muted; cannot unmute without a click in the YouTube tab', {
+              reason,
+              clampedVol
+            });
+          }
+        } else if (clampedVol === 0 && !isPlayerMuted && hasActivation()) {
+          if (typeof player.mute === 'function') {
+            player.mute();
           }
         }
-        navigationMuted = false;
-        clearMuteSafety();
 
         const resultingVol = typeof player.getVolume === 'function' ? player.getVolume() : clampedVol;
         console.log(
@@ -118,14 +160,16 @@
     try {
       window.dispatchEvent(
         new CustomEvent(EVENT_VOLUME_STATUS, {
-          detail: {
+          detail: JSON.stringify({
             volume: currentVol,
             muted: isMuted,
             hasPlayer: !!player
-          }
+          })
         })
       );
-    } catch (e) {}
+    } catch (e) {
+      reportError(e, 'broadcastStatus');
+    }
   }
 
   // Listen for volume change requests from isolated content script
@@ -148,6 +192,7 @@
         applyVolume(vol, data?.reason || 'CustomEvent');
       }
     } catch (err) {
+      reportError(err, 'addEventListener:EVENT_SET_VOLUME');
       console.warn('[RetroFM MainWorld] Error processing volume event:', err);
     }
   });
@@ -265,22 +310,34 @@
         executePlayerCommand(data.command, data.payload);
       }
     } catch (err) {
+      reportError(err, 'addEventListener:EVENT_PLAYER_COMMAND');
       console.warn('[RetroFM MainWorld] Error processing player command event:', err);
     }
   });
 
   // Support window.postMessage strictly for VOLUME commands and status queries
   window.addEventListener('message', (event) => {
-    if (event.source !== window || !event.data) return;
-    if (event.data.type === 'RETROFM_SET_VOLUME_MSG') {
-      const vol = typeof event.data.volume === 'number' ? event.data.volume : null;
-      if (vol !== null) {
-        applyVolume(vol, event.data.reason || 'postMessage');
+    try {
+      if (event.source !== window || !event.data) return;
+      if (event.data.type === 'RETROFM_SET_VOLUME_MSG') {
+        const vol = typeof event.data.volume === 'number' ? event.data.volume : null;
+        if (vol !== null) {
+          applyVolume(vol, event.data.reason || 'postMessage');
+        }
+      } else if (event.data.type === 'RETROFM_QUERY_VOLUME_MSG') {
+        broadcastStatus();
       }
-    } else if (event.data.type === 'RETROFM_QUERY_VOLUME_MSG') {
-      broadcastStatus();
+    } catch (err) {
+      reportError(err, 'addEventListener:message');
     }
   });
+
+  function recordDiagnosticEvent(event, data) {
+    try {
+      trace(event, data);
+      recordError(event, data);
+    } catch (e) {}
+  }
 
   // Reapply queued volume on video lifecycle events (song start / loadedmetadata / playing)
   function attachMediaListeners(media) {
@@ -288,10 +345,14 @@
     media.__retroFmListenersAttached = true;
 
     const onMediaLifecycle = (evtType) => {
-      if (queuedVolume !== null) {
-        applyVolume(queuedVolume, `event:${evtType}`);
-      } else {
-        broadcastStatus();
+      try {
+        if (queuedVolume !== null) {
+          applyVolume(queuedVolume, `event:${evtType}`);
+        } else {
+          broadcastStatus();
+        }
+      } catch (err) {
+        reportError(err, `onMediaLifecycle:${evtType}`);
       }
     };
 
@@ -300,51 +361,65 @@
     media.addEventListener('loadedmetadata', () => onMediaLifecycle('loadedmetadata'));
     media.addEventListener('canplay', () => onMediaLifecycle('canplay'));
     media.addEventListener('playing', () => {
-      const player = getPlayer();
-      const currentVol = (player && typeof player.getVolume === 'function') ? player.getVolume() : 'unknown';
-      console.log(
-        `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}`
-      );
-      onMediaLifecycle('playing');
+      try {
+        const player = getPlayer();
+        const currentVol = (player && typeof player.getVolume === 'function') ? player.getVolume() : 'unknown';
+        console.log(
+          `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}`
+        );
+        onMediaLifecycle('playing');
+      } catch (err) {
+        reportError(err, 'media.addEventListener:playing');
+      }
+    });
+
+    media.addEventListener('pause', () => {
+      try {
+        const now = Date.now();
+        const unmutedRecently = (now - lastUnmuteTime) <= 3000;
+        recordError('videoPause', {
+          ts: now,
+          pausedRightAfterUnmute: unmutedRecently,
+          timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
+        });
+        trace('VIDEO_PAUSE_EVENT', {
+          pausedRightAfterUnmute: unmutedRecently,
+          timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
+        });
+      } catch (err) {
+        reportError(err, 'media.addEventListener:pause');
+      }
     });
   }
 
   function handleNavigationStart() {
-    const player = getPlayer();
-    if (player && typeof player.mute === 'function') {
-      try {
-        navigationMuted = true;
-        player.mute();
-        clearMuteSafety();
-        // Failsafe: unMute after 1.5s regardless so audio can never stay stuck muted
-        muteSafetyTimer = setTimeout(() => {
-          navigationMuted = false;
-          if (player && typeof player.unMute === 'function') {
-            player.unMute();
-          }
-          if (queuedVolume !== null) {
-            applyVolume(queuedVolume, 'navigationMuteFailsafe');
-          }
-        }, 1500);
-      } catch (e) {}
-    }
-    if (queuedVolume !== null) {
-      applyVolume(queuedVolume, 'navigationStart');
+    try {
+      if (queuedVolume !== null) {
+        applyVolume(queuedVolume, 'navigationStart');
+      }
+    } catch (err) {
+      reportError(err, 'handleNavigationStart');
     }
   }
 
   // Earliest page / YouTube navigation hooks
-  window.addEventListener('yt-navigate-start', () => handleNavigationStart());
+  window.addEventListener('yt-navigate-start', () => {
+    try { handleNavigationStart(); } catch (err) { reportError(err, 'yt-navigate-start'); }
+  });
   window.addEventListener('yt-navigate-finish', () => {
-    if (queuedVolume !== null) {
-      applyVolume(queuedVolume, 'yt-navigate-finish');
-    }
+    try {
+      if (queuedVolume !== null) {
+        applyVolume(queuedVolume, 'yt-navigate-finish');
+      }
+    } catch (err) { reportError(err, 'yt-navigate-finish'); }
   });
   window.addEventListener('yt-player-updated', () => {
-    if (queuedVolume !== null) {
-      applyVolume(queuedVolume, 'yt-player-updated');
-    }
-    flushPendingPlayerCommand('yt-player-updated');
+    try {
+      if (queuedVolume !== null) {
+        applyVolume(queuedVolume, 'yt-player-updated');
+      }
+      flushPendingPlayerCommand('yt-player-updated');
+    } catch (err) { reportError(err, 'yt-player-updated'); }
   });
 
   function attachPlayerStateListener(player) {
@@ -392,15 +467,168 @@
 
           const detail = { state, videoId, title, currentTime, duration };
           try {
-            window.dispatchEvent(new CustomEvent(EVENT_STATE_CHANGE, { detail }));
-          } catch (e) {}
+            window.dispatchEvent(new CustomEvent(EVENT_STATE_CHANGE, { detail: JSON.stringify(detail) }));
+          } catch (e) {
+            reportError(e, 'dispatchEvent:EVENT_STATE_CHANGE');
+          }
           try {
             window.postMessage({ type: 'RETROFM_YT_STATE_CHANGED_MSG', ...detail }, '*');
-          } catch (e) {}
+          } catch (e) {
+            reportError(e, 'postMessage:RETROFM_YT_STATE_CHANGED_MSG');
+          }
+          sendDiagnosticsSnapshot('stateChange');
         });
+
+        // Also catch and record any error YouTube reports
+        if (typeof player.addEventListener === 'function') {
+          player.addEventListener('onError', (errCode) => {
+            recordError('ytPlayerError', { errorCode: errCode });
+          });
+        }
       }
     } catch (e) {}
   }
+
+  // --- Audio Diagnostics Collection ---
+  const EVENT_AUDIO_DIAGNOSTICS = 'RETROFM_AUDIO_DIAGNOSTICS';
+  let recordedErrors = [];
+
+  function recordError(type, details) {
+    try {
+      const errItem = {
+        type,
+        ts: Date.now(),
+        timeIso: new Date().toISOString(),
+        details: details || {}
+      };
+      recordedErrors.push(errItem);
+      if (recordedErrors.length > 20) {
+        recordedErrors.shift();
+      }
+      trace('AUDIO_DIAGNOSTIC_ERROR', errItem);
+      sendDiagnosticsSnapshot('errorRecorded');
+    } catch (e) {}
+  }
+
+  function getDiagnosticsSnapshot() {
+    const player = getPlayer();
+    const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+
+    let playerState = null;
+    let playerMuted = null;
+    let playerVolume = null;
+    let videoId = null;
+    let title = '';
+
+    if (player) {
+      try {
+        if (typeof player.getPlayerState === 'function') playerState = player.getPlayerState();
+      } catch (e) {}
+      try {
+        if (typeof player.isMuted === 'function') playerMuted = player.isMuted();
+      } catch (e) {}
+      try {
+        if (typeof player.getVolume === 'function') playerVolume = player.getVolume();
+      } catch (e) {}
+      try {
+        if (typeof player.getVideoData === 'function') {
+          const vd = player.getVideoData();
+          videoId = vd?.video_id || null;
+          title = vd?.title || '';
+        }
+      } catch (e) {}
+    }
+
+    if (!videoId) {
+      try {
+        const match = window.location.href.match(/[?&]v=([^&#]+)/);
+        if (match) videoId = match[1];
+      } catch (e) {}
+    }
+
+    if (!title) {
+      try {
+        const h1 = document.querySelector('h1.ytd-watch-metadata yt-formatted-string') ||
+                   document.querySelector('h1.title yt-formatted-string');
+        title = h1?.textContent?.trim() || document.title.replace(' - YouTube', '').trim() || '';
+      } catch (e) {}
+    }
+
+    const videoPaused = video ? video.paused : null;
+    const videoMuted = video ? video.muted : null;
+    const videoVolume = video ? Math.round(video.volume * 100) : null;
+    const videoReadyState = video ? video.readyState : null;
+
+    const visibilityState = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    const userActivation = typeof navigator !== 'undefined' && navigator.userActivation ? {
+      hasBeenActive: !!navigator.userActivation.hasBeenActive,
+      isActive: !!navigator.userActivation.isActive
+    } : {
+      hasBeenActive: false,
+      isActive: false
+    };
+
+    const now = Date.now();
+    const pausedRightAfterUnmute = (now - lastUnmuteTime) <= 3000;
+
+    return {
+      ts: now,
+      playerState,
+      playerMuted,
+      playerVolume,
+      videoPaused,
+      videoMuted,
+      videoVolume,
+      videoReadyState,
+      visibilityState,
+      userActivation,
+      pausedRightAfterUnmute,
+      timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null,
+      videoId,
+      title,
+      href: typeof window !== 'undefined' ? window.location.href : '',
+      lastError: recordedErrors.length > 0 ? recordedErrors[recordedErrors.length - 1] : null,
+      errors: [...recordedErrors]
+    };
+  }
+
+  function sendDiagnosticsSnapshot(reason = 'onDemand') {
+    try {
+      const snapshot = getDiagnosticsSnapshot();
+      window.dispatchEvent(new CustomEvent(EVENT_AUDIO_DIAGNOSTICS, {
+        detail: JSON.stringify({ snapshot, reason })
+      }));
+    } catch (e) {
+      reportError(e, 'sendDiagnosticsSnapshot');
+    }
+  }
+
+  // Intercept HTMLMediaElement.prototype.play to catch rejected play() promises (e.g. NotAllowedError)
+  try {
+    const origPlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...args) {
+      const res = origPlay.apply(this, args);
+      if (res && typeof res.catch === 'function') {
+        res.catch((err) => {
+          recordError('playPromiseRejected', {
+            name: err?.name,
+            message: err?.message,
+            stack: err?.stack
+          });
+        });
+      }
+      return res;
+    };
+  } catch (e) {}
+
+  // Listen for demand request for diagnostics snapshot
+  window.addEventListener('RETROFM_REQ_AUDIO_DIAGNOSTICS', () => {
+    try {
+      sendDiagnosticsSnapshot('requested');
+    } catch (err) {
+      reportError(err, 'addEventListener:RETROFM_REQ_AUDIO_DIAGNOSTICS');
+    }
+  });
 
   // Poll for player existence on initialization
   let checkPlayerInterval = setInterval(() => {
@@ -410,7 +638,9 @@
         playerFound = true;
         console.log(`[RetroFM MainWorld] YouTube player element detected.`);
       }
-      attachPlayerStateListener(player);
+      try {
+        attachPlayerStateListener(player);
+      } catch (e) {}
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'playerReady');
       }
@@ -446,4 +676,6 @@
   if (initialVideo) {
     attachMediaListeners(initialVideo);
   }
+  // Send initial diagnostics snapshot
+  setTimeout(() => sendDiagnosticsSnapshot('initial'), 1000);
 })();

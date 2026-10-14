@@ -11,6 +11,32 @@ let latestYouTubeState = null;
 const MAX_TRANSPORT_TRACE_ENTRIES = 300;
 let transportTraceLog = [];
 
+// Audio Diagnostics Snapshot & Events (keeps latest snapshot + last 40 events in memory & chrome.storage.session)
+const MAX_AUDIO_DIAGNOSTICS_EVENTS = 40;
+let latestAudioDiagnosticsSnapshot = null;
+let audioDiagnosticsEvents = [];
+
+function recordAudioDiagnosticsEvent(event, data) {
+  try {
+    const entry = {
+      ts: Date.now(),
+      timeIso: new Date().toISOString(),
+      event: event || 'DIAGNOSTIC_EVENT',
+      data: data || {}
+    };
+    audioDiagnosticsEvents.push(entry);
+    if (audioDiagnosticsEvents.length > MAX_AUDIO_DIAGNOSTICS_EVENTS) {
+      audioDiagnosticsEvents.splice(0, audioDiagnosticsEvents.length - MAX_AUDIO_DIAGNOSTICS_EVENTS);
+    }
+    if (chrome.storage?.session) {
+      chrome.storage.session.set({
+        latestAudioDiagnosticsSnapshot,
+        audioDiagnosticsEvents
+      }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
 function recordTrace(source, event, data) {
   try {
     const entry = {
@@ -29,16 +55,53 @@ function recordTrace(source, event, data) {
   } catch (e) {}
 }
 
-// Restore trace log from session storage on worker startup
+// Restore trace log and diagnostics from session storage on worker startup
 try {
   if (chrome.storage?.session) {
-    chrome.storage.session.get('transportTraceLog').then((res) => {
+    chrome.storage.session.get(['transportTraceLog', 'latestAudioDiagnosticsSnapshot', 'audioDiagnosticsEvents']).then((res) => {
       if (Array.isArray(res?.transportTraceLog)) {
         transportTraceLog = res.transportTraceLog.slice(-MAX_TRANSPORT_TRACE_ENTRIES);
+      }
+      if (res?.latestAudioDiagnosticsSnapshot) {
+        latestAudioDiagnosticsSnapshot = res.latestAudioDiagnosticsSnapshot;
+      }
+      if (Array.isArray(res?.audioDiagnosticsEvents)) {
+        audioDiagnosticsEvents = res.audioDiagnosticsEvents.slice(-MAX_AUDIO_DIAGNOSTICS_EVENTS);
       }
     }).catch(() => {});
   }
 } catch (e) {}
+
+// Re-inject content_retrofm.js into open RetroFM tabs on startup / reload so app can self-register
+async function reinjectRetroFmPageBridge() {
+  if (!chrome.scripting || !chrome.tabs) return;
+  try {
+    const candidateTabs = await chrome.tabs.query({
+      url: ['*://localhost/*', '*://127.0.0.1/*', '*://*.run.app/*']
+    });
+    for (const tab of candidateTabs) {
+      if (tab.id && !tab.url?.includes('player/index.html')) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content_retrofm.js']
+          });
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
+if (chrome.runtime?.onInstalled) {
+  chrome.runtime.onInstalled.addListener(() => {
+    reinjectRetroFmPageBridge().catch(() => {});
+  });
+}
+if (chrome.runtime?.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    reinjectRetroFmPageBridge().catch(() => {});
+  });
+}
 
 // Query for available Boom Box tabs
 async function resolveBoomBoxTab() {
@@ -213,7 +276,104 @@ async function findRetroFmTabGroup(windowId) {
   }
 }
 
-// Track active tab changes to respect user tab switches during hidden-tab recovery
+// One-time session activation state
+let hasSessionActivation = false;
+let sessionActivationPromptTabId = null;
+let precedingTabBeforeActivation = null;
+let userSwitchedTabDuringActivation = false;
+let isActivationSwitchInProgress = false;
+
+// Pending user play intent (60s expiry)
+let pendingPlayIntent = null; // { tabId, timestamp, timer }
+
+function clearPendingPlayIntent(reason = '') {
+  if (pendingPlayIntent) {
+    if (pendingPlayIntent.timer) {
+      clearTimeout(pendingPlayIntent.timer);
+    }
+    recordTrace('background', 'PENDING_PLAY_INTENT_CLEARED', { reason });
+    pendingPlayIntent = null;
+  }
+}
+
+function storePendingPlayIntent(tabId) {
+  clearPendingPlayIntent('superseded');
+  const timer = setTimeout(() => {
+    if (pendingPlayIntent && pendingPlayIntent.tabId === tabId) {
+      recordTrace('background', 'PENDING_PLAY_INTENT_EXPIRED', { tabId });
+      pendingPlayIntent = null;
+    }
+  }, 60000);
+  pendingPlayIntent = { tabId, timestamp: Date.now(), timer };
+  recordTrace('background', 'PENDING_PLAY_INTENT_STORED', { tabId, expiresMs: 60000 });
+}
+
+async function triggerOneTimeSessionActivation(ytTabId, askForOneTimeClick = true) {
+  if (!ytTabId || hasSessionActivation || isActivationSwitchInProgress) return;
+
+  // Check if player/tab already has activation
+  try {
+    const stat = await chrome.tabs.sendMessage(ytTabId, { action: 'GET_STATUS' });
+    if (latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive) {
+      hasSessionActivation = true;
+      return;
+    }
+  } catch (e) {}
+
+  if (!askForOneTimeClick) {
+    recordTrace('background', 'SESSION_ACTIVATION_SKIPPED_NEEDS_USER_CLICK', { ytTabId });
+    const retroTabId = await resolveRetroFmTab();
+    if (retroTabId) {
+      try { await chrome.tabs.sendMessage(retroTabId, { type: 'NEEDS_USER_CLICK' }); } catch (e) {}
+    }
+    const bbTabId = await resolveBoomBoxTab();
+    if (bbTabId) {
+      try { await chrome.tabs.sendMessage(bbTabId, { type: 'NEEDS_USER_CLICK' }); } catch (e) {}
+    }
+    return;
+  }
+
+  let ytTab = null;
+  try {
+    ytTab = await chrome.tabs.get(ytTabId);
+  } catch (e) {
+    return;
+  }
+
+  if (ytTab.active) {
+    // Already active, overlay in content_youtube.js is visible to user
+    return;
+  }
+
+  // Find currently active tab in this window (normally the Boom Box)
+  let activeTabId = null;
+  try {
+    const activeTabs = await chrome.tabs.query({ windowId: ytTab.windowId, active: true });
+    if (activeTabs.length > 0) {
+      activeTabId = activeTabs[0].id;
+    }
+  } catch (e) {}
+
+  precedingTabBeforeActivation = activeTabId;
+  sessionActivationPromptTabId = ytTabId;
+  userSwitchedTabDuringActivation = false;
+  isActivationSwitchInProgress = true;
+
+  recordTrace('background', 'SESSION_ACTIVATION_SWITCH_TO_YT', {
+    ytTabId,
+    precedingTabId: precedingTabBeforeActivation
+  });
+
+  try {
+    await chrome.tabs.update(ytTabId, { active: true });
+  } catch (err) {
+    recordTrace('background', 'SESSION_ACTIVATION_SWITCH_ERROR', { error: err.message });
+  } finally {
+    isActivationSwitchInProgress = false;
+  }
+}
+
+// Track active tab changes to respect user tab switches
 let userSwitchedTabDuringRecovery = false;
 let isRecoveryInProgress = false;
 
@@ -222,12 +382,26 @@ if (chrome.tabs?.onActivated) {
     if (isRecoveryInProgress) {
       userSwitchedTabDuringRecovery = true;
     }
+    if (sessionActivationPromptTabId && !isActivationSwitchInProgress) {
+      // If user changed tabs themselves before clicking, do not switch back and do not bring tab forward again
+      if (activeInfo.tabId !== sessionActivationPromptTabId) {
+        userSwitchedTabDuringActivation = true;
+        sessionActivationPromptTabId = null;
+        recordTrace('background', 'USER_SWITCHED_TAB_BEFORE_ACTIVATION', { activeTabId: activeInfo.tabId });
+      }
+    }
   });
 }
 
 // Hidden-tab playback recovery helper
-async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = true) {
-  if (!revealSetting || !ytTabId) return;
+async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = false) {
+  if (!ytTabId) return;
+
+  // Once activation exists, later Play commands and song changes must never switch tabs
+  if (hasSessionActivation || (latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive)) {
+    hasSessionActivation = true;
+    return;
+  }
 
   // Step 1: Wait up to 2.5s for player to reach state 1 (playing)
   const startTime = Date.now();
@@ -251,7 +425,25 @@ async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = true) {
 
   if (reachedStateOne) return;
 
-  // Step 2: Check if YouTube tab document is hidden
+  // Player has not reached playing state within 2.5s
+  if (!revealSetting) {
+    recordTrace('background', 'NEEDS_USER_CLICK_DISPATCHED', { ytTabId });
+    const retroTabId = await resolveRetroFmTab();
+    if (retroTabId) {
+      try {
+        await chrome.tabs.sendMessage(retroTabId, { type: 'NEEDS_USER_CLICK' });
+      } catch (e) {}
+    }
+    const bbTabId = await resolveBoomBoxTab();
+    if (bbTabId) {
+      try {
+        await chrome.tabs.sendMessage(bbTabId, { type: 'NEEDS_USER_CLICK' });
+      } catch (e) {}
+    }
+    return;
+  }
+
+  // Step 2: revealSetting is true, recover by temporarily activating the YouTube tab
   let ytTab = null;
   try {
     ytTab = await chrome.tabs.get(ytTabId);
@@ -463,6 +655,54 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: YT_TAB_ACTIVATED - User clicked anywhere in YouTube page to grant playback permission
+      if (type === 'YT_TAB_ACTIVATED') {
+        hasSessionActivation = true;
+        recordTrace('background', 'YT_TAB_ACTIVATED_RELAYED', {
+          precedingTabBeforeActivation,
+          userSwitchedTabDuringActivation
+        });
+
+        // Immediately switch back to the remembered tab if user did not switch tabs themselves
+        if (!userSwitchedTabDuringActivation && precedingTabBeforeActivation) {
+          try {
+            await chrome.tabs.update(precedingTabBeforeActivation, { active: true });
+            recordTrace('background', 'SESSION_ACTIVATION_SWITCH_BACK_SUCCESS', {
+              targetTabId: precedingTabBeforeActivation
+            });
+          } catch (e) {
+            recordTrace('background', 'SESSION_ACTIVATION_SWITCH_BACK_ERROR', { error: e.message });
+          }
+        }
+        precedingTabBeforeActivation = null;
+        sessionActivationPromptTabId = null;
+
+        // If a Play command was pending while waiting for activation, send PLAY once now and clear it
+        if (pendingPlayIntent && pendingPlayIntent.tabId) {
+          const targetTabId = pendingPlayIntent.tabId;
+          clearPendingPlayIntent('executed_on_activation');
+          recordTrace('background', 'PENDING_PLAY_INTENT_EXECUTING', { targetTabId });
+          try {
+            chrome.tabs.sendMessage(targetTabId, { action: 'PLAY' }).catch(() => {});
+          } catch (e) {}
+        }
+
+        const retroTabId = await resolveRetroFmTab();
+        if (retroTabId) {
+          try {
+            await chrome.tabs.sendMessage(retroTabId, { type: 'YT_TAB_ACTIVATED' });
+          } catch (e) {}
+        }
+        const bbTabId = await resolveBoomBoxTab();
+        if (bbTabId) {
+          try {
+            await chrome.tabs.sendMessage(bbTabId, { type: 'YT_TAB_ACTIVATED' });
+          } catch (e) {}
+        }
+        sendResponse({ success: true });
+        return;
+      }
+
       // Feature: RECORD_TRACE - receives trace entry from any context and appends to unified log
       if (type === 'RECORD_TRACE') {
         const entry = payload || request.entry;
@@ -479,10 +719,58 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: AUDIO_DIAGNOSTICS_SNAPSHOT - receives snapshot from content_youtube.js / yt_main_world.js
+      if (type === 'AUDIO_DIAGNOSTICS_SNAPSHOT') {
+        const snap = payload?.snapshot || payload;
+        if (snap && typeof snap === 'object') {
+          latestAudioDiagnosticsSnapshot = snap;
+          recordAudioDiagnosticsEvent('SNAPSHOT_RECEIVED', {
+            reason: payload?.reason || 'update',
+            playerState: snap.playerState,
+            videoPaused: snap.videoPaused,
+            videoMuted: snap.videoMuted,
+            videoVolume: snap.videoVolume,
+            visibilityState: snap.visibilityState,
+            hasBeenActive: snap.userActivation?.hasBeenActive,
+            title: snap.title
+          });
+          if (chrome.storage?.session) {
+            chrome.storage.session.set({
+              latestAudioDiagnosticsSnapshot,
+              audioDiagnosticsEvents
+            }).catch(() => {});
+          }
+        }
+        sendResponse({ success: true });
+        return;
+      }
+
+      // Feature: GET_AUDIO_DIAGNOSTICS - returns latest snapshot plus last 40 events with timestamps
+      if (type === 'GET_AUDIO_DIAGNOSTICS') {
+        // Request fresh snapshot on-demand if YouTube tab is connected
+        if (activeConnectedTabId) {
+          try {
+            chrome.tabs.sendMessage(activeConnectedTabId, { action: 'GET_DIAGNOSTICS_SNAPSHOT' }).catch(() => {});
+          } catch (e) {}
+        }
+        sendResponse({
+          success: true,
+          data: {
+            snapshot: latestAudioDiagnosticsSnapshot,
+            events: [...audioDiagnosticsEvents]
+          }
+        });
+        return;
+      }
+
       // Feature: BOOMBOX_ACTION - routes user command from Boom Box tab to RetroFM app
       if (type === 'BOOMBOX_ACTION') {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
+          const actionName = (payload?.action || '').toUpperCase();
+          if (actionName === 'STOP' || actionName === 'PAUSE') {
+            clearPendingPlayIntent(`boombox_${actionName.toLowerCase()}`);
+          }
           const retroTabId = await resolveRetroFmTab();
           recordTrace('background', 'BOOMBOX_ACTION_ARRIVED', {
             action: payload?.action,
@@ -768,19 +1056,29 @@ function handleIncomingRequest(request, sender, sendResponse) {
         activeConnectedTabId = resolvedId;
 
         // Query status of connected tab
+        let status = null;
         try {
-          const status = await chrome.tabs.sendMessage(resolvedId, { action: 'GET_STATUS' });
-          sendResponse({ success: true, data: { tabId: resolvedId, status } });
+          status = await chrome.tabs.sendMessage(resolvedId, { action: 'GET_STATUS' });
         } catch (err) {
           // If first message failed, retry once after script injection
           await ensureYouTubeScriptInjected(resolvedId);
           try {
-            const status = await chrome.tabs.sendMessage(resolvedId, { action: 'GET_STATUS' });
-            sendResponse({ success: true, data: { tabId: resolvedId, status } });
+            status = await chrome.tabs.sendMessage(resolvedId, { action: 'GET_STATUS' });
           } catch (retryErr) {
-            sendResponse({ success: true, data: { tabId: resolvedId, status: { available: true } } });
+            status = { available: true };
           }
         }
+
+        // Check if one-time session activation is needed
+        const askForOneTimeClick = payload?.askForOneTimeClick !== false;
+        const hasActiveClick = !!(latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive);
+        if (!hasActiveClick && !hasSessionActivation) {
+          triggerOneTimeSessionActivation(resolvedId, askForOneTimeClick).catch(() => {});
+        } else {
+          hasSessionActivation = true;
+        }
+
+        sendResponse({ success: true, data: { tabId: resolvedId, status } });
         return;
       }
 
@@ -789,6 +1087,18 @@ function handleIncomingRequest(request, sender, sendResponse) {
         if (!tabId) {
           sendResponse({ success: false, error: 'No YouTube tab connected.' });
           return;
+        }
+
+        const actionName = (payload?.command?.action || '').toUpperCase();
+        if (actionName === 'STOP' || actionName === 'PAUSE') {
+          clearPendingPlayIntent(`command_${actionName.toLowerCase()}`);
+        } else if (actionName === 'PLAY') {
+          const hasActiveClick = !!(latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive);
+          if (!hasActiveClick && !hasSessionActivation) {
+            storePendingPlayIntent(tabId);
+          } else {
+            clearPendingPlayIntent('playback_with_activation');
+          }
         }
 
         try {

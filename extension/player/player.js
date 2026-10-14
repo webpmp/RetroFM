@@ -116,7 +116,7 @@ const BUTTONS={rewind:true,forward:true,record:true};
 
 // display panel expand/collapse
 const pan=$('panel');
-function setOpen(o){pan.classList.toggle('collapsed',!o);$('tgl').textContent=o?'▴':'▾';$('tgl').setAttribute('aria-expanded',o);emit('display',{open:o});try{localStorage.setItem('rfm-open',o?'1':'0')}catch(e){}}
+function setOpen(o){pan.classList.toggle('collapsed',!o);$('tgl').setAttribute('aria-expanded',o);emit('display',{open:o});try{localStorage.setItem('rfm-open',o?'1':'0')}catch(e){}}
 $('tgl').onclick=()=>setOpen(pan.classList.contains('collapsed'));
 try{if(localStorage.getItem('rfm-open')==='0')setOpen(false)}catch(e){}
 
@@ -141,17 +141,47 @@ window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true)};
 
 // tuning: dial = FM frequency, locks onto the selected decade's genre stations
 const MIN=87.5,SPAN=20.5;let lastKey='';
+// Seven-segment display mapping: A, B, C, D, E, F, G
+const SEG_MAP = {
+  '0': ['a','b','c','d','e','f'],
+  '1': ['b','c'],
+  '2': ['a','b','g','e','d'],
+  '3': ['a','b','g','c','d'],
+  '4': ['f','g','b','c'],
+  '5': ['a','f','g','c','d'],
+  '6': ['a','f','g','e','c','d'],
+  '7': ['a','b','c'],
+  '8': ['a','b','c','d','e','f','g'],
+  '9': ['a','b','c','d','f','g']
+};
+function render7SegFreq(fStr){
+  let h = '<span class="seg-display" aria-label="' + fStr + ' FM">';
+  for (const ch of fStr) {
+    if (ch === '.') {
+      h += '<span class="seg-dp"><span class="seg-dp-box"></span></span>';
+    } else if (SEG_MAP[ch]) {
+      const on = new Set(SEG_MAP[ch]);
+      h += '<span class="seg-digit">';
+      for (const s of ['a','b','c','d','e','f','g']) {
+        h += '<span class="seg-bar seg-' + s + (on.has(s) ? ' on' : '') + '"></span>';
+      }
+      h += '</span>';
+    }
+  }
+  h += '<span class="seg-unit">FM</span></span>';
+  return h;
+}
 function tune(){
  const f=Math.round((MIN+S.tun*SPAN)*10)/10;S.tun=(f-MIN)/SPAN;
  $('kTun').style.transform='rotate('+(-135+S.tun*270-40)+'deg)';
  const x=fx(MIN+S.tun*SPAN);$('tn').setAttribute('x1',x);$('tn').setAttribute('x2',x);
  let best=null;ST[S.dec].forEach(s=>{const d=Math.abs(s[1]-f);if(d<=.3&&(!best||d<Math.abs(best[1]-f)))best=s});
- $('year').textContent=f.toFixed(1)+' FM';
+ $('year').innerHTML=render7SegFreq(f.toFixed(1));
  S.locked=!!best;
- $('gi').textContent=best?'':'Between stations';
+ const giEl=$('gi');if(giEl)giEl.textContent=best?'':'Between stations';
  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('sel',!!best&&c.dataset.g===best[0]));
  const key=S.dec+'|'+(best?best[0]:'');
- if(best){$('hGen').textContent=best[0].toUpperCase();if(gl===ST[S.dec])gi=gl.indexOf(best)}
+ if(best){const hg=$('hGen');if(hg)hg.textContent=best[0].toUpperCase();if(gl===ST[S.dec])gi=gl.indexOf(best)}
  if(key!==lastKey){lastKey=key;if(!best){song=null;renderSong();}marks();if(pan.classList.contains('live')){emit('tune',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});sendBoomBoxAction('TUNE',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});}}
 }
 function setDec(d){S.dec=d;lastKey='';
@@ -170,7 +200,7 @@ function marks(){$('stn').innerHTML=ST[S.dec].map(s=>'<circle cx="'+fx(s[1]).toF
 // Live mode: real songs received from RetroFM session
 const DEMO=false;
 // song info on the display: title and artist alternate with 1.2s fade and 3s hold
-let song=null,fadeOn=true,phase=0,sTimer=0,sFadeTimer=0,appConnected=false;
+let song=null,fadeOn=true,phase=0,sTimer=0,sFadeTimer=0,appConnected=false,needsUserClick=false;
 
 function clearSongTimers(){
   if(sTimer){clearTimeout(sTimer);sTimer=0;}
@@ -187,6 +217,12 @@ function renderSong(){
   if(!fadeOn){el.textContent='';return;}
   if(!appConnected){el.textContent='Offline';el.className='dim';return;}
   if(!S.locked){el.textContent='\u2591 static \u2591';return;}
+
+  if(needsUserClick){
+    el.textContent='Click the YouTube tab once to allow music';
+    el.className='dim';
+    return;
+  }
 
   if(!song){
     el.textContent='No song selected';
@@ -285,7 +321,7 @@ function setSong(d){
   renderSong();
 }
 window.addEventListener('beforeunload',()=>{clearSongTimers();});
-$('sdot').onclick=()=>{fadeOn=!fadeOn;$('sdot').setAttribute('aria-pressed',fadeOn);$('sdot').title=fadeOn?'Hide song info':'Show song info';renderSong()};
+$('sdot').onclick=()=>{fadeOn=!fadeOn;$('sdot').setAttribute('aria-pressed',fadeOn);$('sdot').title=fadeOn?'Fade between title and artist (click to turn off)':'Show song info';renderSong()};
 
 // entry board: type a date, pick a genre, press Enter to tune in
 const FN=20,MON=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
@@ -326,7 +362,7 @@ function refresh(q){const v=dIn.value;D=parseDate(v);if(D&&!(v.match(/\d+/g)||[]
 function cyc(d){if(!D)return;gi=(gi+d+gl.length)%gl.length;flap(fG,gl[gi][0])}
 function goLive(){const y=D.getFullYear(),dec=Math.floor(y/10)*10,g=gl[gi];
  pan.classList.replace('entry','live');
- $('hDate').textContent=MON[D.getMonth()]+' '+D.getDate()+', '+y;$('hGen').textContent=g[0].toUpperCase();
+ $('hDate').textContent=MON[D.getMonth()]+' '+D.getDate()+', '+y;const hg=$('hGen');if(hg)hg.textContent=g[0].toUpperCase();
  S.tun=(g[1]-MIN)/SPAN;setDec(dec);
  const dateStr=y+'-'+String(D.getMonth()+1).padStart(2,'0')+'-'+String(D.getDate()).padStart(2,'0');
  emit('select',{date:dateStr,year:y,decade:dec,genre:g[0],frequency:g[1]});
@@ -354,7 +390,7 @@ dIn.onclick=()=>{if(step==='genre'){step='date';refresh()}};
 $('bDate').onclick=()=>{step='date';refresh();dIn.focus()};
 $('bGen').onclick=()=>{if(D){step='genre';refresh()}dIn.focus()};
 const back=s=>{pan.classList.replace('live','entry');step=s;emit('update',{});refresh();dIn.focus()};
-$('hDate').onclick=()=>back('date');$('hGen').onclick=()=>back('genre');
+$('hDate').onclick=()=>back('date');if($('hGen'))$('hGen').onclick=()=>back('genre');
 tune();refresh();dIn.focus();
 
 // VU meters (simulated: music plays in YouTube tab; needles scale directly with master volume)
@@ -473,7 +509,7 @@ function applyRadioState(state) {
 
   if (!appConnected) {
     $('st').textContent = '■ DISCONNECTED';
-    $('gi').textContent = 'Open RetroFM app to broadcast';
+    const giEl = $('gi'); if (giEl) giEl.textContent = 'Open RetroFM app to broadcast';
     song = null;
     renderSong();
     return;
@@ -513,7 +549,7 @@ function requestRadioState() {
         } else {
           appConnected = false;
           $('st').textContent = '■ DISCONNECTED';
-          $('gi').textContent = 'Open RetroFM app to broadcast';
+          const giEl = $('gi'); if (giEl) giEl.textContent = 'Open RetroFM app to broadcast';
           renderSong();
         }
       });
@@ -526,18 +562,30 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     if (message && message.type === 'RADIO_STATE') {
       applyRadioState(message.payload);
       sendResponse({ received: true });
+    } else if (message && message.type === 'NEEDS_USER_CLICK') {
+      needsUserClick = true;
+      renderSong();
+      sendResponse({ received: true });
+    } else if (message && message.type === 'YT_TAB_ACTIVATED') {
+      needsUserClick = false;
+      renderSong();
+      sendResponse({ received: true });
     } else if (message && message.type === 'YT_STATE_CHANGED' && message.payload) {
       const rawState = message.payload.state;
       // Map states: 1 playing and 3 buffering mean 'playing'; 2 means 'paused'; 0 ended and -1 or 5 unstarted mean 'stopped'
       const mapped = (rawState === 1 || rawState === 3) ? 'playing' : (rawState === 2 ? 'paused' : 'stopped');
       trace('YT_STATE_CHANGED_RECV', { rawState, mapped, title: message.payload.title });
+      if (rawState === 1) {
+        needsUserClick = false;
+      }
       setVisualTransport(mapped);
       if (message.payload.title && !song) {
         setSong({ title: message.payload.title });
+      } else if (needsUserClick === false) {
+        renderSong();
       }
       sendResponse({ received: true });
     }
-    return true;
   });
 }
 
