@@ -456,7 +456,14 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'PLAY': {
-        trace('RECV_PLAY_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
+        const t_cs_play_recv = Date.now();
+        const t_boombox_play_click = message?.t_boombox_play_click || null;
+        trace('RECV_PLAY_COMMAND', {
+          hasVideo: !!video,
+          isPaused: video ? video.paused : null,
+          t_cs_play_recv,
+          t_boombox_play_click
+        });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
           break;
@@ -469,32 +476,9 @@ if (!window.__retroFmContentLoaded) {
         }
 
         // Bridge to YouTube movie_player in the main world to activate player lifecycle
-        sendPlayerCommandToMainWorld('PLAY');
+        sendPlayerCommandToMainWorld('PLAY', { t_boombox_play_click, t_cs_play_recv });
 
         const initialTime = video.currentTime;
-        let playPromise;
-        try {
-          playPromise = video.play();
-        } catch (err) {
-          sendResponse({
-            success: false,
-            state: 'play_threw',
-            error: err.message,
-            status: getPlaybackStatus()
-          });
-          break;
-        }
-
-        if (!playPromise || typeof playPromise.then !== 'function') {
-          const isPlaying = !video.paused && !video.ended;
-          sendResponse({
-            success: isPlaying,
-            state: isPlaying ? 'playing' : 'failed',
-            status: getPlaybackStatus()
-          });
-          break;
-        }
-
         let responded = false;
         let pollTimer = null;
         let safetyTimeout = null;
@@ -536,40 +520,38 @@ if (!window.__retroFmContentLoaded) {
         video.addEventListener('playing', onPlaying, { once: true });
         video.addEventListener('timeupdate', onTimeUpdate);
 
-        playPromise.then(() => {
-          // Play request accepted by browser. Verify playback actually starts within bounded window
-          if (!video.paused && (video.readyState >= 3 || video.currentTime > initialTime)) {
+        // Attempt direct video.play() if possible, but catch errors without immediately aborting
+        // because main world player.playVideo() is also attempting playback
+        let playPromise;
+        try {
+          playPromise = video.play();
+        } catch (err) {
+          trace('DIRECT_VIDEO_PLAY_ERROR', { error: err.message });
+        }
+
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch((err) => {
+            trace('DIRECT_VIDEO_PLAY_REJECTED', { name: err.name, message: err.message });
+          });
+        }
+
+        // Poll for player to transition to playing
+        const startTime = performance.now();
+        pollTimer = setInterval(() => {
+          if (responded) return;
+          if (!video.paused && (video.readyState >= 3 || video.currentTime > initialTime || video.currentTime > 0)) {
             finish(true, 'playing');
             return;
           }
-
-          const startTime = performance.now();
-          pollTimer = setInterval(() => {
-            if (responded) return;
-            if (!video.paused && (video.readyState >= 3 || video.currentTime > initialTime)) {
-              finish(true, 'playing');
-              return;
-            }
-            if (video.paused) {
-              finish(false, 'paused', 'Video remained paused after play request');
-              return;
-            }
-            if (performance.now() - startTime >= 1500) {
-              if (!video.paused) {
-                // Not paused, buffering or transitioning
-                finish(true, 'buffering_active');
-              } else {
-                finish(false, 'timeout', 'Playback verification timed out');
-              }
-            }
-          }, 100);
-        }).catch((err) => {
-          finish(false, 'rejected', `${err.name}: ${err.message}`);
-        });
+          if (latestPlayerState === 1) {
+            finish(true, 'playing');
+            return;
+          }
+        }, 50);
 
         safetyTimeout = setTimeout(() => {
           if (!responded) {
-            const isPlaying = !video.paused && !video.ended && (video.readyState >= 3 || video.currentTime > initialTime);
+            const isPlaying = (!video.paused && !video.ended && (video.readyState >= 3 || video.currentTime > initialTime)) || latestPlayerState === 1;
             finish(isPlaying, isPlaying ? 'playing' : (video.paused ? 'paused' : 'timeout'), isPlaying ? undefined : 'Playback request timed out before confirmation');
           }
         }, 2000);
@@ -726,88 +708,6 @@ if (!window.__retroFmContentLoaded) {
   }
   });
 
-  // 3. One-time session activation overlay ("Click anywhere to start RetroFM")
-  function setupActivationOverlay() {
-    try {
-      if (navigator.userActivation && navigator.userActivation.hasBeenActive) {
-        return; // Activation already exists
-      }
-      if (document.getElementById('retrofm-activation-overlay')) return;
-
-      function onActivatedClick() {
-        try {
-          const overlay = document.getElementById('retrofm-activation-overlay');
-          if (overlay) {
-            overlay.remove();
-          }
-          window.removeEventListener('click', onActivatedClick, true);
-          if (!isContextValid()) {
-            cleanupInvalidatedContext();
-            return;
-          }
-          chrome.runtime.sendMessage({ type: 'YT_TAB_ACTIVATED' }, () => {
-            if (chrome.runtime?.lastError) {}
-          });
-        } catch (e) {
-          cleanupInvalidatedContext();
-          reportError(e, 'onActivatedClick');
-        }
-      }
-
-      const overlay = document.createElement('div');
-      overlay.id = 'retrofm-activation-overlay';
-      overlay.setAttribute(
-        'style',
-        'position: fixed; inset: 0; z-index: 2147483647; ' +
-        'background: rgba(18, 16, 14, 0.88); backdrop-filter: blur(4px); ' +
-        'display: flex; flex-direction: column; align-items: center; justify-content: center; ' +
-        'cursor: pointer; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;'
-      );
-
-      const contentBox = document.createElement('div');
-      contentBox.setAttribute(
-        'style',
-        'background: #1e1b18; border: 2px solid #d48b28; border-radius: 12px; ' +
-        'padding: 32px 48px; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.7); pointer-events: none;'
-      );
-
-      const title = document.createElement('div');
-      title.textContent = 'Click anywhere to start RetroFM';
-      title.setAttribute(
-        'style',
-        'color: #f2e8d0; font-size: 22px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 8px;'
-      );
-
-      const subtitle = document.createElement('div');
-      subtitle.textContent = 'Enables audio playback for the RetroFM radio broadcast';
-      subtitle.setAttribute(
-        'style',
-        'color: #a89f91; font-size: 14px;'
-      );
-
-      contentBox.appendChild(title);
-      contentBox.appendChild(subtitle);
-      overlay.appendChild(contentBox);
-
-      overlay.addEventListener('click', onActivatedClick, true);
-      window.addEventListener('click', onActivatedClick, true);
-
-      const target = document.body || document.documentElement;
-      if (target) {
-        target.appendChild(overlay);
-      } else {
-        window.addEventListener('DOMContentLoaded', () => {
-          try {
-            (document.body || document.documentElement)?.appendChild(overlay);
-          } catch (err) {
-            reportError(err, 'DOMContentLoaded.overlay');
-          }
-        });
-      }
-    } catch (err) {
-      reportError(err, 'setupActivationOverlay');
-    }
-  }
-
-  setupActivationOverlay();
+  // YouTube content script runs quietly in background without activation overlays
 }
+

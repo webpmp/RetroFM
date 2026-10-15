@@ -128,6 +128,43 @@ export const HARDCODED_PRESETS: Record<string, HardcodedPresetInfo> = {
   },
 };
 
+// Initial Station Jingle Configuration
+export const RETROFM_JINGLE_CONFIG = {
+  videoId: '3Wk2FzsxK4k',
+  title: 'RetroFM Station Jingle',
+  artist: 'RetroFM',
+  year: '1985',
+  duration: '00:15',
+  url: 'https://www.youtube.com/watch?v=3Wk2FzsxK4k'
+};
+
+// Default Station Song Queue (Ordered rotation of canonical tracks)
+export const DEFAULT_SONG_QUEUE = [
+  { videoId: 'f-BDCwxBF9Q', title: 'a-ha - Take on Me (1985)', artist: 'a-ha', song: 'Take on Me', year: '1985', duration: '03:47' },
+  { videoId: 'Kr4EQDVETuA', title: 'Michael Jackson - Billie Jean (1983)', artist: 'Michael Jackson', song: 'Billie Jean', year: '1983', duration: '04:54' },
+  { videoId: 'Izx6DQUrsag', title: 'Prince - When Doves Cry (1984)', artist: 'Prince', song: 'When Doves Cry', year: '1984', duration: '05:52' },
+  { videoId: '6Q2mFw4VYBo', title: 'U2 - With or Without You (1987)', artist: 'U2', song: 'With or Without You', year: '1987', duration: '04:56' },
+  { videoId: 'OJWJE0x7T4Q', title: 'Peter Gabriel - Sledgehammer (1986)', artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986', duration: '04:58' }
+];
+
+/**
+ * Normalizes YouTube URLs (including /shorts/ and youtu.be) to a 11-char video ID
+ */
+export function normalizeYouTubeVideoId(input: string): string {
+  if (!input) return '';
+  const trimmed = input.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const shortsMatch = trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
+  if (shortsMatch) return shortsMatch[1];
+  const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) return watchMatch[1];
+  const shareMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+  if (shareMatch) return shareMatch[1];
+  return trimmed;
+}
+
 // Pre-defined DJ script templates
 const SCRIPT_PRESETS = [
   {
@@ -161,7 +198,7 @@ export default function App() {
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [isLaunchingGroup, setIsLaunchingGroup] = useState<boolean>(false);
   const [isOpeningBoomBox, setIsOpeningBoomBox] = useState<boolean>(false);
-  const hasAutoOpenedBoomBoxRef = useRef<boolean>(false);
+  const hasAutoInitializedStartupRef = useRef<boolean>(false);
   const [launchMessage, setLaunchMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
@@ -178,15 +215,24 @@ export default function App() {
     connectedTabId: null
   });
 
-  // Local volume slider state
   const [targetMusicVolume, setTargetMusicVolume] = useState<number>(100);
   const [revealYouTubeToStart, setRevealYouTubeToStart] = useState<boolean>(false);
   const [askForOneTimeClick, setAskForOneTimeClick] = useState<boolean>(true);
 
+  // --- Station Jingle First Sequence State ---
+  // Tracks whether the initial jingle has been played/completed or cancelled
+  const jingleStateRef = useRef<'prepared' | 'playing' | 'completed' | 'cancelled'>('prepared');
+  // First real song playback tracker (suppresses status display until first song plays)
+  const hasFirstSongStartedPlayingRef = useRef<boolean>(false);
+
+  // --- Station Song Queue Tracking ---
+  const currentQueueIndexRef = useRef<number>(0);
+  const isAdvancingRef = useRef<boolean>(false);
+
   // --- PROGRAM SONG Test State ---
   const [programArtist, setProgramArtist] = useState<string>('a-ha');
   const [programSongTitle, setProgramSongTitle] = useState<string>('Take on Me');
-  const [programYear, setProgramYear] = useState<string>('1985');
+  const [programYear, setProgramYear] = useState<string>('1995');
   const [isProgrammingSong, setIsProgrammingSong] = useState<boolean>(false);
   const [programSongResult, setProgramSongResult] = useState<{
     status: 'IDLE' | 'SEARCHING' | 'NAVIGATING' | 'PLAYING' | 'NOT_FOUND' | 'API_ERROR' | 'ERROR';
@@ -214,6 +260,14 @@ export default function App() {
   const [audioDiagnostics, setAudioDiagnostics] = useState<{ snapshot: any; events: any[] } | null>(null);
   const [lastBoomBoxCommand, setLastBoomBoxCommand] = useState<{ action: string; result: string; time: string } | null>(null);
   const [copiedDiagnostics, setCopiedDiagnostics] = useState<boolean>(false);
+  const [hasInteracted, setHasInteracted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && navigator.userActivation && navigator.userActivation.hasBeenActive) {
+      return true;
+    }
+    return false;
+  });
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const preMuteVolumeRef = useRef<number>(100);
 
   // --- 5-Song On-Screen Verification Suite State ---
   const [hasYouTubeApiKey, setHasYouTubeApiKey] = useState<boolean | null>(null);
@@ -493,9 +547,38 @@ export default function App() {
           // Tabs query might require permissions or extension reload
         }
 
-        // Auto-open or focus Boom Box player tab on initial load
-        if (!hasAutoOpenedBoomBoxRef.current) {
-          hasAutoOpenedBoomBoxRef.current = true;
+        // Auto-initialize YouTube provider and open both YouTube and Boom Box on startup
+        if (!hasAutoInitializedStartupRef.current) {
+          hasAutoInitializedStartupRef.current = true;
+          // 1. Open / connect YouTube tab and organize into RetroFM tab group
+          musicProviderRef.current
+            .launchRetroFmGroup()
+            .then((res) => {
+              if (res.success && res.connectedTabId) {
+                if (res.status) {
+                  setPlaybackStatus(res.status);
+                }
+                setTestResults((prev) => ({
+                  ...prev,
+                  tabDetection: true,
+                  playbackState: true,
+                  volumeControl: true,
+                  metadata: !!(res.status?.title && res.status.title !== 'Unknown Video'),
+                }));
+                if (volumeControllerRef.current) {
+                  volumeControllerRef.current.syncInitialVolume('Startup YouTube init').catch(() => {});
+                }
+                logMessage('✓ Auto-initialized YouTube provider and grouped tabs.');
+                // Pre-prepare RetroFM station jingle in background YouTube tab so first PLAY starts jingle immediately
+                jingleStateRef.current = 'prepared';
+                prepareSong(RETROFM_JINGLE_CONFIG.videoId, RETROFM_JINGLE_CONFIG.title).catch(() => {});
+              }
+            })
+            .catch((err) => {
+              logMessage(`[Startup Notice] Auto-init YouTube provider: ${err?.message || 'deferred'}`);
+            });
+
+          // 2. Open / focus Boom Box player tab
           musicProviderRef.current.openBoomBox().catch(() => {});
         }
       }
@@ -539,9 +622,13 @@ export default function App() {
     const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
     const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
 
-    // Preserve valid song metadata across playing, paused, and stopped states
+    // Green display remains blank until PLAY confirms audible real song playback.
+    // The startup jingle is not a song selection and must never populate the user-facing Artist/Song Title fields.
     let currentSong = null;
-    if (clearSong) {
+    const hasFirstSongStarted = hasFirstSongStartedPlayingRef.current;
+    const isJingleActive = jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing';
+
+    if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
       currentSong = null;
     } else if (programSongResult && programSongResult.selectedTitle) {
       currentSong = {
@@ -567,7 +654,7 @@ export default function App() {
     const yearNum = parseInt(programYear, 10);
     const decade = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
       ? Math.floor(yearNum / 10) * 10
-      : 1980;
+      : 1990;
 
     // Default primary stations per decade from Boom Box ST table
     const DECADE_STATIONS: Record<number, { freq: number; genre: string }> = {
@@ -580,12 +667,15 @@ export default function App() {
       2020: { freq: 90.9, genre: 'Hyperpop' }
     };
 
-    const station = DECADE_STATIONS[decade] || { freq: 101.9, genre: 'CHR' };
-    const playbackMode = playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped');
+    const station = DECADE_STATIONS[decade] || { freq: 100.3, genre: 'Teen Pop' };
+    const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;
+    const rawMode = isPlayingOrAdvancing ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped');
+    const playbackMode = hasFirstSongStarted ? rawMode : 'blank';
 
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
       playbackStatus: playbackMode,
+      hasFirstSongStarted,
       currentSongTitle: currentSong?.title || '',
       currentSongArtist: currentSong?.artist || '',
       currentSongYear: currentSong?.year || '',
@@ -604,9 +694,10 @@ export default function App() {
 
     const statePayload = {
       playbackStatus: playbackMode,
+      hasFirstSongStartedPlaying: hasFirstSongStarted,
       currentSong,
       clearSong,
-      date: programYear ? `${programYear}-07-04` : '1985-07-13',
+      date: programYear ? `${programYear}-07-04` : '1995-07-04',
       decade,
       frequency: station.freq,
       genre: station.genre,
@@ -619,6 +710,7 @@ export default function App() {
 
     musicProviderRef.current.recordTrace('BROADCAST_RADIO_STATE', {
       playbackMode,
+      hasFirstSongStarted,
       stateFingerprint,
       force,
       clearSong
@@ -627,11 +719,12 @@ export default function App() {
   }, [playbackStatus, programSongResult, programArtist, programSongTitle, programYear, targetMusicVolume, isDuckingActive, duckVolumePercent]);
 
   // Refs for action handlers to prevent stale closures in the Boom Box subscription
-  const handlePlayMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handlePlayMusicRef = useRef<(playClickTs?: number) => Promise<boolean>>(async () => false);
   const handlePauseMusicRef = useRef<() => Promise<void>>(async () => {});
   const handleStopMusicRef = useRef<() => Promise<void>>(async () => {});
   const handleRewindMusicRef = useRef<() => Promise<void>>(async () => {});
   const handleFastForwardMusicRef = useRef<() => Promise<void>>(async () => {});
+  const advanceToNextSongRef = useRef<(isInitialAfterJingle?: boolean) => Promise<boolean>>(async () => false);
 
   // Synchronize state to Boom Box whenever session properties change
   useEffect(() => {
@@ -648,10 +741,15 @@ export default function App() {
 
       try {
         switch (action.action) {
-          case 'PLAY':
-            await handlePlayMusicRef.current();
-            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Playback triggered)', time: timeStr });
+          case 'PLAY': {
+            const playSuccess = await handlePlayMusicRef.current(action.t_boombox_play_click);
+            setLastBoomBoxCommand({
+              action: actionName,
+              result: playSuccess ? 'SUCCESS (Playback active)' : 'PENDING (Awaiting playback)',
+              time: timeStr
+            });
             break;
+          }
           case 'PAUSE':
             await handlePauseMusicRef.current();
             setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Paused)', time: timeStr });
@@ -663,12 +761,12 @@ export default function App() {
           case 'REWIND':
           case 'PREVIOUS':
             await handleRewindMusicRef.current();
-            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Rewound 10s)', time: timeStr });
+            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Previous Song)', time: timeStr });
             break;
           case 'FAST_FORWARD':
           case 'NEXT':
             await handleFastForwardMusicRef.current();
-            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Fast-forwarded 10s)', time: timeStr });
+            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Next Song)', time: timeStr });
             break;
           case 'SET_VOLUME':
             if (typeof action.volume === 'number' && volumeControllerRef.current) {
@@ -687,12 +785,35 @@ export default function App() {
               logMessage(`[Boom Box Dial] Tuned: ${action.frequency} FM (${action.genre})`);
               setLastBoomBoxCommand({ action: `TUNE (${action.frequency} FM)`, result: 'SUCCESS', time: timeStr });
             }
+            if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
+              const currentDec = Math.floor(parseInt(programYear || '1985', 10) / 10) * 10;
+              if (currentDec !== action.decade) {
+                setProgramYear(String(action.decade + 5));
+                setTimeout(() => broadcastCurrentRadioState(true), 10);
+              }
+            }
             break;
           case 'SELECT_DATE_GENRE':
             if (action.date) {
               logMessage(`[Boom Box Date] Date: ${action.date} | Station: ${action.genre || 'N/A'}`);
               setLastBoomBoxCommand({ action: `SELECT_DATE (${action.date})`, result: 'SUCCESS', time: timeStr });
             }
+            const selectedYear = action.year ? String(action.year) : (action.date ? action.date.split('-')[0] : (action.decade ? String(action.decade + 5) : null));
+            if (selectedYear) {
+              setProgramYear(selectedYear);
+              setTimeout(() => broadcastCurrentRadioState(true), 10);
+            }
+            break;
+          case 'BOOMBOX_RELOADED':
+            logMessage('[Boom Box Session] Boom Box reloaded/opened. Resetting playback sequence to station jingle.');
+            jingleStateRef.current = 'prepared';
+            hasFirstSongStartedPlayingRef.current = false;
+            currentQueueIndexRef.current = 0;
+            isAdvancingRef.current = false;
+            // Pre-prepare RetroFM station jingle on background YouTube tab
+            prepareSong(RETROFM_JINGLE_CONFIG.videoId, RETROFM_JINGLE_CONFIG.title);
+            broadcastCurrentRadioState(true);
+            setLastBoomBoxCommand({ action: 'BOOMBOX_RELOADED', result: 'SUCCESS (Reset to jingle)', time: timeStr });
             break;
           default:
             setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS', time: timeStr });
@@ -740,6 +861,7 @@ export default function App() {
       const rawState = payload.state;
       // Map states: 1 playing and 3 buffering mean 'playing'; 2 means 'paused'; 0 ended and -1 or 5 unstarted mean 'stopped'
       const isPlaying = rawState === 1 || rawState === 3;
+      const provTabId = musicProviderRef.current.getConnectedTabId();
       setPlaybackStatus((prev) => ({
         ...prev,
         available: true,
@@ -748,15 +870,42 @@ export default function App() {
         title: payload.title || prev.title,
         currentTime: typeof payload.currentTime === 'number' ? payload.currentTime : prev.currentTime,
         duration: typeof payload.duration === 'number' ? payload.duration : prev.duration,
+        connectedTabId: prev.connectedTabId || provTabId || null,
       }));
+
+      // If playing a real song (not the station jingle), mark first song as started
+      if (rawState === 1) {
+        const currentPlayingVid = payload.videoId || playbackStatus.videoId;
+        if (currentPlayingVid && currentPlayingVid !== RETROFM_JINGLE_CONFIG.videoId) {
+          if (!hasFirstSongStartedPlayingRef.current) {
+            hasFirstSongStartedPlayingRef.current = true;
+            logMessage(`▶ Confirmed real song playback active: "${payload.title || currentPlayingVid}". Unsuppressing Boom Box status.`);
+          }
+          broadcastCurrentRadioState();
+        }
+      }
+
+      // Natural Completion: When state is 0 (ended), advance automatically
+      if (rawState === 0 && !isAdvancingRef.current) {
+        const finishedVideoId = payload.videoId || playbackStatus.videoId;
+        // Case 1: Station Jingle finished naturally -> mark completed, do not advance queue (waits for PLAY)
+        if (jingleStateRef.current === 'playing' || finishedVideoId === RETROFM_JINGLE_CONFIG.videoId) {
+          jingleStateRef.current = 'completed';
+          logMessage('[Station Jingle] Jingle finished naturally. Standing by for PLAY to start music queue.');
+          setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, available: true }));
+          broadcastCurrentRadioState(true);
+        } else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {
+          // Case 2: A regular music track finished naturally -> advance to next song in the queue
+          logMessage('[Auto Advance] Song finished naturally. Advancing to next song in queue...');
+          advanceToNextSongRef.current(false).catch((err) => {
+            logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
+          });
+        }
+      }
     });
 
     const unsubReveal = musicProviderRef.current.onRevealYouTubeToStart(() => {
       logMessage('YouTube tab had to be visible to start');
-    });
-
-    const unsubNeedsUserClick = musicProviderRef.current.onNeedsUserClick(() => {
-      logMessage('Click the YouTube tab once to allow music');
     });
 
     const unsubYtTabActivated = musicProviderRef.current.onYtTabActivated(() => {
@@ -766,7 +915,6 @@ export default function App() {
     return () => {
       unsubYtState();
       unsubReveal();
-      unsubNeedsUserClick();
       unsubYtTabActivated();
     };
   }, []);
@@ -907,21 +1055,47 @@ export default function App() {
     }
   };
 
+  // Helper to pre-navigate and cue a song in the background without stealing focus or starting playback
+  const prepareSong = async (videoId: string, title?: string) => {
+    try {
+      const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      logMessage(`[Pre-Prepare] Cueing "${title || videoId}" in background YouTube tab...`);
+      const res = await musicProviderRef.current.prepare(targetUrl, videoId, targetVolFraction);
+      if (res.success) {
+        logMessage(`[Pre-Prepare] Ready: "${title || videoId}" is cued and prepared.`);
+        if (res.status) {
+          setPlaybackStatus((prev) => ({
+            ...prev,
+            ...res.status,
+            connectedTabId: res.status?.connectedTabId || prev.connectedTabId
+          }));
+        }
+      }
+      return res.success;
+    } catch (err: any) {
+      logMessage(`[Pre-Prepare Error] Failed to prepare "${videoId}": ${err?.message || 'unknown error'}`);
+      return false;
+    }
+  };
+
   // --- Playback Controls ---
-  const handlePlayMusic = async () => {
+  const handlePlayMusic = async (playClickTsOrEvent?: number | React.MouseEvent) => {
+    const playClickTs = typeof playClickTsOrEvent === 'number' ? playClickTsOrEvent : undefined;
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
-    musicProviderRef.current.recordTrace('HANDLE_PLAY_START', { seq, connectedTabId: playbackStatus.connectedTabId });
+    musicProviderRef.current.recordTrace('HANDLE_PLAY_START', { seq, connectedTabId: playbackStatus.connectedTabId, playClickTs });
     logMessage('Sending Play command to YouTube tab...');
 
     try {
-      // 1. Resolve Desired Song:
-      // Priority 1: programSongResult.selectedVideoId if already programmed
       let desiredVideoId: string | null = null;
       let desiredTitle: string | null = null;
       let desiredArtist: string = (programArtist || '').trim();
       let desiredYear: string = (programYear || '').trim();
 
+      // PLAY always plays music track from queue / selection, never the jingle.
+      // 1. Resolve Desired Song:
+      // Priority 1: programSongResult.selectedVideoId if already programmed
       if (programSongResult && programSongResult.selectedVideoId) {
         desiredVideoId = programSongResult.selectedVideoId;
         desiredTitle = programSongResult.selectedTitle || programSongTitle;
@@ -932,6 +1106,18 @@ export default function App() {
         if (preset && preset.videoId) {
           desiredVideoId = preset.videoId;
           desiredTitle = preset.title;
+          setProgramSongResult({
+            status: 'IDLE',
+            requested: `${desiredArtist} — ${programSongTitle || preset.title}`,
+            selectedTitle: preset.title,
+            selectedChannel: preset.channel,
+            selectedDuration: preset.duration,
+            selectedVideoId: preset.videoId,
+            selectedUrl: `https://www.youtube.com/watch?v=${preset.videoId}`,
+            confidenceScore: 100,
+            reason: 'Preset selection',
+            source: 'preset'
+          });
         } else if (desiredArtist && programSongTitle) {
           // Priority 3: Look up current artist/title/year via API search
           logMessage(`[Play Song Lookup] Resolving song "${desiredArtist} - ${programSongTitle}"...`);
@@ -970,7 +1156,7 @@ export default function App() {
               });
               broadcastCurrentRadioState(true, true);
               musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, reason: failReason });
-              return;
+              return false;
             }
           } catch (searchErr: any) {
             const failReason = searchErr.message || 'Network error searching for song.';
@@ -983,7 +1169,7 @@ export default function App() {
             });
             broadcastCurrentRadioState(true, true);
             musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, reason: failReason });
-            return;
+            return false;
           }
         }
       }
@@ -999,7 +1185,7 @@ export default function App() {
         });
         broadcastCurrentRadioState(true, true);
         musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, reason: noSongReason });
-        return;
+        return false;
       }
 
       // 2. Read YouTube tab real state
@@ -1025,13 +1211,15 @@ export default function App() {
       if (!activeTabId) {
         logMessage('No active YouTube tab connected. Launching tab group...');
         const groupRes = await musicProviderRef.current.launchRetroFmGroup();
-        if (transportCommandSeqRef.current !== seq) return;
+        if (transportCommandSeqRef.current !== seq) return false;
         if (groupRes?.connectedTabId) {
           activeTabId = groupRes.connectedTabId;
           if (groupRes.status) {
             currentStatus = groupRes.status;
             setPlaybackStatus(groupRes.status);
           }
+        } else {
+          return false;
         }
       }
 
@@ -1051,61 +1239,96 @@ export default function App() {
         const targetUrl = `https://www.youtube.com/watch?v=${desiredVideoId}`;
         const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
 
-        const navOk = await musicProviderRef.current.navigate(targetUrl, desiredVideoId, targetVolFraction, revealYouTubeToStart);
-        if (transportCommandSeqRef.current !== seq) return;
-        if (!navOk) {
+        const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, desiredVideoId, targetVolFraction, revealYouTubeToStart);
+        if (transportCommandSeqRef.current !== seq) return false;
+        if (!navRes.success) {
           logMessage('[Play] Notice: Navigation message sent to YouTube tab. Checking playback...');
         }
-
-        await new Promise((r) => setTimeout(r, 1200));
-        const playOk = await musicProviderRef.current.play(revealYouTubeToStart);
-        if (transportCommandSeqRef.current !== seq) return;
 
         if (volumeControllerRef.current) {
           await volumeControllerRef.current.syncInitialVolume(`Play start: "${desiredTitle || desiredVideoId}"`);
         }
 
+        if (desiredVideoId === RETROFM_JINGLE_CONFIG.videoId) {
+          jingleStateRef.current = 'playing';
+          logMessage('[Station Jingle] RetroFM Station Jingle is currently playing.');
+        } else {
+          jingleStateRef.current = 'completed';
+          hasFirstSongStartedPlayingRef.current = true;
+        }
+
         logMessage(`▶ Playback started on YouTube tab: "${desiredTitle || desiredVideoId}"`);
-        const freshStat = await musicProviderRef.current.getStatus().catch(() => null);
-        if (freshStat) setPlaybackStatus(freshStat);
+        const freshStat = navRes.status || (await musicProviderRef.current.getStatus().catch(() => null));
+        if (freshStat) {
+          setPlaybackStatus({
+            ...freshStat,
+            videoId: freshStat.videoId || desiredVideoId,
+            title: freshStat.title && freshStat.title !== 'Unknown Title' && freshStat.title !== 'Unknown Video' ? freshStat.title : (desiredTitle || freshStat.title),
+            connectedTabId: freshStat.connectedTabId || activeTabId
+          });
+        } else if (activeTabId) {
+          setPlaybackStatus((prev) => ({
+            ...prev,
+            videoId: desiredVideoId,
+            title: desiredTitle || prev.title,
+            connectedTabId: activeTabId
+          }));
+        }
         setTestResults((prev) => ({ ...prev, playbackControl: true }));
         broadcastCurrentRadioState();
         musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, result: 'navigated_and_started', videoId: desiredVideoId });
-        return;
+        return !!(freshStat?.isPlaying || navRes.success);
       }
 
       // If video ID matches desired song, send only play command and do not reload
       if (!currentStatus.isPlaying && currentStatus.currentTime === 0) {
         await musicProviderRef.current.seek(0).catch(() => {});
-        if (transportCommandSeqRef.current !== seq) return;
+        if (transportCommandSeqRef.current !== seq) return false;
       }
 
-      const playRes = await musicProviderRef.current.playDetailed(revealYouTubeToStart);
+      const playRes = await musicProviderRef.current.playDetailed(revealYouTubeToStart, playClickTs);
       if (transportCommandSeqRef.current !== seq) {
         logMessage('[Play] Superseded by newer command. Dropping result.');
         musicProviderRef.current.recordTrace('HANDLE_PLAY_SUPERSEDED', { seq });
-        return;
+        return false;
       }
 
       if (playRes.success && playRes.status) {
         if (volumeControllerRef.current) {
           await volumeControllerRef.current.syncInitialVolume('Play button pressed');
         }
+        if (desiredVideoId === RETROFM_JINGLE_CONFIG.videoId) {
+          jingleStateRef.current = 'playing';
+          logMessage('[Station Jingle] RetroFM Station Jingle is currently playing.');
+        } else {
+          jingleStateRef.current = 'completed';
+          hasFirstSongStartedPlayingRef.current = true;
+        }
         logMessage('▶ Playback started on YouTube tab.');
-        setPlaybackStatus(playRes.status);
+        setPlaybackStatus({
+          ...playRes.status,
+          videoId: playRes.status.videoId || desiredVideoId,
+          title: playRes.status.title && playRes.status.title !== 'Unknown Title' && playRes.status.title !== 'Unknown Video' ? playRes.status.title : (desiredTitle || playRes.status.title),
+          connectedTabId: playRes.status.connectedTabId || activeTabId
+        });
         setTestResults((prev) => ({ ...prev, playbackControl: true }));
         broadcastCurrentRadioState();
         musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: true, status: playRes.status });
+        return true;
       } else {
         const errMsg = playRes.error || 'Play command was not confirmed by YouTube tab.';
         logMessage(`[Play Notice] ${errMsg}`);
         const current = await musicProviderRef.current.getStatus().catch(() => null);
-        if (transportCommandSeqRef.current !== seq) return;
+        if (transportCommandSeqRef.current !== seq) return false;
         if (current) {
-          setPlaybackStatus(current);
+          setPlaybackStatus({
+            ...current,
+            connectedTabId: current.connectedTabId || activeTabId
+          });
         }
         broadcastCurrentRadioState();
         musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, error: errMsg, currentStatus: current });
+        return false;
       }
     } catch (err: any) {
       musicProviderRef.current.recordTrace('HANDLE_PLAY_FINISH', { seq, success: false, error: err?.message });
@@ -1164,6 +1387,16 @@ export default function App() {
         return;
       }
 
+      // Cancelling the jingle sequence prevents any later natural completion from advancing
+      if (jingleStateRef.current === 'playing' || jingleStateRef.current === 'prepared') {
+        jingleStateRef.current = 'cancelled';
+        logMessage('[Station Jingle] Jingle sequence cancelled by STOP command.');
+      } else if (jingleStateRef.current === 'completed') {
+        jingleStateRef.current = 'cancelled';
+        logMessage('[Auto Advance] Playback sequence stopped by STOP command.');
+      }
+      hasFirstSongStartedPlayingRef.current = false;
+
       if (stopRes.status) {
         setPlaybackStatus({ ...stopRes.status, isPlaying: false, currentTime: 0 });
       } else {
@@ -1183,20 +1416,89 @@ export default function App() {
     }
   };
 
+  const navigateToQueueSong = async (targetIndex: number, reason: string = 'Queue navigation'): Promise<boolean> => {
+    if (isAdvancingRef.current) return false;
+    isAdvancingRef.current = true;
+    try {
+      const clampedIndex = ((targetIndex % DEFAULT_SONG_QUEUE.length) + DEFAULT_SONG_QUEUE.length) % DEFAULT_SONG_QUEUE.length;
+      currentQueueIndexRef.current = clampedIndex;
+      const targetSong = DEFAULT_SONG_QUEUE[clampedIndex];
+      logMessage(`[${reason}] Switching to track #${clampedIndex + 1}: "${targetSong.artist} - ${targetSong.song}" (${targetSong.year})...`);
+
+      // Update program song state and Boom Box metadata
+      setProgramArtist(targetSong.artist);
+      setProgramSongTitle(targetSong.song);
+      setProgramYear(targetSong.year);
+      setProgramSongResult({
+        status: 'NAVIGATING',
+        requested: `${targetSong.artist} — ${targetSong.song}`,
+        selectedTitle: targetSong.title,
+        selectedChannel: 'Official Recording',
+        selectedDuration: targetSong.duration,
+        selectedVideoId: targetSong.videoId,
+        selectedUrl: `https://www.youtube.com/watch?v=${targetSong.videoId}`,
+        confidenceScore: 100,
+        reason,
+        source: 'station queue'
+      });
+
+      const targetUrl = `https://www.youtube.com/watch?v=${targetSong.videoId}`;
+      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+
+      // Navigate background YouTube tab and trigger playback
+      const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, targetSong.videoId, targetVolFraction, revealYouTubeToStart);
+      if (volumeControllerRef.current) {
+        await volumeControllerRef.current.syncInitialVolume(`${reason} start: "${targetSong.title}"`);
+      }
+
+      jingleStateRef.current = 'completed';
+      hasFirstSongStartedPlayingRef.current = true;
+      logMessage(`▶ ${reason} and playing: "${targetSong.title}"`);
+
+      const freshStat = navRes.status || (await musicProviderRef.current.getStatus().catch(() => null));
+      const provTabId = musicProviderRef.current.getConnectedTabId();
+      if (freshStat) {
+        setPlaybackStatus({
+          ...freshStat,
+          connectedTabId: freshStat.connectedTabId || provTabId || null
+        });
+      } else if (provTabId) {
+        setPlaybackStatus((prev) => ({
+          ...prev,
+          connectedTabId: provTabId
+        }));
+      }
+
+      setTestResults((prev) => ({ ...prev, playbackControl: true }));
+      broadcastCurrentRadioState();
+      return !!(freshStat?.isPlaying || navRes.success);
+    } catch (err: any) {
+      logMessage(`[${reason} Error] Failed to navigate track: ${err?.message || 'unknown error'}`);
+      return false;
+    } finally {
+      isAdvancingRef.current = false;
+    }
+  };
+
+  const advanceToNextSong = async (isInitialAfterJingle: boolean = false): Promise<boolean> => {
+    let nextIndex = 0;
+    if (!isInitialAfterJingle) {
+      nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
+    }
+    return navigateToQueueSong(nextIndex, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+  };
+
   const handleRewindMusic = async () => {
     musicProviderRef.current.recordTrace('HANDLE_REWIND_START');
-    logMessage('Seeking backward 10s on YouTube tab...');
+    logMessage('Rewinding to beginning of previous song in queue...');
     try {
-      const currentStatus = await musicProviderRef.current.getStatus();
-      const newPos = Math.max(0, (currentStatus?.currentTime || 0) - 10);
-      const ok = await musicProviderRef.current.seek(newPos);
+      const prevIndex = (currentQueueIndexRef.current - 1 + DEFAULT_SONG_QUEUE.length) % DEFAULT_SONG_QUEUE.length;
+      const ok = await navigateToQueueSong(prevIndex, 'Rewind Previous');
       if (ok) {
-        setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
-        logMessage(`⏪ Rewound to ${Math.round(newPos)}s.`);
-        broadcastCurrentRadioState();
-        musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, newPos });
+        logMessage(`⏪ Rewound to previous track (#${prevIndex + 1}) in queue.`);
+        musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, prevIndex });
       } else {
-        logMessage('Failed to rewind on YouTube tab.');
+        logMessage('Failed to navigate to previous song in queue.');
         musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: false });
       }
     } catch (e: any) {
@@ -1207,20 +1509,15 @@ export default function App() {
 
   const handleFastForwardMusic = async () => {
     musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_START');
-    logMessage('Seeking forward 10s on YouTube tab...');
+    logMessage('Fast-forwarding to next song in queue...');
     try {
-      const currentStatus = await musicProviderRef.current.getStatus();
-      const currentPos = currentStatus?.currentTime || 0;
-      const duration = currentStatus?.duration || (currentPos + 30);
-      const newPos = Math.min(duration, currentPos + 10);
-      const ok = await musicProviderRef.current.seek(newPos);
+      const nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
+      const ok = await navigateToQueueSong(nextIndex, 'Fast Forward Next');
       if (ok) {
-        setPlaybackStatus((prev) => ({ ...prev, currentTime: newPos }));
-        logMessage(`⏩ Fast forwarded to ${Math.round(newPos)}s.`);
-        broadcastCurrentRadioState();
-        musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, newPos });
+        logMessage(`⏩ Fast-forwarded to next track (#${nextIndex + 1}) in queue.`);
+        musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, nextIndex });
       } else {
-        logMessage('Failed to fast forward on YouTube tab.');
+        logMessage('Failed to navigate to next song in queue.');
         musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: false });
       }
     } catch (e: any) {
@@ -1234,6 +1531,7 @@ export default function App() {
   handleStopMusicRef.current = handleStopMusic;
   handleRewindMusicRef.current = handleRewindMusic;
   handleFastForwardMusicRef.current = handleFastForwardMusic;
+  advanceToNextSongRef.current = advanceToNextSong;
 
   // --- PROGRAM SONG Handler ---
   const handleProgramSong = async (customOverride?: { artist: string; song: string; year: string }) => {
@@ -1276,6 +1574,7 @@ export default function App() {
 
       setIsProgrammingSong(true);
       setSongPlaybackNotice(null);
+      jingleStateRef.current = 'completed';
       logMessage(`[Program Song] Hardcoded preset selected for "${preset.artist} - ${preset.song}". Skipping API search.`);
 
       const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
@@ -1415,6 +1714,7 @@ export default function App() {
       });
 
       // Instruct connected YouTube tab to navigate
+      jingleStateRef.current = 'completed';
       const navOk = await musicProviderRef.current.navigate(sel.url, sel.videoId, targetVolFraction, revealYouTubeToStart);
       if (!navOk) {
         logMessage('[Program Song] Notice: Navigation message sent to YouTube tab. Checking playback...');
@@ -1576,6 +1876,48 @@ export default function App() {
       volumeControllerRef.current.cancel('Kill all audio clicked');
     }
     logMessage('🛑 All audio immediately stopped and silenced.');
+  };
+
+  const toggleGlobalMute = async () => {
+    const vc = volumeControllerRef.current;
+    if (isAudioMuted) {
+      const restoreVol = preMuteVolumeRef.current > 0 ? preMuteVolumeRef.current : 100;
+      setIsAudioMuted(false);
+      if (vc) {
+        await vc.setUserVolume(restoreVol, 'Global mute toggled off');
+      }
+      logMessage(`🔊 Audio unmuted (restored to ${restoreVol}%).`);
+    } else {
+      const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
+      preMuteVolumeRef.current = currentVol > 0 ? currentVol : 100;
+      setIsAudioMuted(true);
+      killAllAudio();
+      if (vc) {
+        await vc.setUserVolume(0, 'Global mute toggled on');
+      }
+      logMessage('🔇 Global audio muted.');
+    }
+  };
+
+  const handleStartInteraction = () => {
+    setHasInteracted(true);
+    // Initialize Web Audio / speech context via user gesture
+    if (typeof window !== 'undefined') {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+        }
+      } catch (e) {}
+      if (window.speechSynthesis) {
+        try { window.speechSynthesis.resume(); } catch (e) {}
+      }
+    }
+    musicProviderRef.current.notifySessionActivated();
+    logMessage('RetroFM started via user interaction.');
   };
 
   // --- Generate DJ Audio using Gemini Flash TTS or Kokoro TTS ---
@@ -2093,6 +2435,8 @@ export default function App() {
           </div>
         )}
 
+
+
         {/* --- Header & Concept Banner --- */}
         <header className="border-b border-zinc-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -2111,81 +2455,289 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Master Silence / Emergency Mute Button */}
+          <div className="flex items-center gap-2">
+            {/* Global Silence / Mute Toggle Icon Button */}
             <button
-              onClick={() => killAllAudio()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/80 text-xs font-mono font-bold text-rose-300 transition-colors cursor-pointer shadow"
-              title="Immediately silence and stop all audio playback, synthesis, and speech"
+              onClick={toggleGlobalMute}
+              className={`p-2 rounded border transition-colors cursor-pointer shadow ${
+                isAudioMuted
+                  ? 'bg-rose-950/80 hover:bg-rose-900 border-rose-600 text-rose-300'
+                  : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
+              }`}
+              title={isAudioMuted ? 'Unmute audio' : 'Silence all audio'}
+              aria-label={isAudioMuted ? 'Unmute audio' : 'Silence all audio'}
             >
-              <VolumeX className="w-3.5 h-3.5 text-rose-400" />
-              <span>SILENCE ALL AUDIO</span>
-            </button>
-
-            {/* Open Boom Box Player Tab */}
-            <button
-              onClick={handleOpenBoomBox}
-              disabled={isOpeningBoomBox}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono font-black text-xs uppercase tracking-wider transition-colors shadow cursor-pointer"
-              title="Open or focus the standalone Boom Box radio player tab"
-            >
-              <Radio className={`w-3.5 h-3.5 ${isOpeningBoomBox ? 'animate-pulse' : ''}`} />
-              <span>{isOpeningBoomBox ? 'Opening...' : 'Open Boom Box'}</span>
+              {isAudioMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-zinc-300" />}
             </button>
 
             {/* Launch RetroFM (Chrome Tab Group) Button */}
             <button
               onClick={handleLaunchRetroFm}
               disabled={isLaunchingGroup}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-mono font-black text-xs uppercase tracking-wider transition-colors shadow cursor-pointer"
-              title="Open YouTube in a new tab, connect it, and organize both tabs in a 'RetroFM' Chrome Tab Group"
+              className="p-2 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black transition-colors shadow cursor-pointer"
+              title="Launch RetroFM Chrome Tab Group (opens and connects YouTube tab)"
+              aria-label="Launch RetroFM Chrome Tab Group"
             >
-              <Rocket className={`w-3.5 h-3.5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
-              <span>{isLaunchingGroup ? 'Launching...' : 'Launch RetroFM'}</span>
-            </button>
-
-            {/* Open in Dedicated Tab Button */}
-            <a
-              href={typeof window !== 'undefined' ? window.location.href : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono text-zinc-200 transition-colors"
-              title="Open RetroFM in a dedicated browser tab side-by-side with YouTube"
-            >
-              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-              <span>Open in Dedicated Tab</span>
-            </a>
-
-            {/* Extension Status Indicator */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-mono ${
-              extensionDetected
-                ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
-                : 'bg-amber-950/40 border-amber-800/50 text-amber-300'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${extensionDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              <span>{extensionDetected ? 'Extension Active' : 'Extension Not Detected'}</span>
-            </div>
-
-            {/* Download Extension Button */}
-            <button
-              onClick={() => generateAndDownloadExtensionZip()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono text-zinc-200 transition-colors cursor-pointer"
-              title="Download unpacked Chrome extension ZIP"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Download Extension (v{EXTENSION_VERSION})</span>
-            </button>
-
-            {/* Extension Setup Guide Modal Trigger */}
-            <button
-              onClick={() => setShowExtensionModal(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span>Setup Guide</span>
+              <Rocket className={`w-5 h-5 ${isLaunchingGroup ? 'animate-bounce' : ''}`} />
             </button>
           </div>
         </header>
+
+        {/* --- FULL-WIDTH LIVE DIAGNOSTIC STATUS --- */}
+        <section aria-label="Live Diagnostic Status" className="w-full bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-4">
+          <div className="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Radio className="w-4 h-4 text-amber-400" />
+              <h2 className="text-sm font-bold font-mono tracking-wider text-zinc-100 uppercase">
+                LIVE DIAGNOSTIC STATUS
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const snap = audioDiagnostics?.snapshot;
+                  const activeTabId = playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
+                  const lines = [
+                    '=== RETROFM LIVE DIAGNOSTIC STATUS ===',
+                    `Timestamp: ${new Date().toISOString()}`,
+                    `Verdict: ${(() => {
+                      if (!extensionDetected) return 'Extension not detected';
+                      if (!activeTabId) return 'YouTube tab not connected';
+                      if (!snap?.videoId || snap?.playerState === -1 || snap?.playerState === 5) return 'No video loaded';
+                      if (snap?.pausedRightAfterUnmute) return 'Paused right after unmute: Chrome autoplay rule. Click in the YouTube tab once.';
+                      if (snap?.lastError?.type === 'playPromiseRejected') return 'Browser blocked autoplay: click inside the YouTube tab';
+                      if (isAudioMuted || snap?.playerMuted || snap?.videoMuted || (typeof snap?.playerVolume === 'number' && snap?.playerVolume === 0)) return 'Video is playing but the player is muted';
+                      if (snap?.playerState === 1 || snap?.videoPaused === false) return 'Video is playing normally';
+                      if (snap?.playerState === 2 || snap?.videoPaused === true) return 'Video is paused';
+                      return 'Idle / Waiting for playback';
+                    })()}`,
+                    '',
+                    '--- STATUS INDICATORS ---',
+                    `1. Chrome extension connected: ${extensionDetected ? 'YES' : 'NO'}`,
+                    `2. Boom Box tab: Available / Ready`,
+                    `3. YouTube tab connected: ${activeTabId ? `YES (Tab #${activeTabId})` : 'NO'}`,
+                    `4. Video loaded: ${snap?.title || (snap?.videoId ? `ID: ${snap.videoId}` : 'None')}`,
+                    `5. Player state: ${(() => {
+                      const s = snap?.playerState;
+                      if (s === 1) return 'playing (1)';
+                      if (s === 2) return 'paused (2)';
+                      if (s === 3) return 'buffering (3)';
+                      if (s === 0) return 'ended (0)';
+                      if (s === -1) return 'unstarted (-1)';
+                      if (s === 5) return 'video cued (5)';
+                      return s !== null && s !== undefined ? String(s) : (playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped'));
+                    })()}`,
+                    `6. Muted: ${isAudioMuted || snap?.playerMuted || snap?.videoMuted ? 'YES' : 'NO'}`,
+                    `7. Volume: ${typeof snap?.playerVolume === 'number' ? snap.playerVolume : (typeof snap?.videoVolume === 'number' ? snap.videoVolume : targetMusicVolume)}%`,
+                    `8. Tab hidden: ${snap?.visibilityState === 'hidden' ? 'YES (hidden)' : (snap?.visibilityState === 'visible' ? 'NO (visible)' : 'Unknown')}`,
+                    `9. User clicked in YouTube page: ${snap?.userActivation?.hasBeenActive ? 'YES' : 'NO'}`,
+                    `10. Last Boom Box command: ${lastBoomBoxCommand ? `${lastBoomBoxCommand.action} -> ${lastBoomBoxCommand.result} (${lastBoomBoxCommand.time})` : 'None'}`,
+                    '',
+                    '--- LAST 10 DIAGNOSTIC EVENTS ---',
+                    ...(audioDiagnostics?.events && audioDiagnostics.events.length > 0
+                      ? audioDiagnostics.events.slice(-10).map((e: any) => `${new Date(e.ts).toLocaleTimeString()} [${e.event}] ${JSON.stringify(e.data || {})}`)
+                      : ['(No diagnostic events recorded yet)'])
+                  ];
+                  navigator.clipboard.writeText(lines.join('\n'));
+                  setCopiedDiagnostics(true);
+                  setTimeout(() => setCopiedDiagnostics(false), 2000);
+                }}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-400 hover:text-amber-300 font-mono text-[11px] font-bold border border-zinc-700 transition-colors flex items-center gap-1 cursor-pointer"
+                title="Copy full audio diagnostics text to clipboard"
+              >
+                <Copy className="w-3 h-3" />
+                <span>{copiedDiagnostics ? 'Copied ✓' : 'Copy diagnostics'}</span>
+              </button>
+              <span className="text-xs font-mono text-zinc-500">2s Live Poll</span>
+            </div>
+          </div>
+
+          {/* Plain English Verdict Line */}
+          <div className="p-3 bg-[#0a0c10] border border-amber-900/40 rounded flex items-center gap-2 text-xs font-mono">
+            <span className="text-zinc-400 font-bold uppercase">Verdict:</span>
+            <span className="text-amber-300 font-semibold">
+              {(() => {
+                const snap = audioDiagnostics?.snapshot;
+                const activeTabId = playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
+                if (!extensionDetected) return 'Extension not detected';
+                if (!activeTabId) return 'YouTube tab not connected';
+                if (!snap?.videoId || snap?.playerState === -1 || snap?.playerState === 5) return 'No video loaded';
+                if (snap?.pausedRightAfterUnmute) return 'Paused right after unmute: Chrome autoplay rule. Click in the YouTube tab once.';
+                if (snap?.lastError?.type === 'playPromiseRejected') return 'Browser blocked autoplay: click inside the YouTube tab';
+                if (isAudioMuted || snap?.playerMuted || snap?.videoMuted || (typeof snap?.playerVolume === 'number' && snap?.playerVolume === 0)) return 'Video is playing but the player is muted';
+                if (snap?.playerState === 1 || snap?.videoPaused === false) return 'Video is playing normally';
+                if (snap?.playerState === 2 || snap?.videoPaused === true) return 'Video is paused';
+                return 'Idle / Waiting for playback';
+              })()}
+            </span>
+          </div>
+
+          {/* 10 Status Rows with Green / Red markers */}
+          {(() => {
+            const snap = audioDiagnostics?.snapshot;
+            const isExtOk = extensionDetected;
+            const isBoomBoxAvailable = true;
+            const activeTabId = playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
+            const isYtConnected = !!activeTabId;
+            const hasVideo = !!(snap?.videoId || (playbackStatus.available && playbackStatus.title && playbackStatus.title !== 'Unknown Video'));
+            const isPlayingState = snap?.playerState === 1 || snap?.playerState === 3 || (!snap && playbackStatus.isPlaying);
+            const isMuted = isAudioMuted || !!(snap?.playerMuted || snap?.videoMuted || playbackStatus.muted);
+            const currentVol = typeof snap?.playerVolume === 'number' ? snap.playerVolume : (typeof snap?.videoVolume === 'number' ? snap.videoVolume : targetMusicVolume);
+            const isHidden = snap?.visibilityState === 'hidden';
+            const hasClicked = !!snap?.userActivation?.hasBeenActive;
+            const hasLastCmd = !!lastBoomBoxCommand;
+
+            const renderMarker = (isGreen: boolean) => (
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isGreen ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-rose-500'}`} />
+            );
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 font-mono text-xs">
+                {/* Row 1: Extension connected */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(isExtOk)}
+                    <span className="text-zinc-300">Chrome Extension:</span>
+                  </div>
+                  <span className={isExtOk ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {isExtOk ? (reportedExtensionVersion ? `Connected (v${reportedExtensionVersion})` : 'Connected') : 'Not Detected'}
+                  </span>
+                </div>
+
+                {/* Row 2: Boom Box tab */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(isBoomBoxAvailable)}
+                    <span className="text-zinc-300">Boom Box Player:</span>
+                  </div>
+                  <span className="text-emerald-400 font-bold">
+                    Available / Ready
+                  </span>
+                </div>
+
+                {/* Row 3: YouTube tab connected */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(isYtConnected)}
+                    <span className="text-zinc-300">YouTube Tab:</span>
+                  </div>
+                  <span className={isYtConnected ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {isYtConnected ? `Connected (#${activeTabId})` : 'Not Connected'}
+                  </span>
+                </div>
+
+                {/* Row 4: Video loaded */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2 truncate max-w-[65%]">
+                    {renderMarker(hasVideo)}
+                    <span className="text-zinc-300 shrink-0">Video Loaded:</span>
+                    <span className="text-zinc-400 truncate text-[11px]" title={snap?.title || playbackStatus.title}>
+                      {snap?.title || playbackStatus.title || 'None'}
+                    </span>
+                  </div>
+                  <span className={hasVideo ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {hasVideo ? 'YES' : 'NO'}
+                  </span>
+                </div>
+
+                {/* Row 5: Player state */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(isPlayingState)}
+                    <span className="text-zinc-300">Playback State:</span>
+                  </div>
+                  <span className="text-amber-300 font-bold">
+                    {(() => {
+                      const s = snap?.playerState;
+                      if (s === 1) return 'playing (1)';
+                      if (s === 2) return 'paused (2)';
+                      if (s === 3) return 'buffering (3)';
+                      if (s === 0) return 'ended (0)';
+                      if (s === -1) return 'unstarted (-1)';
+                      if (s === 5) return 'video cued (5)';
+                      return s !== null && s !== undefined ? String(s) : (playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped'));
+                    })()}
+                  </span>
+                </div>
+
+                {/* Row 6: Muted */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(!isMuted)}
+                    <span className="text-zinc-300">Muted:</span>
+                  </div>
+                  <span className={isMuted ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {isMuted ? 'YES (Muted)' : 'NO (Unmuted)'}
+                  </span>
+                </div>
+
+                {/* Row 7: Volume */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(currentVol > 0)}
+                    <span className="text-zinc-300">Volume Level:</span>
+                  </div>
+                  <span className="text-zinc-200 font-bold">
+                    {currentVol} / 100
+                  </span>
+                </div>
+
+                {/* Row 8: Tab hidden */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(!isHidden)}
+                    <span className="text-zinc-300">Tab Backgrounded:</span>
+                  </div>
+                  <span className={isHidden ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {isHidden ? 'YES (hidden)' : 'NO (visible)'}
+                  </span>
+                </div>
+
+                {/* Row 9: User has clicked in YouTube page */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(hasClicked)}
+                    <span className="text-zinc-300">User Clicked in Tab:</span>
+                  </div>
+                  <span className={hasClicked ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {hasClicked ? 'YES' : 'NO (Autoplay blocked)'}
+                  </span>
+                </div>
+
+                {/* Row 10: Last Boom Box command with result and time */}
+                <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center md:col-span-2 lg:col-span-3">
+                  <div className="flex items-center gap-2">
+                    {renderMarker(hasLastCmd)}
+                    <span className="text-zinc-300">Last Boom Box Command:</span>
+                  </div>
+                  <span className="text-zinc-300 font-mono text-[11px] text-right truncate max-w-[70%]">
+                    {lastBoomBoxCommand ? `${lastBoomBoxCommand.action} [${lastBoomBoxCommand.result}] @ ${lastBoomBoxCommand.time}` : 'None'}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Last 10 Diagnostic Events */}
+          <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+            <span className="text-zinc-400 font-mono text-[11px] uppercase font-bold block">
+              Last 10 Diagnostic Events:
+            </span>
+            <div className="h-24 bg-[#08090d] border border-zinc-900 rounded p-2 font-mono text-[10px] text-zinc-400 overflow-y-auto space-y-1">
+              {audioDiagnostics?.events && audioDiagnostics.events.length > 0 ? (
+                audioDiagnostics.events.slice(-10).map((ev: any, idx: number) => (
+                  <div key={idx} className="leading-tight">
+                    <span className="text-amber-500/80">{new Date(ev.ts).toLocaleTimeString()}</span>{' '}
+                    <span className="text-emerald-400">[{ev.event}]</span>{' '}
+                    <span className="text-zinc-300">{ev.data ? JSON.stringify(ev.data) : ''}</span>
+                  </div>
+                ))
+              ) : (
+                <span className="text-zinc-600">No diagnostic events recorded yet.</span>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* --- Main Workbench Grid --- */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -3562,263 +4114,8 @@ export default function App() {
           )}
         </div>
 
-        {/* --- SECTION 6: CAPABILITY MATRIX & AUDIO DIAGNOSTICS --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Audio Diagnostics Panel */}
-          <div className="bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-4">
-            <div className="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Radio className="w-4 h-4 text-amber-400" />
-                <h2 className="text-sm font-bold font-mono tracking-wider text-zinc-100 uppercase">
-                  AUDIO DIAGNOSTICS
-                </h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const snap = audioDiagnostics?.snapshot;
-                    const lines = [
-                      '=== RETROFM AUDIO DIAGNOSTICS ===',
-                      `Timestamp: ${new Date().toISOString()}`,
-                      `Verdict: ${(() => {
-                        if (!extensionDetected) return 'Extension not detected';
-                        if (!playbackStatus.connectedTabId) return 'YouTube tab not connected';
-                        if (!snap?.videoId || snap?.playerState === -1 || snap?.playerState === 5) return 'No video loaded';
-                        if (snap?.pausedRightAfterUnmute) return 'Paused right after unmute: Chrome autoplay rule. Click in the YouTube tab once.';
-                        if (snap?.lastError?.type === 'playPromiseRejected') return 'Browser blocked autoplay: click inside the YouTube tab';
-                        if (snap?.playerMuted || snap?.videoMuted || (typeof snap?.playerVolume === 'number' && snap?.playerVolume === 0)) return 'Video is playing but the player is muted';
-                        if (snap?.playerState === 1 || snap?.videoPaused === false) return 'Video is playing normally';
-                        if (snap?.playerState === 2 || snap?.videoPaused === true) return 'Video is paused';
-                        return 'Idle / Waiting for playback';
-                      })()}`,
-                      '',
-                      '--- STATUS INDICATORS ---',
-                      `1. Extension connected: ${extensionDetected ? 'YES' : 'NO'}`,
-                      `2. App tab registered: ${extensionDetected ? 'YES' : 'NO'}`,
-                      `3. YouTube tab connected: ${playbackStatus.connectedTabId ? `YES (Tab #${playbackStatus.connectedTabId})` : 'NO'}`,
-                      `4. Video loaded: ${snap?.title || (snap?.videoId ? `ID: ${snap.videoId}` : 'None')}`,
-                      `5. Player state: ${(() => {
-                        const s = snap?.playerState;
-                        if (s === 1) return 'playing (1)';
-                        if (s === 2) return 'paused (2)';
-                        if (s === 3) return 'buffering (3)';
-                        if (s === 0) return 'ended (0)';
-                        if (s === -1) return 'unstarted (-1)';
-                        if (s === 5) return 'video cued (5)';
-                        return s !== null && s !== undefined ? String(s) : (playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped'));
-                      })()}`,
-                      `6. Muted: ${snap?.playerMuted || snap?.videoMuted ? 'YES' : 'NO'}`,
-                      `7. Volume: ${typeof snap?.playerVolume === 'number' ? snap.playerVolume : (typeof snap?.videoVolume === 'number' ? snap.videoVolume : targetMusicVolume)}%`,
-                      `8. Tab hidden: ${snap?.visibilityState === 'hidden' ? 'YES (hidden)' : (snap?.visibilityState === 'visible' ? 'NO (visible)' : 'Unknown')}`,
-                      `9. User clicked in YouTube page: ${snap?.userActivation?.hasBeenActive ? 'YES' : 'NO'}`,
-                      `10. Last Boom Box command: ${lastBoomBoxCommand ? `${lastBoomBoxCommand.action} -> ${lastBoomBoxCommand.result} (${lastBoomBoxCommand.time})` : 'None'}`,
-                      '',
-                      '--- LAST 10 DIAGNOSTIC EVENTS ---',
-                      ...(audioDiagnostics?.events && audioDiagnostics.events.length > 0
-                        ? audioDiagnostics.events.slice(-10).map((e: any) => `${new Date(e.ts).toLocaleTimeString()} [${e.event}] ${JSON.stringify(e.data || {})}`)
-                        : ['(No diagnostic events recorded yet)'])
-                    ];
-                    navigator.clipboard.writeText(lines.join('\n'));
-                    setCopiedDiagnostics(true);
-                    setTimeout(() => setCopiedDiagnostics(false), 2000);
-                  }}
-                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-400 hover:text-amber-300 font-mono text-[11px] font-bold border border-zinc-700 transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Copy full audio diagnostics text to clipboard"
-                >
-                  <Copy className="w-3 h-3" />
-                  <span>{copiedDiagnostics ? 'Copied ✓' : 'Copy diagnostics'}</span>
-                </button>
-                <span className="text-xs font-mono text-zinc-500">2s Live Poll</span>
-              </div>
-            </div>
-
-            {/* Plain English Verdict Line */}
-            <div className="p-3 bg-[#0a0c10] border border-amber-900/40 rounded flex items-center gap-2 text-xs font-mono">
-              <span className="text-zinc-400 font-bold uppercase">Verdict:</span>
-              <span className="text-amber-300 font-semibold">
-                {(() => {
-                  const snap = audioDiagnostics?.snapshot;
-                  if (!extensionDetected) return 'Extension not detected';
-                  if (!playbackStatus.connectedTabId) return 'YouTube tab not connected';
-                  if (!snap?.videoId || snap?.playerState === -1 || snap?.playerState === 5) return 'No video loaded';
-                  if (snap?.pausedRightAfterUnmute) return 'Paused right after unmute: Chrome autoplay rule. Click in the YouTube tab once.';
-                  if (snap?.lastError?.type === 'playPromiseRejected') return 'Browser blocked autoplay: click inside the YouTube tab';
-                  if (snap?.playerMuted || snap?.videoMuted || (typeof snap?.playerVolume === 'number' && snap?.playerVolume === 0)) return 'Video is playing but the player is muted';
-                  if (snap?.playerState === 1 || snap?.videoPaused === false) return 'Video is playing normally';
-                  if (snap?.playerState === 2 || snap?.videoPaused === true) return 'Video is paused';
-                  return 'Idle / Waiting for playback';
-                })()}
-              </span>
-            </div>
-
-            {/* 10 Status Rows with Green / Red markers */}
-            {(() => {
-              const snap = audioDiagnostics?.snapshot;
-              const isExtOk = extensionDetected;
-              const isAppRegistered = extensionDetected;
-              const isYtConnected = !!playbackStatus.connectedTabId;
-              const hasVideo = !!(snap?.videoId || (playbackStatus.available && playbackStatus.title && playbackStatus.title !== 'Unknown Video'));
-              const isPlayingState = snap?.playerState === 1 || snap?.playerState === 3 || (!snap && playbackStatus.isPlaying);
-              const isMuted = !!(snap?.playerMuted || snap?.videoMuted || playbackStatus.muted);
-              const currentVol = typeof snap?.playerVolume === 'number' ? snap.playerVolume : (typeof snap?.videoVolume === 'number' ? snap.videoVolume : targetMusicVolume);
-              const isHidden = snap?.visibilityState === 'hidden';
-              const hasClicked = !!snap?.userActivation?.hasBeenActive;
-              const hasLastCmd = !!lastBoomBoxCommand;
-
-              const renderMarker = (isGreen: boolean) => (
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isGreen ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-rose-500'}`} />
-              );
-
-              return (
-                <div className="space-y-2 font-mono text-xs">
-                  {/* Row 1: Extension connected */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(isExtOk)}
-                      <span className="text-zinc-300">Extension connected:</span>
-                    </div>
-                    <span className={isExtOk ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {isExtOk ? 'YES' : 'NO'}
-                    </span>
-                  </div>
-
-                  {/* Row 2: App tab registered */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(isAppRegistered)}
-                      <span className="text-zinc-300">App tab registered:</span>
-                    </div>
-                    <span className={isAppRegistered ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {isAppRegistered ? 'YES' : 'NO'}
-                    </span>
-                  </div>
-
-                  {/* Row 3: YouTube tab connected */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(isYtConnected)}
-                      <span className="text-zinc-300">YouTube tab connected:</span>
-                    </div>
-                    <span className={isYtConnected ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {isYtConnected ? `YES (#${playbackStatus.connectedTabId})` : 'NO'}
-                    </span>
-                  </div>
-
-                  {/* Row 4: Video loaded */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2 truncate max-w-[65%]">
-                      {renderMarker(hasVideo)}
-                      <span className="text-zinc-300 shrink-0">Video loaded:</span>
-                      <span className="text-zinc-400 truncate text-[11px]" title={snap?.title || playbackStatus.title}>
-                        {snap?.title || playbackStatus.title || 'None'}
-                      </span>
-                    </div>
-                    <span className={hasVideo ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {hasVideo ? 'YES' : 'NO'}
-                    </span>
-                  </div>
-
-                  {/* Row 5: Player state */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(isPlayingState)}
-                      <span className="text-zinc-300">Player state:</span>
-                    </div>
-                    <span className="text-amber-300 font-bold">
-                      {(() => {
-                        const s = snap?.playerState;
-                        if (s === 1) return 'playing (1)';
-                        if (s === 2) return 'paused (2)';
-                        if (s === 3) return 'buffering (3)';
-                        if (s === 0) return 'ended (0)';
-                        if (s === -1) return 'unstarted (-1)';
-                        if (s === 5) return 'video cued (5)';
-                        return s !== null && s !== undefined ? String(s) : (playbackStatus.isPlaying ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped'));
-                      })()}
-                    </span>
-                  </div>
-
-                  {/* Row 6: Muted */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(!isMuted)}
-                      <span className="text-zinc-300">Muted:</span>
-                    </div>
-                    <span className={isMuted ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                      {isMuted ? 'YES (Muted)' : 'NO (Unmuted)'}
-                    </span>
-                  </div>
-
-                  {/* Row 7: Volume */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(currentVol > 0)}
-                      <span className="text-zinc-300">Volume:</span>
-                    </div>
-                    <span className="text-zinc-200 font-bold">
-                      {currentVol} / 100
-                    </span>
-                  </div>
-
-                  {/* Row 8: Tab hidden */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(!isHidden)}
-                      <span className="text-zinc-300">Tab hidden:</span>
-                    </div>
-                    <span className={isHidden ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                      {isHidden ? 'YES (hidden)' : 'NO (visible)'}
-                    </span>
-                  </div>
-
-                  {/* Row 9: User has clicked in YouTube page */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(hasClicked)}
-                      <span className="text-zinc-300">User clicked in YouTube tab:</span>
-                    </div>
-                    <span className={hasClicked ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {hasClicked ? 'YES' : 'NO (Autoplay may be blocked)'}
-                    </span>
-                  </div>
-
-                  {/* Row 10: Last Boom Box command with result and time */}
-                  <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      {renderMarker(hasLastCmd)}
-                      <span className="text-zinc-300">Last Boom Box command:</span>
-                    </div>
-                    <span className="text-zinc-300 font-mono text-[11px] text-right truncate max-w-[50%]">
-                      {lastBoomBoxCommand ? `${lastBoomBoxCommand.action} [${lastBoomBoxCommand.result}] @ ${lastBoomBoxCommand.time}` : 'None'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Last 10 Diagnostic Events */}
-            <div className="pt-2 border-t border-zinc-800/80 space-y-2">
-              <span className="text-zinc-400 font-mono text-[11px] uppercase font-bold block">
-                Last 10 Diagnostic Events:
-              </span>
-              <div className="h-28 bg-[#08090d] border border-zinc-900 rounded p-2 font-mono text-[10px] text-zinc-400 overflow-y-auto space-y-1">
-                {audioDiagnostics?.events && audioDiagnostics.events.length > 0 ? (
-                  audioDiagnostics.events.slice(-10).map((ev: any, idx: number) => (
-                    <div key={idx} className="leading-tight">
-                      <span className="text-amber-500/80">{new Date(ev.ts).toLocaleTimeString()}</span>{' '}
-                      <span className="text-emerald-400">[{ev.event}]</span>{' '}
-                      <span className="text-zinc-300">{ev.data ? JSON.stringify(ev.data) : ''}</span>
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-zinc-600">No diagnostic events recorded yet.</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 6: TEST RESULTS TABLE (All 11 Requirements) */}
-          <div className="bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-4">
+        {/* --- SECTION 6: CAPABILITY MATRIX (All 11 Requirements) --- */}
+        <div className="w-full bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg space-y-4">
             <div className="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-400" />
@@ -3891,7 +4188,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
 
         {/* --- SECTION: HISTORICAL FACT PACKET TEST --- */}
         <HistoricalFactPacketTest onLogEvent={logMessage} />
@@ -4061,6 +4357,56 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* --- SECONDARY RESOURCES: Extension Download & Tools --- */}
+        <section aria-label="Secondary Resources" className="w-full bg-[#13161f] border border-zinc-800 rounded-lg p-5 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs">
+          <div className="space-y-1">
+            <h3 className="font-bold text-sm text-zinc-200 uppercase tracking-wide flex items-center gap-2">
+              <Download className="w-4 h-4 text-amber-400" />
+              RetroFM Companion Chrome Extension
+            </h3>
+            <p className="text-zinc-400">
+              Required for automated YouTube audio ducking and background transport control across tabs.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => generateAndDownloadExtensionZip()}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer shadow"
+              title="Download unpacked Chrome extension ZIP"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Extension (v{EXTENSION_VERSION})</span>
+            </button>
+            <a
+              href={typeof window !== 'undefined' ? window.location.href : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono text-zinc-300 hover:text-zinc-100 transition-colors shadow"
+              title="Open RetroFM in a dedicated browser tab side-by-side with YouTube"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+              <span>Open in Dedicated Tab</span>
+            </a>
+          </div>
+        </section>
+
+        {/* --- FOOTER: Getting Started Link & Version --- */}
+        <footer className="border-t border-zinc-800/80 pt-6 pb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono text-zinc-500">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowExtensionModal(true)}
+              className="text-amber-400 hover:text-amber-300 font-bold uppercase tracking-wider underline underline-offset-4 cursor-pointer transition-colors"
+            >
+              Getting Started
+            </button>
+            <span>&bull;</span>
+            <span>Historical Top-40 Radio Simulator</span>
+          </div>
+          <div>
+            <span>RetroFM &bull; Extension v{EXTENSION_VERSION}</span>
+          </div>
+        </footer>
 
       </div>
 

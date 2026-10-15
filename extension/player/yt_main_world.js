@@ -105,18 +105,11 @@
 
         const isPlayerMuted = typeof player.isMuted === 'function' ? player.isMuted() : false;
         if (clampedVol > 0 && isPlayerMuted) {
-          if (hasActivation()) {
-            if (typeof player.unMute === 'function') {
-              lastUnmuteTime = Date.now();
-              player.unMute();
-            }
-          } else {
-            recordDiagnosticEvent('Muted; cannot unmute without a click in the YouTube tab', {
-              reason,
-              clampedVol
-            });
+          if (typeof player.unMute === 'function') {
+            lastUnmuteTime = Date.now();
+            player.unMute();
           }
-        } else if (clampedVol === 0 && !isPlayerMuted && hasActivation()) {
+        } else if (clampedVol === 0 && !isPlayerMuted) {
           if (typeof player.mute === 'function') {
             player.mute();
           }
@@ -200,6 +193,7 @@
   let pendingPlayerCommand = null;
   let playerCommandSeq = 0;
   let playerReadyWaitTimer = null;
+  let lastPlayCommandTimestamps = null;
 
   function isPlayerReady(player) {
     if (!player) player = getPlayer();
@@ -227,6 +221,16 @@
     const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
 
     if (cmd === 'PLAY') {
+      const t_mw_play_call = Date.now();
+      const t_boombox_play_click = payload?.t_boombox_play_click || null;
+      const t_cs_play_recv = payload?.t_cs_play_recv || null;
+      lastPlayCommandTimestamps = { t_boombox_play_click, t_cs_play_recv, t_mw_play_call };
+      trace('MAIN_WORLD_PLAY_CALLED', {
+        t_mw_play_call,
+        t_boombox_play_click,
+        t_cs_play_recv,
+        dispatchDelayMs: t_boombox_play_click ? (t_mw_play_call - t_boombox_play_click) : null
+      });
       try {
         if (typeof player.playVideo === 'function') {
           player.playVideo();
@@ -429,6 +433,19 @@
       if (typeof player.addEventListener === 'function') {
         player.addEventListener('onStateChange', (state) => {
           trace('YT_PLAYER_ON_STATE_CHANGE', { state });
+          if (state === 1) {
+            const t_mw_playing = Date.now();
+            const latencyMetrics = {
+              t_mw_playing,
+              t_boombox_play_click: lastPlayCommandTimestamps?.t_boombox_play_click || null,
+              t_cs_play_recv: lastPlayCommandTimestamps?.t_cs_play_recv || null,
+              t_mw_play_call: lastPlayCommandTimestamps?.t_mw_play_call || null,
+              e2eLatencyMs: lastPlayCommandTimestamps?.t_boombox_play_click ? (t_mw_playing - lastPlayCommandTimestamps.t_boombox_play_click) : null,
+              playCallToPlaybackMs: lastPlayCommandTimestamps?.t_mw_play_call ? (t_mw_playing - lastPlayCommandTimestamps.t_mw_play_call) : null
+            };
+            trace('YT_PLAYBACK_STARTED_CONFIRMED', latencyMetrics);
+            console.log(`[RetroFM MainWorld] [${new Date().toISOString()}] ▶ CONFIRMED PLAYING (State 1) | Latency: ${latencyMetrics.e2eLatencyMs !== null ? `${latencyMetrics.e2eLatencyMs}ms` : 'N/A'}`);
+          }
           let videoId = null;
           let title = '';
           let currentTime = 0;

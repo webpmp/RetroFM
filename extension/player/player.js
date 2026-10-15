@@ -11,7 +11,7 @@ function scaleApp(){const w=document.documentElement.clientWidth,h=document.docu
  app.style.transform='scale('+s+')';app.style.marginLeft=Math.max(0,(w-450*s)/2)+'px';app.style.marginBottom=(ah*s-ah)+'px'}
 new ResizeObserver(scaleApp).observe(app);addEventListener('resize',scaleApp);scaleApp();
 
-const S={state:'stopped',vol:.7,bal:.5,tun:(98.7-87.5)/20.5,dec:1970};
+const S={state:'stopped',vol:.7,bal:.5,tun:(100.3-87.5)/20.5,dec:1990};
 const ST={
 1960:[['Top 40/Pop',95.1],['Motown',101.5],['Soul',107.1],['R&B',93.5],['Freeform/Underground',99.5],['Folk Rock',102.7],['Psychedelic Rock',104.1]],
 1970:[['AOR',95.5],['Disco',98.7],['Progressive Rock',92.3],['Soft Rock',103.5],['Funk',107.5],['Punk Rock',91.1],['Outlaw Country',97.1]],
@@ -20,10 +20,109 @@ const ST={
 2000:[['Nu-Metal',93.7],['Post-Grunge',107.3],['Emo',91.3],['Crunk',106.1],['Electropop',102.3],['Indie Rock',90.3],['Reggaeton',96.7]],
 2010:[['EDM',101.1],['Trap',104.5],['Indie Pop',91.9],['Mumble Rap',99.1],['Synthwave',89.3],['Afrobeats',105.9]],
 2020:[['Bedroom Pop',88.1],['Hyperpop',90.9],['Amapiano',103.9],['Drift Phonk',95.9],['Regional Mexican',102.9],['Lofi Hip-Hop',88.5]]};
+let hasFirstSongStartedPlaying = false;
+let transientStatus = null;
+let transientTimer = null;
+
+const SEG_ALPHA_MAP = {
+  'A': ['a','b','c','e','f','g'],
+  'B': ['c','d','e','f','g'],
+  'C': ['a','d','e','f'],
+  'D': ['b','c','d','e','g'],
+  'E': ['a','d','e','f','g'],
+  'F': ['a','e','f','g'],
+  'G': ['a','c','d','e','f'],
+  'H': ['b','c','e','f','g'],
+  'I': ['b','c'],
+  'J': ['b','c','d','e'],
+  'K': ['b','d','e','f','g'],
+  'L': ['d','e','f'],
+  'M': ['a','c','e','g'],
+  'N': ['c','e','g'],
+  'O': ['a','b','c','d','e','f'],
+  'P': ['a','b','e','f','g'],
+  'Q': ['a','b','c','f','g'],
+  'R': ['e','g'],
+  'S': ['a','c','d','f','g'],
+  'T': ['d','e','f','g'],
+  'U': ['b','c','d','e','f'],
+  'V': ['c','d','e'],
+  'W': ['c','d','e'],
+  'X': ['b','c','e','f','g'],
+  'Y': ['b','c','d','f','g'],
+  'Z': ['a','b','d','e','g']
+};
+
+function render7SegStatus(mode) {
+  if (!mode || mode === 'blank') return '';
+  const CONFIG = {
+    playing: { sym: '\u25B6', text: 'PLAY' },
+    paused: { sym: '\u275A\u275A', text: 'PAUSE' },
+    stopped: { sym: '\u25A0', text: 'STOP' },
+    rew: { sym: '\u25C0\u25C0', text: 'REW' },
+    rewind: { sym: '\u25C0\u25C0', text: 'REW' },
+    ff: { sym: '\u25B6\u25B6', text: 'FF' },
+    forward: { sym: '\u25B6\u25B6', text: 'FF' },
+    disconnected: { sym: '\u25A0', text: 'DISCONNECTED' }
+  };
+  const cfg = CONFIG[mode] || { sym: '', text: String(mode).toUpperCase() };
+  const fullLabel = (cfg.sym ? cfg.sym + ' ' : '') + cfg.text;
+  let h = '<span class="seg-st-display" aria-label="' + fullLabel + '">';
+  if (cfg.sym) {
+    h += '<span class="seg-st-sym">' + cfg.sym + '</span> ';
+  }
+  h += '<span class="sr-only">' + cfg.text + '</span>';
+  h += '<span class="seg-st-chars" aria-hidden="true">';
+  for (const ch of cfg.text) {
+    const segs = SEG_ALPHA_MAP[ch];
+    if (segs) {
+      const on = new Set(segs);
+      h += '<span class="seg-st-char">';
+      for (const s of ['a','b','c','d','e','f','g']) {
+        h += '<span class="seg-st-bar seg-st-' + s + (on.has(s) ? ' on' : '') + '"></span>';
+      }
+      h += '</span>';
+    } else if (ch === ' ') {
+      h += '<span style="width:4px"></span>';
+    }
+  }
+  h += '</span></span>';
+  return h;
+}
+
+function updateStatusDisplay() {
+  const stEl = $('st');
+  if (!stEl) return;
+  if (!appConnected) {
+    stEl.innerHTML = render7SegStatus('disconnected');
+    return;
+  }
+  if (transientStatus) {
+    stEl.innerHTML = render7SegStatus(transientStatus);
+    return;
+  }
+  if (!hasFirstSongStartedPlaying || S.state === 'blank') {
+    stEl.innerHTML = '';
+    return;
+  }
+  stEl.innerHTML = render7SegStatus(S.state);
+}
+
+function showTransientStatus(mode) {
+  if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }
+  transientStatus = mode;
+  updateStatusDisplay();
+  transientTimer = setTimeout(() => {
+    transientStatus = null;
+    transientTimer = null;
+    updateStatusDisplay();
+  }, 1800);
+}
+
 // transport
 function setState(s,quiet){
- const normalized = (s === 'playing' || s === 'paused') ? s : 'stopped';
- S.state = normalized;
+ const normalized = (s === 'playing' || s === 'paused') ? s : (s === 'blank' ? 'blank' : 'stopped');
+ S.state = (normalized === 'blank') ? 'stopped' : normalized;
  $('bPlay').classList.toggle('on', normalized === 'playing');
  $('bPause').classList.toggle('on', normalized === 'paused');
  $('gPlay').classList.toggle('on', normalized === 'playing');
@@ -35,10 +134,12 @@ function setState(s,quiet){
    $('gStop').classList.remove('on');
  }
  $('stage').classList.toggle('playing', normalized === 'playing');
- $('st').textContent = normalized === 'playing' ? '\u25B6 PLAYING' : normalized === 'paused' ? '\u275A\u275A PAUSED' : '\u25A0 STOPPED';
+
+ updateStatusDisplay();
+
  if (normalized === 'paused' || normalized === 'stopped' || normalized === 'playing') { renderSong(); }
  if (!vuRunning) { vuRunning = true; requestAnimationFrame(vu); }
- if (!quiet) emit('transport', { state: normalized });
+ if (!quiet && normalized !== 'blank') emit('transport', { state: normalized });
 }
 let lastUserTransportAction = null; // { state, time }
 let transportReconcileTimer = null;
@@ -63,11 +164,20 @@ function trace(event, data) {
 
 const act=(el,f)=>{el.onclick=f;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();f()}}};
 act($('bPlay'),()=>{
+  // Resume local Web Audio Context on user play interaction
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+  } catch (e) {}
+
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
-  lastUserTransportAction = { state: 'playing', time: Date.now() };
-  setState('playing', true);
-  trace('CLICK_PLAY', { optimisticState: 'playing' });
-  sendBoomBoxAction('PLAY');
+  const t_boombox_play_click = Date.now();
+  lastUserTransportAction = { state: 'playing', time: t_boombox_play_click };
+  trace('CLICK_PLAY', { t_boombox_play_click });
+  sendBoomBoxAction('PLAY', { t_boombox_play_click });
 });
 act($('bPause'),()=>{
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
@@ -110,8 +220,8 @@ const BUTTONS={rewind:true,forward:true,record:true};
  const b=document.createElement('div');b.className='hit btn';b.style.left=left+'px';b.tabIndex=0;b.setAttribute('role','button');b.setAttribute('aria-label',label);$('stage').appendChild(b);
  const gs=document.querySelectorAll('.'+cls);
  act(b,()=>{if(pulse){gs.forEach(e=>e.classList.add('on'));setTimeout(()=>gs.forEach(e=>e.classList.remove('on')),600);
-   if(k==='rewind'){sendBoomBoxAction('REWIND');emit('previous',{});}
-   else if(k==='forward'){sendBoomBoxAction('FAST_FORWARD');emit('next',{});}}
+   if(k==='rewind'){showTransientStatus('rew');sendBoomBoxAction('REWIND');emit('previous',{});}
+   else if(k==='forward'){showTransientStatus('ff');sendBoomBoxAction('FAST_FORWARD');emit('next',{});}}
   else{const on=!gs[0].classList.contains('on');gs.forEach(e=>e.classList.toggle('on',on));emit('record',{on})}})});
 
 // display panel expand/collapse
@@ -121,7 +231,7 @@ $('tgl').onclick=()=>setOpen(pan.classList.contains('collapsed'));
 try{if(localStorage.getItem('rfm-open')==='0')setOpen(false)}catch(e){}
 
 // logo: file pattern <decade>s-white.png / <decade>s-black.png in LOGO_BASE
-const LOGO_BASE='logos/';let dark=false,logoDec=0;
+const LOGO_BASE='logos/';let dark=true,logoDec=S.dec;
 // boom box art swaps with the theme: boom-box-white.png / boom-box-black.png in BOX_BASE (falls back to the built-in image if missing)
 const BOX_BASE='images/';let boxUrl='';
 function setBox(){const u=BOX_BASE+'boom-box-'+(dark?'black':'white')+'.png';if(u===boxUrl)return;boxUrl=u;
@@ -129,11 +239,12 @@ function setBox(){const u=BOX_BASE+'boom-box-'+(dark?'black':'white')+'.png';if(
  im.onload=()=>{if(u===boxUrl)r.setProperty('--img','url('+u+')')};
  im.onerror=()=>{if(u===boxUrl)r.removeProperty('--img')};
  im.src=u;}
-function paintLogo(){const i=$('logo'),f=$('fb');document.body.classList.toggle('dark',dark);setBox();if(!logoDec){i.style.display='none';f.style.display='none';i.removeAttribute('src');$('logoBar').style.cursor='default';return}$('logoBar').style.cursor='pointer';
+function paintLogo(){const i=$('logo'),f=$('fb');document.body.classList.toggle('dark',dark);document.documentElement.classList.toggle('dark',dark);setBox();if(!logoDec){i.style.display='none';f.style.display='none';i.removeAttribute('src');$('logoBar').style.cursor='default';return}$('logoBar').style.cursor='pointer';
  i.style.display='block';f.style.display='none';
  i.onerror=()=>{i.style.display='none';f.style.display='block';f.textContent='RetroFM \u00B7 '+logoDec+'s'};
  i.src=LOGO_BASE+logoDec+'s-'+(dark?'black':'white')+'.png';}
-function setSongYear(y){const d=Math.floor(y/10)*10;if(d>=1960&&d<=2020){logoDec=d;paintLogo()}}
+paintLogo();
+function setSongYear(y){}
 const flip=()=>{if(!logoDec)return;dark=!dark;paintLogo();emit('theme',{dark})};
 $('logoBar').onclick=flip;$('logoBar').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 document.addEventListener('retrofm:song',e=>{const d=e.detail||{};if(d.title)setSong(d);if(d.year)setSongYear(d.year)});
@@ -200,7 +311,7 @@ function marks(){$('stn').innerHTML=ST[S.dec].map(s=>'<circle cx="'+fx(s[1]).toF
 // Live mode: real songs received from RetroFM session
 const DEMO=false;
 // song info on the display: title and artist alternate with 1.2s fade and 3s hold
-let song=null,fadeOn=true,phase=0,sTimer=0,sFadeTimer=0,appConnected=false,needsUserClick=false;
+let song=null,fadeOn=true,phase=0,sTimer=0,sFadeTimer=0,appConnected=false;
 
 function clearSongTimers(){
   if(sTimer){clearTimeout(sTimer);sTimer=0;}
@@ -218,15 +329,8 @@ function renderSong(){
   if(!appConnected){el.textContent='Offline';el.className='dim';return;}
   if(!S.locked){el.textContent='\u2591 static \u2591';return;}
 
-  if(needsUserClick){
-    el.textContent='Click the YouTube tab once to allow music';
-    el.className='dim';
-    return;
-  }
-
-  if(!song){
-    el.textContent='No song selected';
-    el.className='dim';
+  if(!song || !hasFirstSongStartedPlaying){
+    el.textContent='';
     return;
   }
 
@@ -352,13 +456,15 @@ function problem(v){v=v.trim();if(!v)return'';
  if(m[2]&&(+m[2]<1||+m[2]>MDAYS[mi]))return nm+' has at most '+MDAYS[mi]+' days';
  if(m[3]&&m[3].length===4){const y=+m[3];if(y<1960)return'The dial starts in 1960';if(y>new Date().getFullYear())return'That year hasn\'t happened yet'}
  return''}
-function refresh(q){const v=dIn.value;D=parseDate(v);if(D&&!(v.match(/\d+/g)||[]).map(Number).includes(D.getDate()))D=null;if(!D)step='date';
- if(D){flap(fD,MON[D.getMonth()]+' '+D.getDate()+', '+D.getFullYear());
-  const dec=Math.floor(D.getFullYear()/10)*10;if(gl!==ST[dec]){gl=ST[dec];gi=0}
-  flap(fG,gl[gi][0]);hint.textContent=step==='genre'?'\u2191\u2193 CHOOSE GENRE \u00B7 ENTER TO TUNE IN \u00B7 TAB: DATE':'ENTER OR TAB TO CHOOSE A GENRE';hint.className=''}
- else{flap(fD,v||'TYPE A DATE',!v);gl=[];flap(fG,'GENRE',1);
-  const p=q?'':problem(v);hint.textContent=p||(v.length>5?'Try July 4, 1978 \u00B7 1960 to today':'e.g. July 4, 1978');hint.className=p?'err':''}
- brd.dataset.s=step;caret()}
+ function refresh(q){const v=dIn.value;D=parseDate(v);if(D&&!(v.match(/\d+/g)||[]).map(Number).includes(D.getDate()))D=null;if(!D)step='date';
+  if(D){flap(fD,MON[D.getMonth()]+' '+D.getDate()+', '+D.getFullYear());
+   const dec=Math.floor(D.getFullYear()/10)*10;if(gl!==ST[dec]){gl=ST[dec];gi=0}
+   if(dec>=1960&&dec<=2020&&logoDec!==dec){logoDec=dec;paintLogo();}
+   flap(fG,gl[gi][0]);hint.textContent=step==='genre'?'\u2191\u2193 CHOOSE GENRE \u00B7 ENTER TO TUNE IN \u00B7 TAB: DATE':'ENTER OR TAB TO CHOOSE A GENRE';hint.className=''}
+  else{flap(fD,v||'TYPE A DATE',!v);gl=[];flap(fG,'GENRE',1);
+   if(logoDec!==S.dec){logoDec=S.dec;paintLogo();}
+   const p=q?'':problem(v);hint.textContent=p||(v.length>5?'Try July 4, 1978 \u00B7 1960 to today':'e.g. July 4, 1978');hint.className=p?'err':''}
+  brd.dataset.s=step;caret()}
 function cyc(d){if(!D)return;gi=(gi+d+gl.length)%gl.length;flap(fG,gl[gi][0])}
 function goLive(){const y=D.getFullYear(),dec=Math.floor(y/10)*10,g=gl[gi];
  pan.classList.replace('entry','live');
@@ -394,9 +500,9 @@ $('hDate').onclick=()=>back('date');if($('hGen'))$('hGen').onclick=()=>back('gen
 tune();refresh();dIn.focus();
 
 // VU meters (simulated: music plays in YouTube tab; needles scale directly with master volume)
-let env=0,nl=0,nr=0,beat=.5,vuRunning=false;
+let env=0,nl=0,nr=0,beat=.5,vuRunning=false,isYtPlaybackActive=false;
 function vu(){
- const isPlaying = S.state === 'playing';
+ const isPlaying = S.state === 'playing' && isYtPlaybackActive;
  if(isPlaying){
   if(Math.random()<.14) beat=.35+Math.random()*.55;
   env += (beat-env)*.3;
@@ -508,16 +614,46 @@ function applyRadioState(state) {
   appConnected = state.appConnected !== false;
 
   if (!appConnected) {
-    $('st').textContent = '■ DISCONNECTED';
+    updateStatusDisplay();
     const giEl = $('gi'); if (giEl) giEl.textContent = 'Open RetroFM app to broadcast';
     song = null;
     renderSong();
     return;
   }
 
+  // Authoritative decade update for footer logo
+  if (typeof state.decade === 'number' && state.decade >= 1960 && state.decade <= 2020) {
+    if (logoDec !== state.decade || S.dec !== state.decade) {
+      logoDec = state.decade;
+      S.dec = state.decade;
+      document.querySelectorAll('.dec').forEach(b => b.classList.toggle('sel', +b.textContent === state.decade));
+      paintLogo();
+    }
+  }
+
+  // Authoritative tracking of first song playback status suppression
+  if (typeof state.hasFirstSongStartedPlaying === 'boolean') {
+    hasFirstSongStartedPlaying = state.hasFirstSongStartedPlaying;
+  }
+
+  // If transient rewind/fast-forward was showing, clear it once authoritative state or song update confirms
+  if (transientStatus && (state.playbackStatus === 'playing' || state.currentSong)) {
+    if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }
+    transientStatus = null;
+    updateStatusDisplay();
+  }
+
   // 1. Playback status
   if (state.playbackStatus) {
-    setVisualTransport(state.playbackStatus);
+    if (state.playbackStatus === 'blank') {
+      if (!lastUserTransportAction || lastUserTransportAction.state !== 'playing') {
+        isYtPlaybackActive = false;
+        setState('blank', true);
+      }
+    } else {
+      isYtPlaybackActive = state.playbackStatus === 'playing';
+      setVisualTransport(state.playbackStatus);
+    }
   }
 
   // 2. Volume (visual only, no command feedback loop)
@@ -528,10 +664,6 @@ function applyRadioState(state) {
   // 3. Current Song
   if (state.currentSong && state.currentSong.title) {
     setSong(state.currentSong);
-    if (state.currentSong.year) {
-      const y = Number(state.currentSong.year);
-      if (!isNaN(y)) setSongYear(y);
-    }
   } else if (state.clearSong) {
     song = null;
     renderSong();
@@ -548,7 +680,7 @@ function requestRadioState() {
           applyRadioState(response.data);
         } else {
           appConnected = false;
-          $('st').textContent = '■ DISCONNECTED';
+          updateStatusDisplay();
           const giEl = $('gi'); if (giEl) giEl.textContent = 'Open RetroFM app to broadcast';
           renderSong();
         }
@@ -562,26 +694,38 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     if (message && message.type === 'RADIO_STATE') {
       applyRadioState(message.payload);
       sendResponse({ received: true });
-    } else if (message && message.type === 'NEEDS_USER_CLICK') {
-      needsUserClick = true;
-      renderSong();
-      sendResponse({ received: true });
-    } else if (message && message.type === 'YT_TAB_ACTIVATED') {
-      needsUserClick = false;
-      renderSong();
-      sendResponse({ received: true });
     } else if (message && message.type === 'YT_STATE_CHANGED' && message.payload) {
       const rawState = message.payload.state;
-      // Map states: 1 playing and 3 buffering mean 'playing'; 2 means 'paused'; 0 ended and -1 or 5 unstarted mean 'stopped'
-      const mapped = (rawState === 1 || rawState === 3) ? 'playing' : (rawState === 2 ? 'paused' : 'stopped');
-      trace('YT_STATE_CHANGED_RECV', { rawState, mapped, title: message.payload.title });
-      if (rawState === 1) {
-        needsUserClick = false;
+      const isPlaying = rawState === 1;
+      const vid = message.payload.videoId;
+      const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;
+      if (rawState === 1 && vid && vid !== '3Wk2FzsxK4k') {
+        hasFirstSongStartedPlaying = true;
       }
-      setVisualTransport(mapped);
-      if (message.payload.title && !song) {
+      isYtPlaybackActive = isPlaying;
+      if (transientStatus && isPlaying) {
+        if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }
+        transientStatus = null;
+      }
+      if (rawState === 1) {
+        setVisualTransport('playing');
+      } else if (rawState === 2) {
+        setVisualTransport('paused');
+      } else if (rawState === 0) {
+        // When startup jingle ends naturally, stop playback and reels until user clicks PLAY
+        if (isJingle) {
+          isYtPlaybackActive = false;
+          setVisualTransport('stopped');
+        } else if (S.state !== 'playing') {
+          setVisualTransport('stopped');
+        }
+      } else if (rawState === 3) {
+        // Buffering: preserve current playing state
+      }
+      trace('YT_STATE_CHANGED_RECV', { rawState, state: S.state, title: message.payload.title });
+      if (!song && message.payload.title && hasFirstSongStartedPlaying) {
         setSong({ title: message.payload.title });
-      } else if (needsUserClick === false) {
+      } else {
         renderSong();
       }
       sendResponse({ received: true });
@@ -589,7 +733,8 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
   });
 }
 
-// Request initial state on load
+// Request initial state on load and announce Boom Box session startup / refresh
+sendBoomBoxAction('BOOMBOX_RELOADED');
 requestRadioState();
 // Check health every 6 seconds if disconnected
 setInterval(() => {
@@ -597,4 +742,56 @@ setInterval(() => {
     requestRadioState();
   }
 }, 6000);
+
+// START RETRO FM modal & handoff controller
+(function setupStartModal() {
+  const modal = $('rfmModal');
+  const btn = $('rfmStartBtn');
+  const appEl = $('app');
+  if (!modal || !btn) return;
+
+  function dismissModal() {
+    modal.classList.add('hidden');
+    if (appEl) appEl.classList.remove('rfm-dimmed');
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'STARTING...';
+    trace('START_RETRO_FM_CLICKED');
+
+    let finished = false;
+    const safetyTimer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        dismissModal();
+      }
+    }, 3000);
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ type: 'START_RETRO_FM_HANDOFF' }, (res) => {
+          if (!finished) {
+            finished = true;
+            clearTimeout(safetyTimer);
+            dismissModal();
+          }
+        });
+      } else {
+        finished = true;
+        clearTimeout(safetyTimer);
+        dismissModal();
+      }
+    } catch (e) {
+      if (!finished) {
+        finished = true;
+        clearTimeout(safetyTimer);
+        dismissModal();
+      }
+    }
+  });
+})();
+
+
+
 

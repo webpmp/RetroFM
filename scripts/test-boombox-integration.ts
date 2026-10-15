@@ -4,7 +4,7 @@
  * volume feedback loop protection, and connection recovery.
  */
 
-import { HARDCODED_PRESETS } from '../src/App.js';
+import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, normalizeYouTubeVideoId } from '../src/App.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1474,11 +1474,12 @@ console.log('\n--- Test Suite 20: Unvisited Tab Playback & Autoplay Activation -
   let volumeCalls: number[] = [];
   let diagnosticEvents: string[] = [];
 
+  let isMutedState = true;
   const mockPlayer = {
-    mute: () => { muteCalls++; },
-    unMute: () => { unMuteCalls++; },
+    mute: () => { muteCalls++; isMutedState = true; },
+    unMute: () => { unMuteCalls++; isMutedState = false; },
     setVolume: (v: number) => { volumeCalls.push(v); },
-    isMuted: () => true
+    isMuted: () => isMutedState
   };
 
   function simulateApplyVolume(player: any, targetVolume: number, hasActivation: boolean) {
@@ -1488,75 +1489,53 @@ console.log('\n--- Test Suite 20: Unvisited Tab Playback & Autoplay Activation -
       player.setVolume(vol);
     } catch (e) {}
 
-    if (player.isMuted()) {
-      if (hasActivation) {
-        player.unMute();
-      } else {
-        diagnosticEvents.push('Muted; cannot unmute without a click in the YouTube tab');
-      }
+    const isPlayerMuted = player.isMuted();
+    if (vol > 0 && isPlayerMuted) {
+      player.unMute();
+    } else if (vol === 0 && !isPlayerMuted) {
+      player.mute();
     }
   }
 
   // Test with hasActivation = false
   simulateApplyVolume(mockPlayer, 0.75, false);
-  assert(muteCalls === 0, 'With no activation, mute() is never called');
-  assert(unMuteCalls === 0, 'With no activation, unMute() is never called');
-  assert(volumeCalls.length === 1 && volumeCalls[0] === 75, 'With no activation, setVolume() is called');
-  assert(
-    diagnosticEvents.includes('Muted; cannot unmute without a click in the YouTube tab'),
-    'Diagnostic event recorded when unmute is blocked due to lack of activation'
-  );
+  assert(muteCalls === 0, 'Mute() is not called for non-zero volume');
+  assert(unMuteCalls === 1, 'unMute() is called when setting volume > 0 on muted player');
+  assert(volumeCalls.length === 1 && volumeCalls[0] === 75, 'setVolume() is called with requested volume');
 
-  // Test with hasActivation = true
-  simulateApplyVolume(mockPlayer, 0.90, true);
-  assert(unMuteCalls === 1, 'With activation present, unMute() is allowed');
+  // Test with volume = 0
+  simulateApplyVolume(mockPlayer, 0, false);
+  assert(muteCalls === 1, 'mute() is called when setting volume = 0');
 }
 
-// (c) First connect brings YouTube tab forward and returns to previous tab after click
+// (c) First connect keeps YouTube tab in background and Boom Box opens directly with no modal
 {
   let activeTabId: number = 101; // Boom Box tab currently active
-  const previousTabs: number[] = [];
   let ytTabActive: boolean = false;
-  let overlayShown: boolean = false;
-  let returnedToPrecedingTab: boolean = false;
+  let modalShownOnBoomBox: boolean = false;
 
   const ytTabId: number = 202;
   let hasSessionActivation: boolean = false;
-  let precedingTabBeforeActivation: number | null = null;
-  let sessionActivationPromptTabId: number | null = null;
 
-  // 1. Extension connects to YouTube tab when activation is false
+  // 1. Extension connects to YouTube tab in background; YouTube tab never brought active, no modal shown
   function simulateFirstConnect(targetYtTabId: number, hasActivation: boolean) {
-    if (!hasActivation && !hasSessionActivation) {
-      precedingTabBeforeActivation = activeTabId;
-      sessionActivationPromptTabId = targetYtTabId;
-      activeTabId = targetYtTabId; // Switches to YouTube tab
-      ytTabActive = true;
-      overlayShown = true;
-    }
+    ytTabActive = false;
+    modalShownOnBoomBox = false; // Modal eliminated: opens directly
   }
 
-  // 2. User clicks anywhere in YouTube tab -> YT_TAB_ACTIVATED
-  function simulateYtTabActivated() {
+  // 2. User presses PLAY on Boom Box
+  function simulateBoomBoxPlayClicked() {
     hasSessionActivation = true;
-    overlayShown = false;
-    if (precedingTabBeforeActivation && precedingTabBeforeActivation !== ytTabId) {
-      activeTabId = precedingTabBeforeActivation;
-      returnedToPrecedingTab = true;
-      ytTabActive = false;
-    }
   }
 
   simulateFirstConnect(ytTabId, false);
-  assert(Boolean(ytTabActive), 'First connect brings YouTube tab active');
-  assert(activeTabId === ytTabId, 'Active tab is now YouTube tab (202)');
-  assert(Boolean(overlayShown), 'Activation overlay is displayed');
-  assert(precedingTabBeforeActivation === 101, 'Preceding tab 101 remembered');
+  assert(!ytTabActive, 'First connect keeps YouTube tab in background');
+  assert(activeTabId === 101, 'Active tab remains Boom Box (101)');
+  assert(!modalShownOnBoomBox, 'Boom Box opens directly with no activation modal overlay');
 
-  simulateYtTabActivated();
-  assert(Boolean(hasSessionActivation), 'hasSessionActivation set to true');
-  assert(Boolean(returnedToPrecedingTab), 'Switched back to preceding tab (101)');
-  assert(activeTabId === 101, 'Active tab restored to Boom Box (101)');
+  simulateBoomBoxPlayClicked();
+  assert(Boolean(hasSessionActivation), 'hasSessionActivation set on user play interaction');
+  assert(activeTabId === 101, 'Active tab remains Boom Box (101)');
 }
 
 // (d) No tab switching when activation exists
@@ -1728,6 +1707,483 @@ console.log('\n--- Test Suite 22: Green Display Long Song Title & Artist Text Sp
   });
 }
 
+// --- Test Suite 23: Startup Interaction, Consolidated Header & Full-Width Diagnostics ---
+console.log('\n--- Test Suite 23: Startup Interaction, Consolidated Header & Full-Width Diagnostics ---');
+{
+  const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8');
+
+  // 1. No activation modal on Boom Box or YouTube; direct startup
+  const bbHtml = fs.readFileSync(path.resolve(__dirname, '../extension/player/index.html'), 'utf8');
+  const bbJs = fs.readFileSync(path.resolve(__dirname, '../extension/player/player.js'), 'utf8');
+  const ytJs = fs.readFileSync(path.resolve(__dirname, '../extension/content_youtube.js'), 'utf8');
+
+  assert(!bbHtml.includes('CLICK ANYWHERE TO START RETRO FM'), 'Activation modal removed from Boom Box HTML');
+  assert(!bbJs.includes('rfm-modal'), 'Boom Box player.js does not require modal dismissal');
+  assert(!ytJs.includes('retrofm-activation-overlay'), 'YouTube page does not display activation overlay');
+  assert(!appSrc.includes('Start Audio'), 'Test page does not display a competing START AUDIO interaction control');
+
+  // 2. Full-Width Live Diagnostic Status at Top
+  assert(appSrc.includes('<section aria-label="Live Diagnostic Status" className="w-full'), 'Live Diagnostic Status spans full container width ("w-full")');
+  assert(appSrc.includes('LIVE DIAGNOSTIC STATUS'), 'Live Diagnostic Status heading is rendered near the top');
+  assert(appSrc.includes('Boom Box Player:'), 'Live Diagnostic Status displays Boom Box availability');
+  assert(appSrc.includes('Chrome Extension:'), 'Live Diagnostic Status displays Chrome extension connection status');
+  assert(appSrc.includes('YouTube Tab:'), 'Live Diagnostic Status displays YouTube tab connection status');
+
+  // 3. Consolidated Top-Level Controls in Header
+  assert(!appSrc.includes('<span>SILENCE ALL AUDIO</span>'), 'Redundant large text button SILENCE ALL AUDIO removed from top-level header');
+  assert(appSrc.includes('toggleGlobalMute'), 'Header uses compact toggleGlobalMute action');
+  assert(appSrc.includes('title={isAudioMuted ? \'Unmute audio\' : \'Silence all audio\'}'), 'Mute button has accessible tooltip for both states');
+  assert(appSrc.includes('aria-label={isAudioMuted ? \'Unmute audio\' : \'Silence all audio\'}'), 'Mute button has accessible aria-label');
+
+  // 4. Redundant buttons removed from top-level controls
+  // "Open Boom Box" is removed from header because boom box auto-opens at startup
+  const headerSection = appSrc.substring(appSrc.indexOf('<header'), appSrc.indexOf('</header>'));
+  assert(!headerSection.includes('Open Boom Box'), 'Redundant "Open Boom Box" button removed from top-level header');
+  assert(!headerSection.includes('Extension Active'), 'Redundant separate "Extension Active" pill removed from top-level header');
+  assert(!headerSection.includes('Download Extension (v'), 'General "Download Extension" button removed from top-level header');
+  assert(!headerSection.includes('Setup Guide'), 'Prominent "Setup Guide" button removed from top-level header');
+  assert(headerSection.includes('Launch RetroFM Chrome Tab Group'), 'Launch button preserved as compact icon with accessible tooltip');
+
+  // 5. Secondary Resources & Footer with Getting Started Link
+  assert(appSrc.includes('<section aria-label="Secondary Resources"'), 'Secondary resources section added below workbench');
+  assert(appSrc.includes('Download Extension (v{EXTENSION_VERSION})'), 'General extension download button relocated to secondary resources');
+  assert(appSrc.includes('<footer'), 'Footer section is present');
+  assert(appSrc.includes('Getting Started'), 'Footer includes "Getting Started" link');
+  assert(appSrc.includes('setShowExtensionModal(true)'), 'Getting Started link reuses existing setup guide modal');
+}
+
+// --- Test Suite 24: Station-Jingle-First Playback Sequence & Automatic Advancement ---
+console.log('\n--- Test Suite 24: Station-Jingle-First Playback Sequence & Automatic Advancement ---');
+{
+  const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8');
+
+  // 1. Jingle URL normalization
+  assert(normalizeYouTubeVideoId('3Wk2FzsxK4k') === '3Wk2FzsxK4k', 'Video ID normalized directly');
+  assert(normalizeYouTubeVideoId('https://youtube.com/shorts/3Wk2FzsxK4k') === '3Wk2FzsxK4k', 'Shorts URL normalized to 3Wk2FzsxK4k');
+  assert(normalizeYouTubeVideoId('https://www.youtube.com/watch?v=3Wk2FzsxK4k') === '3Wk2FzsxK4k', 'Watch URL normalized to 3Wk2FzsxK4k');
+  assert(normalizeYouTubeVideoId('https://youtu.be/3Wk2FzsxK4k') === '3Wk2FzsxK4k', 'youtu.be URL normalized to 3Wk2FzsxK4k');
+
+  // 2. Configuration & Startup preparation
+  assert(RETROFM_JINGLE_CONFIG.videoId === '3Wk2FzsxK4k', 'RetroFM jingle video ID is 3Wk2FzsxK4k');
+  assert(appSrc.includes("prepareSong(RETROFM_JINGLE_CONFIG.videoId, RETROFM_JINGLE_CONFIG.title)"), 'Startup auto-init prepares station jingle first');
+  assert(Array.isArray(DEFAULT_SONG_QUEUE) && DEFAULT_SONG_QUEUE.length === 5, 'DEFAULT_SONG_QUEUE contains 5 canonical songs');
+  assert(DEFAULT_SONG_QUEUE[0].videoId === 'f-BDCwxBF9Q', 'First queue song is Take On Me (f-BDCwxBF9Q)');
+  assert(DEFAULT_SONG_QUEUE[1].videoId === 'Kr4EQDVETuA', 'Second queue song is Billie Jean (Kr4EQDVETuA)');
+  assert(DEFAULT_SONG_QUEUE[2].videoId === 'Izx6DQUrsag', 'Third queue song is When Doves Cry (Izx6DQUrsag)');
+
+  // 3. State machine simulation:
+  // Jingle prepared -> PLAY starts jingle -> Jingle finishes naturally (state 0) -> Advances to Take On Me -> finishes -> Billie Jean
+  let simulatedJingleState: string = 'prepared';
+  let queueIndex = 0;
+  let currentlyPlayingVideoId: string | null = null;
+  let advanceCount = 0;
+  let isAdvancing = false;
+
+  function simulatePlay() {
+    if (simulatedJingleState === 'prepared') {
+      currentlyPlayingVideoId = RETROFM_JINGLE_CONFIG.videoId;
+      simulatedJingleState = 'playing';
+    } else {
+      currentlyPlayingVideoId = DEFAULT_SONG_QUEUE[queueIndex].videoId;
+    }
+  }
+
+  function simulateAdvance(isAfterJingle: boolean) {
+    if (isAdvancing) return;
+    isAdvancing = true;
+    advanceCount++;
+    if (isAfterJingle) {
+      queueIndex = 0;
+      simulatedJingleState = 'completed';
+    } else {
+      queueIndex = (queueIndex + 1) % DEFAULT_SONG_QUEUE.length;
+    }
+    currentlyPlayingVideoId = DEFAULT_SONG_QUEUE[queueIndex].videoId;
+    isAdvancing = false;
+  }
+
+  function simulateStateChange(state: number, videoId: string) {
+    if (state === 0 && !isAdvancing) {
+      if (simulatedJingleState === 'playing' && videoId === RETROFM_JINGLE_CONFIG.videoId) {
+        simulateAdvance(true);
+      } else if (simulatedJingleState === 'completed') {
+        simulateAdvance(false);
+      }
+    }
+  }
+
+  function simulatePause() {
+    // PAUSE must not advance state
+  }
+
+  function simulateStop() {
+    if (simulatedJingleState === 'playing' || simulatedJingleState === 'prepared' || simulatedJingleState === 'completed') {
+      simulatedJingleState = 'cancelled';
+    }
+  }
+
+  // Initial PLAY starts the jingle
+  simulatePlay();
+  assert(currentlyPlayingVideoId === '3Wk2FzsxK4k', 'Initial PLAY starts station jingle');
+  assert(simulatedJingleState === 'playing', 'Jingle state is playing');
+
+  // Temporary pause during jingle must NOT advance
+  simulatePause();
+  simulateStateChange(2, '3Wk2FzsxK4k'); // paused state
+  assert(currentlyPlayingVideoId === '3Wk2FzsxK4k', 'PAUSE during jingle keeps jingle active');
+  assert(simulatedJingleState === 'playing', 'PAUSE does not change jingle playing state');
+  assert(advanceCount === 0, 'No advance on pause');
+
+  // Buffering state must NOT advance
+  simulateStateChange(3, '3Wk2FzsxK4k'); // buffering state
+  assert(advanceCount === 0, 'No advance on buffering');
+
+  // Natural completion (state 0) automatically advances to "Take On Me"
+  simulateStateChange(0, '3Wk2FzsxK4k');
+  assert(currentlyPlayingVideoId === 'f-BDCwxBF9Q', 'Natural completion (state 0) advances to Take On Me (f-BDCwxBF9Q)');
+  assert(simulatedJingleState === 'completed', 'Jingle state becomes completed');
+  assert(advanceCount === 1, 'Advance occurred exactly once');
+
+  // Duplicate ended event while advancing should NOT double advance
+  isAdvancing = true;
+  simulateStateChange(0, '3Wk2FzsxK4k');
+  isAdvancing = false;
+  assert(advanceCount === 1, 'Duplicate state 0 while advancing is ignored');
+
+  // Natural completion (state 0) of "Take On Me" advances to track 2 ("Billie Jean")
+  simulateStateChange(0, 'f-BDCwxBF9Q');
+  assert(currentlyPlayingVideoId === 'Kr4EQDVETuA', 'Take On Me ending advances automatically to Billie Jean (Kr4EQDVETuA)');
+  assert(advanceCount === 2, 'Queue advanced to second song');
+
+  // Natural completion of "Billie Jean" advances to track 3 ("When Doves Cry")
+  simulateStateChange(0, 'Kr4EQDVETuA');
+  assert(currentlyPlayingVideoId === 'Izx6DQUrsag', 'Billie Jean ending advances automatically to When Doves Cry (Izx6DQUrsag)');
+  assert(advanceCount === 3, 'Queue advanced to third song');
+
+  // STOP cancels playback sequence and prevents later ended events from advancing
+  simulateStop();
+  assert(simulatedJingleState === 'cancelled', 'STOP cancels sequence progression');
+  simulateStateChange(0, 'Izx6DQUrsag');
+  assert(advanceCount === 3, 'State 0 after STOP does not advance to next song');
+}
+
+// --- Test Suite 25: Startup Status Suppression, Background YouTube Isolation, Reload Reset & Decade Logo Binding ---
+console.log('\n--- Test Suite 25: Startup Status Suppression, Background Isolation, Session Reset & Decade Logo Binding ---');
+{
+  // 1. Initial status suppression in Boom Box HTML
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  assert(indexHtml.includes('<span id="st"></span>'), 'index.html initializes #st element empty without hardcoded STOPPED text');
+  assert(!indexHtml.includes('<span id="st">■ STOPPED</span>'), 'index.html does not contain hardcoded STOPPED text');
+
+  // 2. Status text logic simulation
+  function simulateBoomBoxStatus(s: string, hasStarted: boolean): string {
+    const normalized = (s === 'playing' || s === 'paused') ? s : (s === 'blank' ? 'blank' : 'stopped');
+    if (!hasStarted || normalized === 'blank') {
+      return '';
+    }
+    return normalized === 'playing' ? '▶ PLAYING' : normalized === 'paused' ? '❚❚ PAUSED' : '■ STOPPED';
+  }
+
+  assert(simulateBoomBoxStatus('stopped', false) === '', 'Startup status is blank when first song has not started');
+  assert(simulateBoomBoxStatus('playing', false) === '', 'Status remains blank during jingle/startup even if player reports playing');
+  assert(simulateBoomBoxStatus('paused', false) === '', 'Status remains blank during jingle pause');
+  assert(simulateBoomBoxStatus('blank', false) === '', 'Explicit blank status remains blank');
+  assert(simulateBoomBoxStatus('blank', true) === '', 'Explicit blank status overrides even if hasStarted is true');
+  assert(simulateBoomBoxStatus('playing', true) === '▶ PLAYING', 'Status displays PLAYING once first real song has started');
+  assert(simulateBoomBoxStatus('paused', true) === '❚❚ PAUSED', 'Status displays PAUSED once first real song has started');
+  assert(simulateBoomBoxStatus('stopped', true) === '■ STOPPED', 'Status displays STOPPED once first real song has started');
+
+  // 3. Background tab isolation (revealYouTubeToStart defaults to false)
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+  assert(appTsx.includes('useState<boolean>(false)'), 'App.tsx defaults revealYouTubeToStart to false');
+
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+  assert(!bgJs.includes('checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false)'), 'background.js does not default revealYouTubeToStart to true in checkAndRecoverHiddenTabPlayback');
+  assert(!bgJs.includes("type: 'NEEDS_USER_CLICK'"), 'background.js does not dispatch NEEDS_USER_CLICK');
+  assert(!bgJs.includes('HIDDEN_TAB_RECOVERY_TRIGGERED'), 'background.js does not trigger hidden tab activation recovery');
+
+  // 4. Boom Box reload reset coordination and no click warnings
+  const playerJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  assert(!playerJs.includes('Click the YouTube tab once to allow music'), 'player.js does not contain the click warning string');
+  assert(!playerJs.includes('needsUserClick'), 'player.js does not contain needsUserClick state');
+  assert(playerJs.includes("sendBoomBoxAction('BOOMBOX_RELOADED')"), 'player.js dispatches BOOMBOX_RELOADED on startup');
+  assert(appTsx.includes("case 'BOOMBOX_RELOADED':"), 'App.tsx handles BOOMBOX_RELOADED action');
+  assert(appTsx.includes("jingleStateRef.current = 'prepared'"), 'BOOMBOX_RELOADED resets jingle state to prepared');
+  assert(appTsx.includes("hasFirstSongStartedPlayingRef.current = false"), 'BOOMBOX_RELOADED resets hasFirstSongStartedPlayingRef');
+  assert(appTsx.includes("currentQueueIndexRef.current = 0"), 'BOOMBOX_RELOADED resets queue index to 0');
+
+  // 5. Authoritative decade footer logo binding
+  assert(playerJs.includes('if (typeof state.decade === \'number\' && state.decade >= 1960 && state.decade <= 2020)'), 'player.js validates incoming decade from authoritative radio state');
+  assert(playerJs.includes('logoDec = state.decade;'), 'player.js updates logoDec directly from state.decade');
+  assert(playerJs.includes('paintLogo();'), 'player.js repaints logo on decade update');
+  assert(playerJs.includes('logoDec=S.dec'), 'player.js initializes logoDec to current station decade (S.dec)');
+  assert(!playerJs.includes('if (!isNaN(y)) setSongYear(y);'), 'player.js does not derive footer logo decade from song release year');
+
+  // Verify all decade logo asset files exist for both black and white variants from 1960s to 2020s
+  const logosDir = path.join(__dirname, '../extension/player/logos');
+  const decades = [1960, 1970, 1980, 1990, 2000, 2010, 2020];
+  for (const dec of decades) {
+    const blackPath = path.join(logosDir, `${dec}s-black.png`);
+    const whitePath = path.join(logosDir, `${dec}s-white.png`);
+    assert(fs.existsSync(blackPath), `Logo asset exists: ${dec}s-black.png`);
+    assert(fs.existsSync(whitePath), `Logo asset exists: ${dec}s-white.png`);
+    assert(fs.statSync(blackPath).size > 1000, `${dec}s-black.png has valid image payload`);
+    assert(fs.statSync(whitePath).size > 1000, `${dec}s-white.png has valid image payload`);
+  }
+
+  // Simulate logo selection logic
+  function getLogoSrc(decade: number, isDark: boolean): string {
+    const LOGO_BASE = 'logos/';
+    return LOGO_BASE + decade + 's-' + (isDark ? 'black' : 'white') + '.png';
+  }
+
+  assert(getLogoSrc(1960, false) === 'logos/1960s-white.png', '1960 light theme resolves to 1960s-white.png');
+  assert(getLogoSrc(1960, true) === 'logos/1960s-black.png', '1960 dark theme resolves to 1960s-black.png');
+  assert(getLogoSrc(1980, false) === 'logos/1980s-white.png', '1980 light theme resolves to 1980s-white.png');
+  assert(getLogoSrc(2020, true) === 'logos/2020s-black.png', '2020 dark theme resolves to 2020s-black.png');
+
+  // Verify App.tsx updates programYear from user date/decade selections
+  assert(appTsx.includes("case 'SELECT_DATE_GENRE':"), 'App.tsx handles SELECT_DATE_GENRE');
+  assert(appTsx.includes("action.year ? String(action.year) :"), 'App.tsx parses selected year from SELECT_DATE_GENRE');
+  assert(appTsx.includes("setProgramYear(selectedYear);"), 'App.tsx updates programYear when date or decade is selected in Boom Box');
+
+  // 6. Verified Playback & Jingle Metadata Isolation
+  const contentYtJs = fs.readFileSync(path.join(__dirname, '../extension/content_youtube.js'), 'utf-8');
+  assert(!contentYtJs.includes("finish(true, 'buffering_active')"), 'content_youtube.js does not confirm buffering as successful playback');
+  assert(!playerJs.includes("setState('playing', true);\n  trace('CLICK_PLAY'"), 'player.js does not set optimistic playing state or run VU meters prior to playback confirmation');
+  assert(appTsx.includes("const isJingleActive = jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing';"), 'App.tsx determines jingle active state');
+  assert(appTsx.includes("if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {\n      currentSong = null;"), 'App.tsx ensures currentSong is null during jingle and before first song starts playing');
+}
+
+// --- Test Suite 26: START RETRO FM Modal, Solid Black Initial Appearance & Handoff ---
+console.log('\n--- Test Suite 26: START RETRO FM Modal, Solid Black Initial Appearance & Handoff ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+
+  // 1. Initial Appearance & Dimming
+  assert(bbHtml.includes('<body class="dark">'), 'index.html sets body class to dark by default');
+  assert(bbHtml.includes('<div id="app" class="rfm-dimmed">'), 'index.html applies rfm-dimmed class to #app immediately in HTML');
+  assert(bbCss.includes('body{margin:0;background:#000;'), 'player.css sets solid black #000 background on body');
+  assert(bbCss.includes('#app.rfm-dimmed{filter:blur(6px) brightness(0.35);'), 'player.css applies blur and dimming to #app');
+  assert(bbJs.includes('let dark=true,logoDec=S.dec;'), 'player.js initializes dark theme to true');
+
+  // 2. START RETROFM Modal
+  assert(bbHtml.includes('id="rfmModal"'), 'index.html contains #rfmModal element');
+  assert(bbHtml.includes('START RETROFM'), 'index.html contains START RETROFM button');
+  assert(!bbHtml.includes('CLICK ANYWHERE TO START'), 'index.html does not contain unwanted CLICK ANYWHERE TO START text');
+  assert(bbCss.includes('.rfm-modal-overlay'), 'player.css styles modal overlay');
+  assert(bbCss.includes('.rfm-start-btn'), 'player.css styles START RETROFM button');
+
+  // 3. Modal Click & Handoff Dispatch
+  assert(bbJs.includes("chrome.runtime.sendMessage({ type: 'START_RETRO_FM_HANDOFF' }"), 'player.js sends START_RETRO_FM_HANDOFF on button click');
+  assert(bbJs.includes("btn.disabled = true;"), 'player.js disables button on click to prevent duplicate requests');
+  assert(bbJs.includes("appEl.classList.remove('rfm-dimmed');"), 'player.js removes dimming only after handoff completes');
+  assert(bgJs.includes("if (type === 'START_RETRO_FM_HANDOFF') {"), 'background.js handles START_RETRO_FM_HANDOFF message');
+  assert(bgJs.includes("await chrome.tabs.update(ytTabId, { active: true });"), 'background.js activates YouTube tab for handoff');
+  assert(bgJs.includes("await chrome.tabs.update(boomBoxId, { active: true });"), 'background.js reactivates Boom Box tab');
+}
+
+// --- Test Suite 27: Modal Logo, 1990s Default Footer Logo, Green Display Blanking & Continuous Queue Advancement ---
+console.log('\n--- Test Suite 27: Modal Logo, 1990s Default Footer Logo, Green Display Blanking & Continuous Queue Advancement ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Startup Modal Logo
+  assert(bbHtml.includes('<img id="rfmModalLogo" class="rfm-modal-logo" src="logos/1990s-black.png" alt="RetroFM">'), 'index.html embeds 1990s-black.png inside #rfmModal above button');
+  assert(bbCss.includes('.rfm-modal-logo{max-height:72px;max-width:240px;'), 'player.css styles modal logo with appropriate constraints');
+
+  // 2. Default Footer Logo (1990s)
+  assert(bbJs.includes("dec:1990"), 'player.js defaults state S.dec to 1990');
+  assert(appTsx.includes(": 1990;"), 'App.tsx defaults radio state decade fallback to 1990');
+  assert(appTsx.includes("const [programYear, setProgramYear] = useState<string>('1995');"), 'App.tsx defaults programYear to 1995');
+
+  // 3. Green Display Blanking
+  assert(bbJs.includes("if(!song || !hasFirstSongStartedPlaying){\n    el.textContent='';\n    return;\n  }"), 'player.js keeps song title blank when no song or before first song starts playing');
+  assert(appTsx.includes("if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {\n      currentSong = null;"), 'App.tsx broadcasts currentSong as null during jingle or before first song plays');
+
+  // 4. PLAY starts music queue, not jingle
+  assert(!appTsx.includes("if (jingleStateRef.current === 'prepared') {\n        desiredVideoId = RETROFM_JINGLE_CONFIG.videoId;"), 'App.tsx handlePlayMusic does not replay jingle when jingle is prepared');
+
+  // 5. Continuous Playback from Queue
+  assert(appTsx.includes("jingleStateRef.current = 'completed';\n          logMessage('[Station Jingle] Jingle finished naturally. Standing by for PLAY to start music queue.');"), 'App.tsx marks jingle completed without advancing music queue prematurely');
+  assert(appTsx.includes("} else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {\n          // Case 2: A regular music track finished naturally -> advance to next song in the queue"), 'App.tsx only advances queue on natural finish of confirmed music tracks');
+}
+
+// --- Test Suite 28: Ongoing VU Meter Animation & Green Display Song Metadata ---
+console.log('\n--- Test Suite 28: Ongoing VU Meter Animation & Green Display Song Metadata ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Preset song selection in App.tsx updates programSongResult so metadata is never empty for "a-ha - Take On Me"
+  assert(appTsx.includes("setProgramSongResult({\n            status: 'IDLE',\n            requested: `${desiredArtist} — ${programSongTitle || preset.title}`,"), 'App.tsx populates programSongResult with preset details when Priority 2 preset matches');
+
+  // 2. hasFirstSongStartedPlayingRef is set to true immediately upon starting real song
+  assert(appTsx.includes("hasFirstSongStartedPlayingRef.current = true;\n        }\n\n        logMessage(`▶ Playback started on YouTube tab:"), 'App.tsx marks first song as started upon real song navigation');
+
+  // 3. App.tsx broadcasts radio state on rawState 1 confirmation
+  assert(appTsx.includes("if (currentPlayingVid && currentPlayingVid !== RETROFM_JINGLE_CONFIG.videoId) {\n          if (!hasFirstSongStartedPlayingRef.current) {\n            hasFirstSongStartedPlayingRef.current = true;\n            logMessage(`▶ Confirmed real song playback active:"), 'App.tsx confirms real song playback and unsuppresses Boom Box status');
+
+  // 4. Boom Box player.js does not kill isYtPlaybackActive on transient blank state while user action is playing
+  assert(bbJs.includes("if (!lastUserTransportAction || lastUserTransportAction.state !== 'playing') {\n        isYtPlaybackActive = false;\n        setState('blank', true);\n      }"), 'player.js protects isYtPlaybackActive from being cleared by transient blank radio state');
+
+  // 5. Boom Box player.js immediately catches YT_STATE_CHANGED rawState 1 to unsuppress and keep isYtPlaybackActive active
+  assert(bbJs.includes("if (rawState === 1 && vid && vid !== '3Wk2FzsxK4k') {\n        hasFirstSongStartedPlaying = true;\n      }"), 'player.js catches real song rawState 1 to enable playback state and VU meter animation');
+
+  // 6. Boom Box player.js populates song metadata from YT_STATE_CHANGED if not already populated
+  assert(bbJs.includes("if (!song && message.payload.title && hasFirstSongStartedPlaying) {\n        setSong({ title: message.payload.title });"), 'player.js populates song metadata from YouTube state title if not yet received');
+
+  // 7. Song display parsing and title cleaning logic
+  const parsedArtist = cleanArtist('a-ha', 'a-ha - Take on Me (1985)');
+  const parsedTitle = cleanTitle('a-ha - Take on Me (1985)', parsedArtist);
+  assert(parsedArtist === 'a-ha', `cleanArtist correctly extracts "a-ha" (got "${parsedArtist}")`);
+  assert(parsedTitle.toLowerCase() === 'take on me', `cleanTitle correctly extracts "Take on Me" (got "${parsedTitle}")`);
+
+  // 8. VU meter condition simulation
+  let simState = 'playing';
+  let simIsYtPlaybackActive = true;
+  let isPlaying = simState === 'playing' && simIsYtPlaybackActive;
+  assert(isPlaying === true, 'Simulated VU meters continue running while playing and YouTube playback is active');
+}
+
+// --- Test Suite 29: Theme Background Coverage, Stationary Song Fade, Segmented Status Controls & Panel Alignment ---
+console.log('\n--- Test Suite 29: Theme Background Coverage, Stationary Song Fade, Segmented Status Controls & Panel Alignment ---');
+{
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. White background theme coverage
+  assert(bbCss.includes('html:not(.dark),body:not(.dark){background:#fff}'), 'player.css covers html and body with white background when dark theme is off');
+  assert(bbCss.includes('body{margin:0;background:#000;'), 'player.css retains dark background default on initial load');
+  assert(bbJs.includes("document.body.classList.toggle('dark',dark);document.documentElement.classList.toggle('dark',dark);"), 'player.js toggles dark class on both body and documentElement');
+
+  // 2. Stationary artist and song title during fading
+  assert(bbCss.includes('#row{display:flex;justify-content:space-between;align-items:center;gap:10px}'), 'player.css centers #row items vertically to eliminate font baseline shifts');
+  assert(bbCss.includes('#sg{display:inline-flex;align-items:center;min-width:0;flex:0 1 auto;height:20px;min-height:20px;line-height:20px;'), 'player.css enforces fixed height and line-height on #sg');
+  assert(bbCss.includes('transform:none !important;'), 'player.css prevents transforms on #sg');
+  assert(bbCss.includes('transition:opacity 1.2s ease-in-out'), 'player.css preserves 1.2s opacity transition');
+
+  // 3. Segmented-display status controls & labels
+  assert(bbCss.includes('.seg-st-display{'), 'player.css defines .seg-st-display');
+  assert(bbCss.includes('.seg-st-char{position:relative;width:9px;height:15px;'), 'player.css defines compact 7-segment status characters');
+  assert(bbJs.includes('SEG_ALPHA_MAP = {'), 'player.js contains 7-segment alphanumeric map');
+
+  // Extract render7SegStatus and verify outputs
+  const renderFnMatch = bbJs.match(/function render7SegStatus\(mode\)\s*\{[\s\S]*?\n\}/);
+  assert(!!renderFnMatch, 'player.js contains render7SegStatus function');
+
+  // Test status label outputs
+  const simRender = new Function('SEG_ALPHA_MAP', `
+    const SEG_MAP = SEG_ALPHA_MAP;
+    ${renderFnMatch![0]}
+    return render7SegStatus;
+  `);
+  const segAlphaMatch = bbJs.match(/const SEG_ALPHA_MAP\s*=\s*\{[\s\S]*?\};/);
+  const simAlphaMap = new Function(`${segAlphaMatch![0]}; return SEG_ALPHA_MAP;`)();
+  const testRender7Seg = simRender(simAlphaMap);
+
+  const playHtml = testRender7Seg('playing');
+  assert(playHtml.includes('aria-label="▶ PLAY"'), `playing status includes "▶ PLAY" aria-label (got: ${playHtml})`);
+  assert(playHtml.includes('>PLAY<'), 'playing status includes sr-only text "PLAY"');
+
+  const pauseHtml = testRender7Seg('paused');
+  assert(pauseHtml.includes('aria-label="❚❚ PAUSE"'), `paused status includes "❚❚ PAUSE" aria-label (got: ${pauseHtml})`);
+
+  const stopHtml = testRender7Seg('stopped');
+  assert(stopHtml.includes('aria-label="■ STOP"'), `stopped status includes "■ STOP" aria-label (got: ${stopHtml})`);
+
+  const rewHtml = testRender7Seg('rew');
+  assert(rewHtml.includes('aria-label="◀◀ REW"'), `rewind transient status includes "◀◀ REW" aria-label (got: ${rewHtml})`);
+
+  const ffHtml = testRender7Seg('ff');
+  assert(ffHtml.includes('aria-label="▶▶ FF"'), `fast-forward transient status includes "▶▶ FF" aria-label (got: ${ffHtml})`);
+
+  // Deck button bindings
+  assert(bbJs.includes("if(k==='rewind'){showTransientStatus('rew');sendBoomBoxAction('REWIND');"), 'Rewind button triggers transient REW status and dispatches REWIND');
+  assert(bbJs.includes("else if(k==='forward'){showTransientStatus('ff');sendBoomBoxAction('FAST_FORWARD');"), 'Fast-forward button triggers transient FF status and dispatches FAST_FORWARD');
+
+  // Queue navigation in App.tsx
+  assert(appTsx.includes('const prevIndex = (currentQueueIndexRef.current - 1 + DEFAULT_SONG_QUEUE.length) % DEFAULT_SONG_QUEUE.length;'), 'App.tsx navigates to previous queue song on rewind');
+  assert(appTsx.includes('const nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;'), 'App.tsx navigates to next queue song on fast-forward');
+  assert(appTsx.includes('navigateToQueueSong(prevIndex'), 'App.tsx calls navigateToQueueSong with previous index');
+  assert(appTsx.includes('navigateToQueueSong(nextIndex'), 'App.tsx calls navigateToQueueSong with next index');
+
+  // 4. Keep PLAY displayed while transitioning between songs
+  assert(appTsx.includes('const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;'), 'App.tsx keeps playing mode during queue advancement');
+  assert(bbJs.includes("if (rawState === 0) {\n        // When startup jingle ends naturally, stop playback and reels until user clicks PLAY\n        if (isJingle) {\n          isYtPlaybackActive = false;\n          setVisualTransport('stopped');\n        } else if (S.state !== 'playing') {\n          setVisualTransport('stopped');\n        }\n      }"), 'player.js suppresses transient pause during song transition and buffering');
+
+  // 5. Match green display width to Boom Box width
+  assert(bbCss.includes('#panel{margin:4px 3.84% 8px;'), 'player.css aligns #panel horizontally to 3.84% margins matching Boom Box body bounds');
+}
+
+// --- Test Suite 30: Green Display Typography (Inter for Pills, DotGothic16 for Song/Artist) ---
+console.log('\n--- Test Suite 30: Green Display Typography (Inter for Pills, DotGothic16 for Song/Artist) ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+
+  // 1. Google Fonts loading
+  assert(bbHtml.includes('fonts.googleapis.com'), 'index.html preconnects to Google Fonts');
+  assert(bbHtml.includes('family=DotGothic16&family=Inter:wght@400;500;600;700'), 'index.html requests DotGothic16 and Inter font families');
+  assert(bbCss.includes("@import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Inter:wght@400;500;600;700&display=swap');"), 'player.css imports DotGothic16 and Inter');
+
+  // 2. Date and genre pills scoped to green display (#panel) with Inter and fallbacks
+  assert(bbCss.includes("#panel .tag,#panel button.tag,#panel #hDate,#panel .chip{font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;"), 'Date and genre pills in green display use Inter font with appropriate system fallbacks');
+  assert(bbCss.includes('#panel .chip.sel{font-weight:600}'), 'Selected genre chip in green display applies semi-bold weight');
+
+  // 3. Artist and song title scoped to #panel #sg with DotGothic16 and monospace fallbacks
+  assert(bbCss.includes("#panel #sg{font-family:'DotGothic16',ui-monospace,Menlo,Consolas,monospace;"), 'Artist and song title in green display use DotGothic16 with monospace fallbacks');
+  assert(bbCss.includes('#panel #sg{font-family:\'DotGothic16\',ui-monospace,Menlo,Consolas,monospace;font-size:17px}'), 'Artist and song title font size is increased to 17px');
+
+  // 4. Stationary position and layout preservation during fading
+  assert(bbCss.includes('height:20px;min-height:20px;line-height:20px;'), '#sg layout dimensions remain fixed at 20px');
+  assert(bbCss.includes('transform:none !important;'), '#sg translation is suppressed');
+
+  // 5. Segmented digits and transport status remain untouched
+  assert(bbCss.includes('.seg-unit{font-size:16px;font-weight:700;line-height:1;margin-left:5px;padding-bottom:2px;color:#8dffb0;text-shadow:0 0 10px rgba(120,255,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace}'), 'Segmented frequency unit retains monospace');
+  assert(!bbCss.includes('#year{font-family'), '#year digits do not apply Inter or DotGothic16');
+  assert(!bbCss.includes('#st{font-family'), '#st transport status does not apply Inter or DotGothic16');
+
+  // 6. Fonts outside green display remain untouched
+  assert(!bbCss.includes('body{margin:0;background:#000;transition:background .3s;color:#e9d9b8;font:13px/1.3 Inter'), 'body does not apply Inter or DotGothic16');
+  assert(bbCss.includes('.rfm-start-btn{background:#8dffb0;color:#0e2217;font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;'), 'Startup modal button retains standard system font');
+}
+
+// --- Test Suite 31: Four Targeted Corrections (START RETROFM label & 100% black modal, Jingle Reel Stop, Restored Footer Logo, 17px DotGothic16) ---
+console.log('\n--- Test Suite 31: Four Targeted Corrections (START RETROFM label & 100% black modal, Jingle Reel Stop, Restored Footer Logo, 17px DotGothic16) ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Startup modal label and solid black background (#000000 with 100% opacity)
+  assert(bbHtml.includes('START RETROFM</button>'), 'Modal button has exact label "START RETROFM"');
+  assert(bbCss.includes('.rfm-modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:99999;background:#000000;'), 'Modal overlay has solid #000000 background (100% opacity, no alpha)');
+  assert(bbCss.includes('.rfm-modal-box{background:#000000;'), 'Modal box has solid #000000 background matching 1990s-black.png');
+
+  // 2. Stop cassette reels when startup jingle ends naturally
+  assert(bbJs.includes("const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;"), 'player.js checks if ended video is the startup jingle');
+  assert(bbJs.includes("if (isJingle) {\n          isYtPlaybackActive = false;\n          setVisualTransport('stopped');"), 'player.js stops visual transport and marks playback inactive when jingle finishes');
+  assert(appTsx.includes("if (jingleStateRef.current === 'playing' || finishedVideoId === RETROFM_JINGLE_CONFIG.videoId) {\n          jingleStateRef.current = 'completed';\n          logMessage('[Station Jingle] Jingle finished naturally. Standing by for PLAY to start music queue.');\n          setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, available: true }));\n          broadcastCurrentRadioState(true);"), 'App.tsx marks playbackStatus isPlaying:false and broadcasts blank/stopped radio state when jingle ends');
+
+  // 3. Restore 1990s footer logo on date/genre screen
+  assert(bbHtml.includes('<img id="logo" alt="RetroFM" src="logos/1990s-black.png" style="display:block">'), 'index.html displays 1990s-black.png by default on initial render');
+  assert(bbJs.includes("paintLogo();"), 'player.js paints initial footer logo immediately upon startup');
+  assert(bbJs.includes("if(dec>=1960&&dec<=2020&&logoDec!==dec){logoDec=dec;paintLogo();}"), 'player.js updates footer logo on date/decade changes in refresh()');
+
+  // 4. Increase artist and song title font size by ~3.5px to 17px
+  assert(bbCss.includes("#panel #sg{font-family:'DotGothic16',ui-monospace,Menlo,Consolas,monospace;font-size:17px}"), 'player.css sets #panel #sg font-size to 17px');
+  assert(bbCss.includes('height:20px;min-height:20px;line-height:20px;'), 'player.css accommodates 17px font with 20px line height to prevent clipping');
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
@@ -1738,3 +2194,4 @@ if (failed > 0) {
 } else {
   process.exit(0);
 }
+

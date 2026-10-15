@@ -1,10 +1,19 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en" class="dark"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RetroFM</title>
-<link rel="stylesheet" href="player.css"></head><body>
-<div id="app">
-<div id="logoBar" role="button" tabindex="0" aria-label="RetroFM logo: toggle light/dark"><img id="logo" alt="RetroFM" style="display:none"><div id="fb"></div><span id="copy">© 2026 RetroFM by Chris Adkins<br>All Rights Reserved</span></div>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="player.css"></head><body class="dark">
+<div id="rfmModal" class="rfm-modal-overlay">
+ <div class="rfm-modal-box">
+  <img id="rfmModalLogo" class="rfm-modal-logo" src="logos/1990s-black.png" alt="RetroFM">
+  <button id="rfmStartBtn" class="rfm-start-btn" type="button">START RETROFM</button>
+ </div>
+</div>
+<div id="app" class="rfm-dimmed">
+<div id="logoBar" role="button" tabindex="0" aria-label="RetroFM logo: toggle light/dark"><img id="logo" alt="RetroFM" src="logos/1990s-black.png" style="display:block"><div id="fb"></div><span id="copy">© 2026 RetroFM by Chris Adkins<br>All Rights Reserved</span></div>
 <div id="wrap"><div id="stage">
  <div class="reel" style="left:491px;top:334px;width:54px;height:54px;background-position:-491px -334px"></div>
  <div class="reel" style="left:593px;top:335px;width:54px;height:54px;background-position:-593px -335px"></div>
@@ -26,9 +35,9 @@
 </div></div>
 <div id="panel" class="entry">
  <div id="board"><div class="bl" id="bDate">DATE</div><div id="fDate"></div><div class="bl" id="bGen" style="margin-top:8px">GENRE ▲▼</div><div id="fGen"></div><div id="bHint"></div><input id="dIn" autocomplete="off" spellcheck="false" maxlength="20" aria-label="Date"></div>
- <div id="decades"><button class="tag" id="hDate" title="Change date"></button><span style="flex:1"></span><span id="st">■ STOPPED</span><button id="tgl" aria-label="Expand or collapse display" aria-expanded="true"><svg id="tglIcon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="#8dffb0"/></svg></button></div>
+ <div id="decades"><button class="tag" id="hDate" title="Change date"></button><span style="flex:1"></span><span id="st"></span><button id="tgl" aria-label="Expand or collapse display" aria-expanded="true"><svg id="tglIcon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="#8dffb0"/></svg></button></div>
  <div id="row"><div id="year"></div><div id="freq"><span id="sg"></span><button id="sdot" aria-label="Toggle title and artist fade" title="Fade between title and artist (click to turn off)" aria-pressed="true">♫</button></div></div>
- <div id="chips"></div>
+<div id="chips"></div>
  </div>
 </div>
 <script src="player.js"></script></body></html>

@@ -12,3 +12,5 @@ cache/
 AGENTS.md
 Dockerfile
 docker-compose.yml
+
+public/data/retrofm_library*.json

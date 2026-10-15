@@ -159,7 +159,7 @@ async function clearStoredRegisteredAppTabId() {
   } catch (e) {}
 }
 
-// Find registered RetroFM web app tab (only a tab that has registered itself)
+// Find registered RetroFM web app tab (or fallback to an open RetroFM page and register it)
 async function resolveRetroFmTab(requestedTabId) {
   if (requestedTabId) {
     try {
@@ -177,6 +177,22 @@ async function resolveRetroFmTab(requestedTabId) {
       await clearStoredRegisteredAppTabId();
     }
   }
+
+  // Fallback: locate open RetroFM app tab by URL and auto-register it
+  try {
+    const tabs = await chrome.tabs.query({});
+    const appTab = tabs.find(t =>
+      t.url &&
+      (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
+      !t.url.includes('player/index.html') &&
+      !t.url.includes('youtube.com')
+    );
+    if (appTab && appTab.id) {
+      await setStoredRegisteredAppTabId(appTab.id);
+      return appTab.id;
+    }
+  } catch (e) {}
+
   return null;
 }
 
@@ -320,67 +336,22 @@ async function triggerOneTimeSessionActivation(ytTabId, askForOneTimeClick = tru
     }
   } catch (e) {}
 
-  if (!askForOneTimeClick) {
-    recordTrace('background', 'SESSION_ACTIVATION_SKIPPED_NEEDS_USER_CLICK', { ytTabId });
-    const retroTabId = await resolveRetroFmTab();
-    if (retroTabId) {
-      try { await chrome.tabs.sendMessage(retroTabId, { type: 'NEEDS_USER_CLICK' }); } catch (e) {}
-    }
-    const bbTabId = await resolveBoomBoxTab();
-    if (bbTabId) {
-      try { await chrome.tabs.sendMessage(bbTabId, { type: 'NEEDS_USER_CLICK' }); } catch (e) {}
-    }
-    return;
-  }
-
-  let ytTab = null;
-  try {
-    ytTab = await chrome.tabs.get(ytTabId);
-  } catch (e) {
-    return;
-  }
-
-  if (ytTab.active) {
-    // Already active, overlay in content_youtube.js is visible to user
-    return;
-  }
-
-  // Find currently active tab in this window (normally the Boom Box)
-  let activeTabId = null;
-  try {
-    const activeTabs = await chrome.tabs.query({ windowId: ytTab.windowId, active: true });
-    if (activeTabs.length > 0) {
-      activeTabId = activeTabs[0].id;
-    }
-  } catch (e) {}
-
-  precedingTabBeforeActivation = activeTabId;
-  sessionActivationPromptTabId = ytTabId;
-  userSwitchedTabDuringActivation = false;
-  isActivationSwitchInProgress = true;
-
-  recordTrace('background', 'SESSION_ACTIVATION_SWITCH_TO_YT', {
-    ytTabId,
-    precedingTabId: precedingTabBeforeActivation
-  });
-
-  try {
-    await chrome.tabs.update(ytTabId, { active: true });
-  } catch (err) {
-    recordTrace('background', 'SESSION_ACTIVATION_SWITCH_ERROR', { error: err.message });
-  } finally {
-    isActivationSwitchInProgress = false;
-  }
+  // YouTube tab remains in the background; user only interacts with the Boom Box
+  recordTrace('background', 'SESSION_ACTIVATION_RETAIN_BACKGROUND', { ytTabId });
 }
 
 // Track active tab changes to respect user tab switches
 let userSwitchedTabDuringRecovery = false;
 let isRecoveryInProgress = false;
+let recoveryTargetYtTabId = null;
 
 if (chrome.tabs?.onActivated) {
   chrome.tabs.onActivated.addListener((activeInfo) => {
     if (isRecoveryInProgress) {
-      userSwitchedTabDuringRecovery = true;
+      // Only treat it as user switching tabs if they switched to a tab other than the YouTube tab being recovered
+      if (recoveryTargetYtTabId && activeInfo.tabId !== recoveryTargetYtTabId) {
+        userSwitchedTabDuringRecovery = true;
+      }
     }
     if (sessionActivationPromptTabId && !isActivationSwitchInProgress) {
       // If user changed tabs themselves before clicking, do not switch back and do not bring tab forward again
@@ -397,17 +368,15 @@ if (chrome.tabs?.onActivated) {
 async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = false) {
   if (!ytTabId) return;
 
-  // Once activation exists, later Play commands and song changes must never switch tabs
-  if (hasSessionActivation || (latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive)) {
-    hasSessionActivation = true;
+  // Step 1: Check if already playing (state 1) or wait briefly (up to 600ms)
+  if (latestYouTubeState && latestYouTubeState.state === 1) {
     return;
   }
 
-  // Step 1: Wait up to 2.5s for player to reach state 1 (playing)
   const startTime = Date.now();
   let reachedStateOne = false;
 
-  while (Date.now() - startTime < 2500) {
+  while (Date.now() - startTime < 600) {
     if (latestYouTubeState && latestYouTubeState.state === 1) {
       reachedStateOne = true;
       break;
@@ -420,101 +389,13 @@ async function checkAndRecoverHiddenTabPlayback(ytTabId, revealSetting = false) 
         break;
       }
     } catch (e) {}
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 100));
   }
 
   if (reachedStateOne) return;
 
-  // Player has not reached playing state within 2.5s
-  if (!revealSetting) {
-    recordTrace('background', 'NEEDS_USER_CLICK_DISPATCHED', { ytTabId });
-    const retroTabId = await resolveRetroFmTab();
-    if (retroTabId) {
-      try {
-        await chrome.tabs.sendMessage(retroTabId, { type: 'NEEDS_USER_CLICK' });
-      } catch (e) {}
-    }
-    const bbTabId = await resolveBoomBoxTab();
-    if (bbTabId) {
-      try {
-        await chrome.tabs.sendMessage(bbTabId, { type: 'NEEDS_USER_CLICK' });
-      } catch (e) {}
-    }
-    return;
-  }
-
-  // Step 2: revealSetting is true, recover by temporarily activating the YouTube tab
-  let ytTab = null;
-  try {
-    ytTab = await chrome.tabs.get(ytTabId);
-  } catch (e) {
-    return;
-  }
-
-  // If the YouTube tab is already the active tab in its window, activation won't help
-  if (ytTab.active) return;
-
-  recordTrace('background', 'HIDDEN_TAB_RECOVERY_TRIGGERED', { ytTabId, active: ytTab.active });
-
-  // Find currently active tab in the YouTube tab's window so we can switch back
-  let originalActiveTabId = null;
-  try {
-    const activeTabs = await chrome.tabs.query({ windowId: ytTab.windowId, active: true });
-    if (activeTabs.length > 0) {
-      originalActiveTabId = activeTabs[0].id;
-    }
-  } catch (e) {}
-
-  isRecoveryInProgress = true;
-  userSwitchedTabDuringRecovery = false;
-
-  try {
-    // Briefly make the YouTube tab active
-    await chrome.tabs.update(ytTabId, { active: true });
-    recordTrace('background', 'HIDDEN_TAB_ACTIVATED', { ytTabId, originalActiveTabId });
-
-    // Wait up to 4s for state 1
-    const actStartTime = Date.now();
-    while (Date.now() - actStartTime < 4000) {
-      if (latestYouTubeState && latestYouTubeState.state === 1) {
-        break;
-      }
-      try {
-        const stat = await chrome.tabs.sendMessage(ytTabId, { action: 'GET_STATUS' });
-        if (stat && (stat.isPlaying || stat.playerState === 1)) {
-          break;
-        }
-      } catch (e) {}
-      await new Promise(r => setTimeout(r, 250));
-    }
-
-    // Re-activate the tab that was active before, UNLESS the user has switched tabs themselves
-    if (!userSwitchedTabDuringRecovery && originalActiveTabId && originalActiveTabId !== ytTabId) {
-      try {
-        await chrome.tabs.update(originalActiveTabId, { active: true });
-        recordTrace('background', 'HIDDEN_TAB_RESTORED_ORIGINAL', { originalActiveTabId });
-      } catch (e) {}
-    } else {
-      recordTrace('background', 'HIDDEN_TAB_SKIPPED_RESTORE', {
-        userSwitchedTabDuringRecovery,
-        originalActiveTabId
-      });
-    }
-
-    // Notify registered RetroFM app tab so it can log to Experimental Event Log
-    const retroTabId = await resolveRetroFmTab();
-    if (retroTabId) {
-      try {
-        await chrome.tabs.sendMessage(retroTabId, {
-          type: 'YOUTUBE_REVEALED_TO_START'
-        });
-      } catch (e) {}
-    }
-  } catch (err) {
-    recordTrace('background', 'HIDDEN_TAB_RECOVERY_ERROR', { error: err.message });
-  } finally {
-    isRecoveryInProgress = false;
-  }
+  // Player has not reached playing state within initial wait: trace status and return without stealing focus or displaying click warnings
+  recordTrace('background', 'HIDDEN_TAB_PLAYBACK_AWAITING_STATE', { ytTabId, reachedStateOne: false });
 }
 
 // Central dispatcher for handling requests from webpage or content script
@@ -719,6 +600,46 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: START_RETRO_FM_HANDOFF - brief focus handoff to YouTube and immediate return to Boom Box
+      if (type === 'START_RETRO_FM_HANDOFF') {
+        recordTrace('background', 'START_RETRO_FM_HANDOFF_INITIATED', {
+          senderTabId: sender?.tab?.id,
+          activeBoomBoxTabId,
+          activeConnectedTabId
+        });
+
+        (async () => {
+          let boomBoxId = sender?.tab?.id || activeBoomBoxTabId || await resolveBoomBoxTab();
+          let ytTabId = activeConnectedTabId || await resolveYouTubeTab();
+
+          if (ytTabId) {
+            try {
+              // 1. Briefly activate YouTube tab
+              await chrome.tabs.update(ytTabId, { active: true });
+              recordTrace('background', 'START_RETRO_FM_HANDOFF_YT_ACTIVATED', { ytTabId });
+
+              // 2. Wait minimum duration for activation registration
+              await new Promise(r => setTimeout(r, 80));
+
+              // 3. Reactivate Boom Box tab immediately
+              if (boomBoxId) {
+                await chrome.tabs.update(boomBoxId, { active: true });
+                recordTrace('background', 'START_RETRO_FM_HANDOFF_BOOMBOX_RETURNED', { boomBoxId });
+              }
+            } catch (err) {
+              recordTrace('background', 'START_RETRO_FM_HANDOFF_ERROR', { error: err.message });
+              if (boomBoxId) {
+                try {
+                  await chrome.tabs.update(boomBoxId, { active: true });
+                } catch (e) {}
+              }
+            }
+          }
+          sendResponse({ success: true, boomBoxActive: true });
+        })();
+        return true;
+      }
+
       // Feature: AUDIO_DIAGNOSTICS_SNAPSHOT - receives snapshot from content_youtube.js / yt_main_world.js
       if (type === 'AUDIO_DIAGNOSTICS_SNAPSHOT') {
         const snap = payload?.snapshot || payload;
@@ -896,14 +817,48 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (sender && sender.tab) {
             retroFmTab = sender.tab;
           } else {
-            // Find active tab in current window or first matching Retro FM tab
+            const registeredId = await resolveRetroFmTab();
+            if (registeredId) {
+              try {
+                retroFmTab = await chrome.tabs.get(registeredId);
+              } catch (e) {}
+            }
+          }
+
+          if (!retroFmTab) {
+            // Find tab matching sender URL or localhost:3003
+            try {
+              const allTabs = await chrome.tabs.query({});
+              retroFmTab = allTabs.find(t =>
+                t.url &&
+                (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003')) &&
+                !t.url.includes('player/index.html')
+              ) || null;
+            } catch (e) {}
+          }
+
+          if (!retroFmTab) {
+            // Find active tab in current window or first matching tab
             const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-            retroFmTab = activeTab;
+            if (activeTab && !activeTab.url?.includes('player/index.html') && !activeTab.url?.includes('youtube.com')) {
+              retroFmTab = activeTab;
+            }
           }
 
           if (!retroFmTab) {
             const allTabs = await chrome.tabs.query({ currentWindow: true });
-            retroFmTab = allTabs[0];
+            retroFmTab = allTabs.find(t => !t.url?.includes('player/index.html') && !t.url?.includes('youtube.com')) || allTabs[0];
+          }
+
+          // If the resolved tab is blank or new tab, ensure it is directed to RetroFM test page
+          if (retroFmTab && retroFmTab.id && (!retroFmTab.url || retroFmTab.url === 'about:blank' || retroFmTab.url.startsWith('chrome://'))) {
+            try {
+              await chrome.tabs.update(retroFmTab.id, { url: 'http://localhost:3003/' });
+            } catch (e) {}
+          }
+
+          if (retroFmTab && retroFmTab.id) {
+            await setStoredRegisteredAppTabId(retroFmTab.id);
           }
 
           const windowId = retroFmTab ? retroFmTab.windowId : undefined;
@@ -1116,7 +1071,13 @@ function handleIncomingRequest(request, sender, sendResponse) {
         }
 
         if (payload?.command?.action === 'PLAY') {
-          checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
+          const t_bg_play_recv = Date.now();
+          recordTrace('background', 'BG_PLAY_RECEIVED', {
+            tabId,
+            t_bg_play_recv,
+            t_boombox_play_click: payload?.command?.t_boombox_play_click || null
+          });
+          checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart === true).catch(() => {});
         }
         return;
       }
@@ -1137,12 +1098,14 @@ function handleIncomingRequest(request, sender, sendResponse) {
           return;
         }
 
+        const isPrepareOnly = !!payload?.prepareOnly;
         activeConnectedTabId = tabId;
-        recordTrace('background', 'NAVIGATE_YOUTUBE_START', {
+        recordTrace('background', isPrepareOnly ? 'PREPARE_YOUTUBE_START' : 'NAVIGATE_YOUTUBE_START', {
           tabId,
           videoId: videoId || null,
           targetUrl,
-          reason: payload?.reason || 'program_song'
+          prepareOnly: isPrepareOnly,
+          reason: payload?.reason || (isPrepareOnly ? 'prepare_song' : 'program_song')
         });
 
         try {
@@ -1179,10 +1142,41 @@ function handleIncomingRequest(request, sender, sendResponse) {
             }
           }
 
+          // If prepareOnly, do not trigger play or recovery!
+          if (isPrepareOnly) {
+            const t_video_prepared = Date.now();
+            recordTrace('background', 'PREPARE_YOUTUBE_READY', {
+              tabId,
+              videoId: videoId || null,
+              targetUrl,
+              t_video_prepared
+            });
+            let preparedStatus = null;
+            try {
+              preparedStatus = await chrome.tabs.sendMessage(tabId, { action: 'GET_STATUS' });
+            } catch (e) {
+              preparedStatus = { available: true, videoId: videoId || null, url: targetUrl };
+            }
+            sendResponse({
+              success: true,
+              data: {
+                tabId,
+                url: targetUrl,
+                videoId: videoId || null,
+                prepared: true,
+                t_video_prepared,
+                status: preparedStatus
+              }
+            });
+            return;
+          }
+
           // 3. Start playback using the same message pattern as PLAY command
           let playResult = null;
           for (let attempt = 0; attempt < 5; attempt++) {
-            await new Promise((r) => setTimeout(r, 400));
+            if (attempt > 0) {
+              await new Promise((r) => setTimeout(r, 150));
+            }
             try {
               playResult = await chrome.tabs.sendMessage(tabId, { action: 'PLAY' });
               if (playResult && playResult.success) {
@@ -1194,7 +1188,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
           }
 
           if (playResult && playResult.success) {
-            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
+            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart === true).catch(() => {});
             sendResponse({
               success: true,
               data: {
@@ -1204,7 +1198,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
               }
             });
           } else {
-            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart !== false).catch(() => {});
+            checkAndRecoverHiddenTabPlayback(tabId, payload?.revealYouTubeToStart === true).catch(() => {});
             // Retrieve current status if playback command completed or autoplay triggered
             try {
               const currentStatus = await chrome.tabs.sendMessage(tabId, { action: 'GET_STATUS' });

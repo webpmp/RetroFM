@@ -273,6 +273,14 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
   }
 
+  public async notifySessionActivated(): Promise<void> {
+    try {
+      await this.sendExtensionMessage('YT_TAB_ACTIVATED', {}, 2000);
+    } catch (e) {
+      // ignore
+    }
+  }
+
   public registerAppHello(): void {
     if (typeof window !== 'undefined') {
       window.postMessage({ type: 'RETROFM_APP_HELLO' }, '*');
@@ -357,6 +365,10 @@ export class YouTubeMusicProvider implements MusicProvider {
     this.connectedTabId = null;
   }
 
+  public getConnectedTabId(): number | null {
+    return this.connectedTabId;
+  }
+
   public async getStatus(): Promise<MusicPlaybackStatus> {
     if (!this.connectedTabId) {
       return {
@@ -422,13 +434,16 @@ export class YouTubeMusicProvider implements MusicProvider {
     return res.success;
   }
 
-  public async playDetailed(revealYouTubeToStart: boolean = true): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+  public async playDetailed(revealYouTubeToStart: boolean = true, t_boombox_play_click?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
       const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
         tabId,
-        command: { action: 'PLAY' },
+        command: {
+          action: 'PLAY',
+          t_boombox_play_click: t_boombox_play_click || null
+        },
         revealYouTubeToStart,
       });
       const isPlaying = !!(res?.success && (res?.status?.isPlaying || res?.state === 'playing' || res?.state === 'already_playing' || res?.state === 'buffering_active'));
@@ -518,17 +533,53 @@ export class YouTubeMusicProvider implements MusicProvider {
     return !!res?.success;
   }
 
-  public async navigate(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<boolean> {
+  public async prepare(url: string, videoId?: string, targetVolume?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
-    if (!tabId) return false;
-    const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
-      tabId,
-      url,
-      videoId,
-      targetVolume,
-      revealYouTubeToStart,
-    });
-    return !!res?.success;
+    if (!tabId) return { success: false, error: 'No YouTube tab connected' };
+    try {
+      this.recordTrace('PREPARE_YOUTUBE_DISPATCH', { tabId, url, videoId, targetVolume });
+      const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
+        tabId,
+        url,
+        videoId,
+        targetVolume,
+        prepareOnly: true,
+        revealYouTubeToStart: false,
+      });
+      return {
+        success: !!res?.success,
+        status: res?.data?.status || res?.status,
+        error: res?.error
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  public async navigate(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<boolean> {
+    const res = await this.navigateDetailed(url, videoId, targetVolume, revealYouTubeToStart);
+    return res.success;
+  }
+
+  public async navigateDetailed(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+    const tabId = await this.ensureConnected();
+    if (!tabId) return { success: false, error: 'No YouTube tab connected' };
+    try {
+      const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
+        tabId,
+        url,
+        videoId,
+        targetVolume,
+        revealYouTubeToStart,
+      });
+      return {
+        success: !!res?.success,
+        status: res?.data?.status || res?.status,
+        error: res?.error
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public async programSong(request: SongProgramRequest): Promise<SongProgramResult> {
