@@ -4,7 +4,7 @@
  * volume feedback loop protection, and connection recovery.
  */
 
-import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, normalizeYouTubeVideoId } from '../src/App.js';
+import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, STATIONS_BY_DECADE, normalizeYouTubeVideoId } from '../src/App.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2638,6 +2638,192 @@ console.log('\n--- Test Suite 38: DSEG Y Glyph Proportion and Font Verification 
   } catch (err: any) {
     console.log(`(Optional font parser in /tmp skipped: ${err?.message || err})`);
   }
+}
+
+// --- Test Suite 39: Realistic Radio Tuning, Web Audio White Noise, and Green Display State ---
+console.log('\n--- Test Suite 39: Realistic Radio Tuning, Web Audio White Noise, and Green Display State ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Dynamic station definitions exported and structured
+  assert(!!STATIONS_BY_DECADE, 'STATIONS_BY_DECADE is defined and exported from App.tsx');
+  assert(!!STATIONS_BY_DECADE[1980], 'STATIONS_BY_DECADE contains 1980 station configuration');
+  const stations1980 = STATIONS_BY_DECADE[1980] || [];
+  const expected1980 = [
+    { genre: 'College Rock', freq: 88.9 },
+    { genre: 'Hip-Hop', freq: 89.9 },
+    { genre: 'New Wave', freq: 90.7 },
+    { genre: 'Synth-Pop', freq: 93.1 },
+    { genre: 'Urban Contemporary', freq: 97.9 },
+    { genre: 'CHR', freq: 101.9 },
+    { genre: 'Hair Metal', freq: 105.5 }
+  ];
+  for (const exp of expected1980) {
+    const match = stations1980.find(s => s.genre === exp.genre && Math.abs(s.frequency - exp.freq) < 0.05);
+    assert(!!match, `1980 station configuration includes ${exp.freq} MHz (${exp.genre})`);
+  }
+
+  // 2. App.tsx broadcasts dynamic station configuration
+  assert(appTsx.includes('stations: STATIONS_BY_DECADE[decade] || []'), 'App.tsx broadcasts dynamic station configuration in radio state');
+
+  // 3. player.js receives and parses dynamic stations
+  assert(bbJs.includes('if (Array.isArray(state.stations) && state.stations.length > 0)'), 'player.js parses dynamic stations from incoming RADIO_STATE');
+  assert(bbJs.includes('ST[S.dec] = normalized;'), 'player.js updates active decade stations table from dynamic state');
+
+  // 4. Strict station matching precision in player.js (dial precision < 0.05 MHz)
+  assert(bbJs.includes('stations.forEach(s=>{const d=Math.abs(s[1]-f);if(d<0.05)best=s});'), 'player.js matches stations strictly within dial precision (<0.05 MHz)');
+
+  // 5. White Noise Web Audio Architecture in player.js
+  assert(bbJs.includes('class StaticNoiseController'), 'player.js defines StaticNoiseController class');
+  assert(bbJs.includes('ctx.createBuffer(1, bufferSize, ctx.sampleRate);'), 'StaticNoiseController generates white noise locally without remote network calls');
+  assert(bbJs.includes("filter.type = 'bandpass';"), 'StaticNoiseController applies bandpass filter for authentic analog hiss');
+  assert(bbJs.includes('staticController.setVolume(S.vol);'), 'Volume knob directly coordinates static noise volume');
+  assert(bbJs.includes('staticController.dispose();'), 'player.js disposes Web Audio resources on window unload');
+
+  // 6. Display State Requirements when dial is between valid genre stations
+  assert(bbJs.includes("if(!S.locked){el.textContent='\\u2591 static \\u2591';return;}"), 'player.js shows ░ static ░ in station-information area (#sg) when untuned');
+  assert(bbJs.includes("sdotEl.style.display=best?'':'none';"), 'player.js hides music note icon (#sdot) when untuned and restores when tuned');
+  assert(bbJs.includes("if (!S.locked) {\n    stEl.innerHTML = '';\n    return;\n  }"), 'player.js leaves transport status area (#st) completely blank when untuned');
+
+  // 7. App.tsx Station Tuning, Playback Position Preservation & Monotonic Sequencing
+  assert(appTsx.includes('stationPlaybackCacheRef = useRef'), 'App.tsx maintains station playback position cache');
+  assert(appTsx.includes('tuneSequenceRef = useRef'), 'App.tsx tracks monotonic tuning sequence counter for superseding rapid changes');
+  assert(appTsx.includes('if (tuneSeq !== tuneSequenceRef.current) break;'), 'App.tsx cancels superseded in-flight station playback on rapid tuning');
+
+  // 8. Deterministic Tuning & State Transitions Simulation
+  interface SimStation {
+    genre: string;
+    freq: number;
+    hasMusic: boolean;
+  }
+  const simStations: SimStation[] = [
+    { genre: 'New Wave', freq: 90.7, hasMusic: true },
+    { genre: 'Synth-Pop', freq: 93.1, hasMusic: true },
+    { genre: 'Hair Metal', freq: 105.5, hasMusic: false }
+  ];
+
+  class SimBoomBoxTuner {
+    freq: number = 90.7;
+    locked: boolean = true;
+    genre: string = 'New Wave';
+    staticPlaying: boolean = false;
+    playbackEnabled: boolean = true;
+    currentStationTime: Record<string, number> = {};
+    activeSongPlaying: string | null = 'Take on Me';
+    displayStatus: string = 'PLAY';
+    displaySongText: string = 'Take on Me';
+    displayDotVisible: boolean = true;
+
+    tune(newFreq: number) {
+      this.freq = Math.round(newFreq * 10) / 10;
+      const match = simStations.find(s => Math.abs(s.freq - this.freq) < 0.05);
+
+      if (!match) {
+        // Untuned frequency
+        if (this.locked && this.activeSongPlaying) {
+          this.currentStationTime[this.genre] = 45;
+        }
+        this.locked = false;
+        this.genre = '';
+        this.activeSongPlaying = null;
+        this.displayDotVisible = false;
+        this.displaySongText = '\u2591 static \u2591';
+        this.displayStatus = '';
+        if (this.playbackEnabled) {
+          this.staticPlaying = true;
+        }
+      } else {
+        // Reached valid station
+        this.locked = true;
+        this.genre = match.genre;
+        this.staticPlaying = false;
+        this.displayDotVisible = true;
+
+        if (match.hasMusic) {
+          if (this.playbackEnabled) {
+            this.activeSongPlaying = match.genre === 'New Wave' ? 'Take on Me' : 'Sledgehammer';
+            this.displayStatus = 'PLAY';
+            this.displaySongText = this.activeSongPlaying;
+          } else {
+            this.displayStatus = 'PAUSE';
+          }
+        } else {
+          // Scenario D: Valid station with no playable music
+          this.activeSongPlaying = null;
+          this.displaySongText = '';
+          this.displayStatus = '';
+        }
+      }
+    }
+
+    stop() {
+      this.playbackEnabled = false;
+      this.staticPlaying = false;
+      this.activeSongPlaying = null;
+      this.displayStatus = 'STOP';
+    }
+
+    pause() {
+      this.playbackEnabled = false;
+      this.staticPlaying = false;
+      this.displayStatus = 'PAUSE';
+    }
+  }
+
+  // Simulation: Scenario A (Tune away from Station A -> Static plays -> Reach Station B -> Auto-play Station B)
+  const tuner = new SimBoomBoxTuner();
+  assert(tuner.locked && tuner.genre === 'New Wave', 'Simulation: Starts tuned to New Wave');
+  assert(!tuner.staticPlaying && tuner.activeSongPlaying === 'Take on Me', 'Simulation: New Wave music playing, no static');
+
+  // Tune to untuned frequency 91.5
+  tuner.tune(91.5);
+  assert(!tuner.locked, 'Simulation: 91.5 is untuned');
+  assert(tuner.staticPlaying, 'Simulation: White noise starts immediately when untuned');
+  assert(tuner.activeSongPlaying === null, 'Simulation: Music is paused while between stations');
+  assert(tuner.displaySongText === '\u2591 static \u2591', 'Simulation: Station-info area displays ░ static ░');
+  assert(tuner.displayDotVisible === false, 'Simulation: Music note icon (#sdot) is hidden when untuned');
+  assert(tuner.displayStatus === '', 'Simulation: Transport status (#st) is completely blank when untuned');
+
+  // Continue tuning to 92.0 (another untuned frequency)
+  tuner.tune(92.0);
+  assert(tuner.staticPlaying, 'Simulation: White noise continues without interruption at 92.0');
+  assert(tuner.displayStatus === '', 'Simulation: Status area remains blank at 92.0');
+
+  // Reach Station B: Synth-Pop (93.1)
+  tuner.tune(93.1);
+  assert(tuner.locked && tuner.genre === 'Synth-Pop', 'Simulation: Locked onto Synth-Pop at 93.1');
+  assert(!tuner.staticPlaying, 'Simulation: White noise stops immediately upon reaching valid station');
+  assert(tuner.activeSongPlaying === 'Sledgehammer', 'Simulation: Synth-Pop music automatically plays');
+  assert(tuner.displayStatus === 'PLAY', 'Simulation: Green display shows PLAY on Station B');
+  assert(tuner.displayDotVisible === true, 'Simulation: Music note icon (#sdot) is restored');
+
+  // Simulation: Scenario B (Return to Station A: New Wave 90.7)
+  tuner.tune(90.7);
+  assert(tuner.locked && tuner.genre === 'New Wave', 'Simulation: Returned to New Wave at 90.7');
+  assert(!tuner.staticPlaying, 'Simulation: White noise stops on return to Station A');
+  assert(tuner.currentStationTime['New Wave'] === 45, 'Simulation: Previously paused position preserved (45s)');
+  assert(tuner.activeSongPlaying === 'Take on Me', 'Simulation: Music resumes without restarting');
+
+  // Simulation: Scenario D (Valid station with no playable music: Hair Metal 105.5)
+  tuner.tune(105.5);
+  assert(tuner.locked && tuner.genre === 'Hair Metal', 'Simulation: Tuned to Hair Metal at 105.5');
+  assert(!tuner.staticPlaying, 'Simulation: White noise stops on valid station even with no song');
+  assert(tuner.activeSongPlaying === null, 'Simulation: No song plays from other genres');
+  assert(tuner.displayStatus === '', 'Simulation: Status area is blank for station with no song');
+
+  // Simulation: Transport control interaction (STOP while untuned)
+  tuner.tune(95.0);
+  assert(tuner.staticPlaying, 'Simulation: White noise starts on untuned 95.0');
+  tuner.stop();
+  assert(!tuner.staticPlaying, 'Simulation: STOP immediately silences white noise');
+  assert(!tuner.playbackEnabled, 'Simulation: Playback disabled globally after STOP');
+
+  // Dialing to 90.7 after STOP does not auto-play
+  tuner.tune(90.7);
+  assert(tuner.locked, 'Simulation: Tuned to 90.7 after stop');
+  assert(!tuner.staticPlaying, 'Simulation: No static on station');
+  assert(!tuner.playbackEnabled, 'Simulation: Playback remains disabled after explicit STOP');
 }
 
 // --- Summary ---

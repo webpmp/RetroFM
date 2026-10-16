@@ -25,6 +25,119 @@ let hasFirstSongStartedPlaying = false;
 let isStartupReady = false;
 let transientStatus = null;
 let transientTimer = null;
+let playbackEnabled = false;
+
+// Local Web Audio static noise generator
+class StaticNoiseController {
+  constructor() {
+    this.ctx = null;
+    this.source = null;
+    this.filter = null;
+    this.gain = null;
+    this.isPlaying = false;
+    this.noiseBuffer = null;
+  }
+
+  ensureContext() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      this.ctx = new AudioCtx();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return this.ctx;
+  }
+
+  getBuffer(ctx) {
+    if (!this.noiseBuffer || this.noiseBuffer.sampleRate !== ctx.sampleRate) {
+      const bufferSize = ctx.sampleRate * 2;
+      this.noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+    }
+    return this.noiseBuffer;
+  }
+
+  start(volume) {
+    if (this.isPlaying) {
+      this.setVolume(volume);
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    try {
+      const buffer = this.getBuffer(ctx);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+
+      // Analog radio bandpass filter centered around ~1400Hz
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, ctx.currentTime);
+      filter.Q.setValueAtTime(0.7, ctx.currentTime);
+
+      const gain = ctx.createGain();
+      const targetGain = Math.max(0, (typeof volume === 'number' ? volume : S.vol) * 0.22);
+      gain.gain.setValueAtTime(targetGain, ctx.currentTime);
+
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      source.start();
+
+      this.source = source;
+      this.filter = filter;
+      this.gain = gain;
+      this.isPlaying = true;
+    } catch (e) {
+      console.warn('[StaticNoiseController] Start error:', e);
+    }
+  }
+
+  stop() {
+    if (!this.isPlaying) return;
+    this.isPlaying = false;
+    if (this.gain && this.ctx) {
+      try {
+        this.gain.gain.setValueAtTime(this.gain.gain.value, this.ctx.currentTime);
+        this.gain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.02);
+      } catch (e) {}
+    }
+    const src = this.source;
+    this.source = null;
+    this.filter = null;
+    this.gain = null;
+    setTimeout(() => {
+      try {
+        if (src) src.stop();
+      } catch (e) {}
+    }, 25);
+  }
+
+  setVolume(volume) {
+    if (!this.isPlaying || !this.gain || !this.ctx) return;
+    try {
+      const targetGain = Math.max(0, volume * 0.22);
+      this.gain.gain.setValueAtTime(targetGain, this.ctx.currentTime);
+    } catch (e) {}
+  }
+
+  dispose() {
+    this.stop();
+    if (this.ctx) {
+      try { this.ctx.close(); } catch (e) {}
+      this.ctx = null;
+    }
+  }
+}
+const staticController = new StaticNoiseController();
 
 const SEG_ALPHA_MAP = {
   'A': ['a','b','c','e','f','g'],
@@ -96,6 +209,10 @@ function render7SegStatus(mode) {
 function updateStatusDisplay() {
   const stEl = $('st');
   if (!stEl) return;
+  if (!S.locked) {
+    stEl.innerHTML = '';
+    return;
+  }
   if (!appConnected) {
     stEl.innerHTML = render7SegStatus('disconnected');
     return;
@@ -192,6 +309,11 @@ const act=(el,f)=>{el.onclick=f;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '
 act($('bPlay'),()=>{
   clearTransientStatus();
   // Resume local Web Audio Context on user play interaction
+  playbackEnabled = true;
+  staticController.ensureContext();
+  if (!S.locked) {
+    staticController.start(S.vol);
+  }
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (AudioCtx) {
@@ -209,6 +331,8 @@ act($('bPlay'),()=>{
 act($('bPause'),()=>{
   clearTransientStatus();
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
+  playbackEnabled = false;
+  staticController.stop();
   const next = S.state === 'playing' ? 'paused' : 'playing';
   lastUserTransportAction = { state: next, time: Date.now() };
   setState(next, true);
@@ -216,6 +340,8 @@ act($('bPause'),()=>{
   sendBoomBoxAction(next === 'paused' ? 'PAUSE' : 'PLAY');
 });
 act($('bStop'),()=>{
+  playbackEnabled = false;
+  staticController.stop();
   showTransientStatus('stopped');
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
   lastUserTransportAction = { state: 'stopped', time: Date.now() };
@@ -229,14 +355,14 @@ function knob(el,key,base,min,max,onSet,step){
  const rot=()=>el.style.transform='rotate('+(min+S[key]*(max-min)-base)+'deg)';
  const set=v=>{S[key]=clamp(v);onSet&&onSet();rot();};
  let lx,ly,drag=false;
- el.onpointerdown=e=>{drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing'};
+ el.onpointerdown=e=>{drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';staticController.ensureContext();};
  el.onpointermove=e=>{if(!drag)return;set(S[key]+((e.clientX-lx)-(e.clientY-ly))/220);lx=e.clientX;ly=e.clientY};
  el.onpointerup=el.onpointercancel=()=>{drag=false;el.style.cursor='grab'};
- el.onwheel=e=>{e.preventDefault();set(S[key]-Math.sign(e.deltaY)*step)};
- el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();set(S[key]+d*step)}};
+ el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step)};
+ el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step)}};
  rot();return set;
 }
-knob($('kVol'),'vol',-163,-140,140,()=>{emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
+knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
 knob($('kBal'),'bal',10,-135,135,()=>{const bVal=Number((S.bal*2-1).toFixed(2));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
 knob($('kTun'),'tun',40,-135,135,tune,.2/20.5);
 $('kBal').ondblclick=()=>{S.bal=.5;$('kBal').style.transform='rotate(-10deg)';emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
@@ -315,20 +441,42 @@ function tune(){
  const f=Math.round((MIN+S.tun*SPAN)*10)/10;S.tun=(f-MIN)/SPAN;
  $('kTun').style.transform='rotate('+(-135+S.tun*270-40)+'deg)';
  const x=fx(MIN+S.tun*SPAN);$('tn').setAttribute('x1',x);$('tn').setAttribute('x2',x);
- let best=null;ST[S.dec].forEach(s=>{const d=Math.abs(s[1]-f);if(d<=.3&&(!best||d<Math.abs(best[1]-f)))best=s});
+ let best=null;
+ const stations=ST[S.dec]||[];
+ stations.forEach(s=>{const d=Math.abs(s[1]-f);if(d<0.05)best=s});
  $('year').innerHTML=render7SegFreq(f.toFixed(1));
  S.locked=!!best;
+ const sdotEl=$('sdot');if(sdotEl)sdotEl.style.display=best?'':'none';
  const giEl=$('gi');if(giEl)giEl.textContent=best?'':'Between stations';
  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('sel',!!best&&c.dataset.g===best[0]));
  const key=S.dec+'|'+(best?best[0]:'');
- if(best){const hg=$('hGen');if(hg)hg.textContent=best[0].toUpperCase();if(gl===ST[S.dec])gi=gl.indexOf(best)}
- if(key!==lastKey){lastKey=key;if(!best){song=null;renderSong();}marks();if(pan.classList.contains('live')){emit('tune',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});sendBoomBoxAction('TUNE',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});}}
+ if(best){const hg=$('hGen');if(hg)hg.textContent=best[0].toUpperCase();if(gl===stations)gi=gl.indexOf(best)}
+ if(!best){
+   if(playbackEnabled) staticController.start(S.vol);
+   song=null;
+   renderSong();
+   updateStatusDisplay();
+ }else{
+   staticController.stop();
+   updateStatusDisplay();
+ }
+ if(key!==lastKey){
+   lastKey=key;
+   marks();
+   if(pan.classList.contains('live')){
+     emit('tune',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});
+     sendBoomBoxAction('TUNE',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best,autoPlay:playbackEnabled});
+   }
+ }
+}
+function paintChips(d){
+ const chipsEl=$('chips');if(!chipsEl)return;chipsEl.innerHTML='';
+ [...(ST[d]||[])].sort((a,b)=>a[1]-b[1]).forEach(s=>{const b=document.createElement('button');b.className='chip';b.dataset.g=s[0];b.textContent=s[0];b.title=s[1].toFixed(1)+' FM';
+  b.onclick=()=>{staticController.ensureContext();S.tun=(s[1]-MIN)/SPAN;tune()};chipsEl.appendChild(b)});
 }
 function setDec(d){S.dec=d;lastKey='';
  document.querySelectorAll('.dec').forEach(b=>b.classList.toggle('sel',+b.textContent===d));
- logoDec=d;paintLogo();$('chips').innerHTML='';
- [...ST[d]].sort((a,b)=>a[1]-b[1]).forEach(s=>{const b=document.createElement('button');b.className='chip';b.dataset.g=s[0];b.textContent=s[0];b.title=s[1].toFixed(1)+' FM';
-  b.onclick=()=>{S.tun=(s[1]-MIN)/SPAN;tune()};$('chips').appendChild(b)});
+ logoDec=d;paintLogo();paintChips(d);
  tune();}
 // FM scale drawn to match the dial: x position for a frequency (88 to 108 MHz)
 const fx=f=>330+(f-87.5)*27.3;
@@ -454,6 +602,7 @@ function setSong(d){
   renderSong();
 }
 window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});
+window.addEventListener('beforeunload',()=>{staticController.dispose();});
 $('sdot').onclick=()=>{fadeOn=!fadeOn;$('sdot').setAttribute('aria-pressed',fadeOn);$('sdot').title=fadeOn?'Fade between title and artist (click to turn off)':'Show song info';renderSong()};
 
 // entry board: type a date, pick a genre, press Enter to tune in
@@ -574,6 +723,7 @@ $('copy').onclick=e=>e.stopPropagation();
 function setVisualVolume(fraction) {
   if (typeof fraction !== 'number' || isNaN(fraction)) return;
   S.vol = clamp(fraction);
+  staticController.setVolume(S.vol);
   $('kVol').style.transform = 'rotate(' + (-140 + S.vol * 280 - (-163)) + 'deg)';
 }
 
@@ -670,6 +820,17 @@ function applyRadioState(state) {
     hasFirstSongStartedPlaying = state.hasFirstSongStartedPlaying;
   }
 
+  // Dynamic station definitions
+  if (Array.isArray(state.stations) && state.stations.length > 0) {
+    const normalized = state.stations.map(s => {
+      if (Array.isArray(s)) return s;
+      return [s.genre || s.name, typeof s.frequency === 'number' ? s.frequency : s.freq];
+    });
+    ST[S.dec] = normalized;
+    paintChips(S.dec);
+    marks();
+  }
+
   // 1. Playback status
   if (state.playbackStatus) {
     if (state.playbackStatus === 'blank') {
@@ -679,6 +840,12 @@ function applyRadioState(state) {
       }
     } else {
       isYtPlaybackActive = state.playbackStatus === 'playing';
+      if (state.playbackStatus === 'playing') {
+        playbackEnabled = true;
+      } else if (state.playbackStatus === 'stopped') {
+        playbackEnabled = false;
+        staticController.stop();
+      }
       setVisualTransport(state.playbackStatus);
     }
   }
@@ -732,6 +899,9 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
       if (rawState === 1 && vid && vid !== '3Wk2FzsxK4k') {
         hasFirstSongStartedPlaying = true;
       }
+      if (rawState === 1) {
+        playbackEnabled = true;
+      }
       isYtPlaybackActive = isPlaying;
       if (rawState === 1) {
         setVisualTransport('playing');
@@ -745,6 +915,9 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
         } else if (S.state !== 'playing') {
           setVisualTransport('stopped');
         }
+      }
+      if (rawState === 0 && isJingle) {
+        playbackEnabled = false;
       } else if (rawState === 3) {
         // Buffering: preserve current playing state
       }
