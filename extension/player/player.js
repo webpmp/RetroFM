@@ -1,4 +1,5 @@
 const $=id=>document.getElementById(id);
+if (document.title !== 'RetroFM') document.title = 'RetroFM';
 const emit=(n,d)=>document.dispatchEvent(new CustomEvent('retrofm:'+n,{detail:d}));
 const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
 // scale stage to window width
@@ -21,6 +22,7 @@ const ST={
 2010:[['EDM',101.1],['Trap',104.5],['Indie Pop',91.9],['Mumble Rap',99.1],['Synthwave',89.3],['Afrobeats',105.9]],
 2020:[['Bedroom Pop',88.1],['Hyperpop',90.9],['Amapiano',103.9],['Drift Phonk',95.9],['Regional Mexican',102.9],['Lofi Hip-Hop',88.5]]};
 let hasFirstSongStartedPlaying = false;
+let isStartupReady = false;
 let transientStatus = null;
 let transientTimer = null;
 
@@ -72,6 +74,7 @@ function render7SegStatus(mode) {
     h += '<span class="seg-st-sym">' + cfg.sym + '</span> ';
   }
   h += '<span class="sr-only">' + cfg.text + '</span>';
+  h += '<span class="seg-st-text" aria-hidden="true">' + cfg.text + '</span>';
   h += '<span class="seg-st-chars" aria-hidden="true">';
   for (const ch of cfg.text) {
     const segs = SEG_ALPHA_MAP[ch];
@@ -101,11 +104,22 @@ function updateStatusDisplay() {
     stEl.innerHTML = render7SegStatus(transientStatus);
     return;
   }
-  if (!hasFirstSongStartedPlaying || S.state === 'blank') {
+  if (!hasFirstSongStartedPlaying || S.state === 'blank' || S.state === 'stopped') {
     stEl.innerHTML = '';
     return;
   }
   stEl.innerHTML = render7SegStatus(S.state);
+}
+
+function clearTransientStatus() {
+  if (transientTimer) {
+    clearTimeout(transientTimer);
+    transientTimer = null;
+  }
+  if (transientStatus !== null) {
+    transientStatus = null;
+    updateStatusDisplay();
+  }
 }
 
 function showTransientStatus(mode) {
@@ -116,12 +130,13 @@ function showTransientStatus(mode) {
     transientStatus = null;
     transientTimer = null;
     updateStatusDisplay();
-  }, 1800);
+  }, 1000);
 }
 
 // transport
 function setState(s,quiet){
  const normalized = (s === 'playing' || s === 'paused') ? s : (s === 'blank' ? 'blank' : 'stopped');
+ const prevState = S.state;
  S.state = (normalized === 'blank') ? 'stopped' : normalized;
  $('bPlay').classList.toggle('on', normalized === 'playing');
  $('bPause').classList.toggle('on', normalized === 'paused');
@@ -129,15 +144,26 @@ function setState(s,quiet){
  document.querySelectorAll('.gp').forEach(e => e.classList.toggle('on', normalized === 'paused'));
  if (normalized === 'stopped') {
    $('gStop').classList.add('on');
-   setTimeout(() => $('gStop').classList.remove('on'), 700);
+   $('bStop').classList.add('on');
+   setTimeout(() => {
+     $('gStop').classList.remove('on');
+     $('bStop').classList.remove('on');
+   }, 1000);
  } else {
    $('gStop').classList.remove('on');
+   $('bStop').classList.remove('on');
  }
  $('stage').classList.toggle('playing', normalized === 'playing');
 
  updateStatusDisplay();
 
- if (normalized === 'paused' || normalized === 'stopped' || normalized === 'playing') { renderSong(); }
+ if (normalized === 'stopped' || normalized === 'blank' || (prevState !== 'playing' && prevState !== 'paused')) {
+   renderSong();
+ } else if (normalized === 'playing' || normalized === 'paused') {
+   if (!sTimer && !sFadeTimer) {
+     scheduleSongFade();
+   }
+ }
  if (!vuRunning) { vuRunning = true; requestAnimationFrame(vu); }
  if (!quiet && normalized !== 'blank') emit('transport', { state: normalized });
 }
@@ -164,6 +190,7 @@ function trace(event, data) {
 
 const act=(el,f)=>{el.onclick=f;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();f()}}};
 act($('bPlay'),()=>{
+  clearTransientStatus();
   // Resume local Web Audio Context on user play interaction
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -180,6 +207,7 @@ act($('bPlay'),()=>{
   sendBoomBoxAction('PLAY', { t_boombox_play_click });
 });
 act($('bPause'),()=>{
+  clearTransientStatus();
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
   const next = S.state === 'playing' ? 'paused' : 'playing';
   lastUserTransportAction = { state: next, time: Date.now() };
@@ -188,6 +216,7 @@ act($('bPause'),()=>{
   sendBoomBoxAction(next === 'paused' ? 'PAUSE' : 'PLAY');
 });
 act($('bStop'),()=>{
+  showTransientStatus('stopped');
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
   lastUserTransportAction = { state: 'stopped', time: Date.now() };
   setState('stopped', true);
@@ -279,7 +308,7 @@ function render7SegFreq(fStr){
       h += '</span>';
     }
   }
-  h += '<span class="seg-unit">FM</span></span>';
+  h += '<span class="seg-unit" aria-hidden="true"><span class="seg-unit-fm">FM</span><span class="seg-unit-mhz">MHz</span></span></span>';
   return h;
 }
 function tune(){
@@ -343,14 +372,14 @@ function renderSong(){
   // Two screens: phase 0 = Song Title, phase 1 = Artist
   phase=0;
   el.textContent=song.title;
-  if(S.state==='playing'){
+  if(S.state==='playing' || S.state==='paused' || S.state==='stopped'){
     scheduleSongFade();
   }
 }
 
 function scheduleSongFade(){
   clearSongTimers();
-  if(!song||!song.artist||!fadeOn||!appConnected||!S.locked||S.state!=='playing')return;
+  if(!song||!song.artist||!fadeOn||!appConnected||!S.locked||(S.state!=='playing'&&S.state!=='paused'&&S.state!=='stopped'))return;
 
   // Hold current screen for 3000ms
   sTimer=setTimeout(()=>{
@@ -359,7 +388,7 @@ function scheduleSongFade(){
     // Fade out (CSS transition: 1.2s)
     el.style.opacity='0';
     sFadeTimer=setTimeout(()=>{
-      if(!song||!fadeOn||!appConnected||!S.locked||S.state!=='playing')return;
+      if(!song||!fadeOn||!appConnected||!S.locked||(S.state!=='playing'&&S.state!=='paused'&&S.state!=='stopped'))return;
       // Switch screen: phase 0 was Title -> next is Artist (1); phase 1 was Artist -> next is Title (0)
       phase=phase===0?1:0;
       el.textContent=phase===1?song.artist:song.title;
@@ -424,7 +453,7 @@ function setSong(d){
   }
   renderSong();
 }
-window.addEventListener('beforeunload',()=>{clearSongTimers();});
+window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});
 $('sdot').onclick=()=>{fadeOn=!fadeOn;$('sdot').setAttribute('aria-pressed',fadeOn);$('sdot').title=fadeOn?'Fade between title and artist (click to turn off)':'Show song info';renderSong()};
 
 // entry board: type a date, pick a genre, press Enter to tune in
@@ -631,16 +660,14 @@ function applyRadioState(state) {
     }
   }
 
+  // Authoritative tracking of startup readiness (YouTube tab loaded first video)
+  if (typeof state.isStartupReady === 'boolean') {
+    isStartupReady = state.isStartupReady;
+  }
+
   // Authoritative tracking of first song playback status suppression
   if (typeof state.hasFirstSongStartedPlaying === 'boolean') {
     hasFirstSongStartedPlaying = state.hasFirstSongStartedPlaying;
-  }
-
-  // If transient rewind/fast-forward was showing, clear it once authoritative state or song update confirms
-  if (transientStatus && (state.playbackStatus === 'playing' || state.currentSong)) {
-    if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }
-    transientStatus = null;
-    updateStatusDisplay();
   }
 
   // 1. Playback status
@@ -699,14 +726,13 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
       const isPlaying = rawState === 1;
       const vid = message.payload.videoId;
       const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;
+      if (vid && rawState !== -1 && !isStartupReady) {
+        isStartupReady = true;
+      }
       if (rawState === 1 && vid && vid !== '3Wk2FzsxK4k') {
         hasFirstSongStartedPlaying = true;
       }
       isYtPlaybackActive = isPlaying;
-      if (transientStatus && isPlaying) {
-        if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }
-        transientStatus = null;
-      }
       if (rawState === 1) {
         setVisualTransport('playing');
       } else if (rawState === 2) {
@@ -750,12 +776,31 @@ setInterval(() => {
   const appEl = $('app');
   if (!modal || !btn) return;
 
+  let handoffStarted = false;
+  let isButtonReady = false;
+
+  // The button starts disabled and visually black (powered off)
+  btn.disabled = true;
+
+  // Exactly 4,000ms after startup page initializes, power on the button and modal border
+  setTimeout(() => {
+    if (handoffStarted) return;
+    isButtonReady = true;
+    const box = modal.firstElementChild;
+    if (box) box.classList.add('ready');
+    btn.classList.add('ready');
+    btn.disabled = false;
+    trace('START_RETRO_FM_TIMER_EXPIRED');
+  }, 4000);
+
   function dismissModal() {
     modal.classList.add('hidden');
     if (appEl) appEl.classList.remove('rfm-dimmed');
   }
 
   btn.addEventListener('click', async () => {
+    if (!isButtonReady || btn.disabled || handoffStarted) return;
+    handoffStarted = true;
     btn.disabled = true;
     btn.textContent = 'STARTING...';
     trace('START_RETRO_FM_CLICKED');

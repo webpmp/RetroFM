@@ -280,14 +280,17 @@ async function resolveYouTubeTab(requestedTabId) {
   return null;
 }
 
-// Helper: Find existing tab group named "Retro FM" in window
+// Helper: Find existing tab group named "RetroFM" or "Retro FM" in window
 async function findRetroFmTabGroup(windowId) {
   if (!chrome.tabGroups) return null;
   try {
     const groups = await chrome.tabGroups.query({ windowId });
-    return groups.find(g => (g.title || '').trim().toLowerCase() === 'retro fm') || null;
+    return groups.find(g => {
+      const t = (g.title || '').trim().toLowerCase();
+      return t === 'retrofm' || t === 'retro fm';
+    }) || null;
   } catch (e) {
-    console.warn('[Retro FM] Could not query tab groups:', e);
+    console.warn('[RetroFM] Could not query tab groups:', e);
     return null;
   }
 }
@@ -461,7 +464,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
                   tabIds: [targetTab.id]
                 });
                 await chrome.tabGroups.update(sender.tab.groupId, {
-                  title: 'Retro FM',
+                  title: 'RetroFM',
                   color: 'orange'
                 });
               }
@@ -940,7 +943,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
                   tabIds: [ytTabId]
                 });
                 await chrome.tabGroups.update(groupId, {
-                  title: 'Retro FM',
+                  title: 'RetroFM',
                   color: 'orange'
                 });
               } else if (ytTab && ytTab.groupId && ytTab.groupId !== -1) {
@@ -953,7 +956,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
                   });
                 }
                 await chrome.tabGroups.update(groupId, {
-                  title: 'Retro FM',
+                  title: 'RetroFM',
                   color: 'orange'
                 });
               } else {
@@ -962,7 +965,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
                   tabIds: tabsToGroup
                 });
                 await chrome.tabGroups.update(groupId, {
-                  title: 'Retro FM',
+                  title: 'RetroFM',
                   color: 'orange'
                 });
               }

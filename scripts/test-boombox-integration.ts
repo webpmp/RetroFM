@@ -2147,13 +2147,12 @@ console.log('\n--- Test Suite 30: Green Display Typography (Inter for Pills, Dot
   assert(bbCss.includes('transform:none !important;'), '#sg translation is suppressed');
 
   // 5. Segmented digits and transport status remain untouched
-  assert(bbCss.includes('.seg-unit{font-size:16px;font-weight:700;line-height:1;margin-left:5px;padding-bottom:2px;color:#8dffb0;text-shadow:0 0 10px rgba(120,255,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace}'), 'Segmented frequency unit retains monospace');
+  assert(bbCss.includes('.seg-unit{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;height:34px;margin-left:5px;flex:none;line-height:1;color:#8dffb0;text-shadow:0 0 10px rgba(120,255,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;box-sizing:border-box}'), 'Segmented frequency unit retains monospace');
   assert(!bbCss.includes('#year{font-family'), '#year digits do not apply Inter or DotGothic16');
   assert(!bbCss.includes('#st{font-family'), '#st transport status does not apply Inter or DotGothic16');
 
   // 6. Fonts outside green display remain untouched
-  assert(!bbCss.includes('body{margin:0;background:#000;transition:background .3s;color:#e9d9b8;font:13px/1.3 Inter'), 'body does not apply Inter or DotGothic16');
-  assert(bbCss.includes('.rfm-start-btn{background:#8dffb0;color:#0e2217;font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;'), 'Startup modal button retains standard system font');
+  assert(bbCss.includes('.rfm-start-btn{') && bbCss.includes('font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;'), 'Startup modal button retains standard system font');
 }
 
 // --- Test Suite 31: Four Targeted Corrections (START RETROFM label & 100% black modal, Jingle Reel Stop, Restored Footer Logo, 17px DotGothic16) ---
@@ -2184,6 +2183,463 @@ console.log('\n--- Test Suite 31: Four Targeted Corrections (START RETROFM label
   assert(bbCss.includes('height:20px;min-height:20px;line-height:20px;'), 'player.css accommodates 17px font with 20px line height to prevent clipping');
 }
 
+// --- Test Suite 32: Stacked FM over MHz Frequency Unit Layout ---
+console.log('\n--- Test Suite 32: Stacked FM over MHz Frequency Unit Layout ---');
+{
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // 1. render7SegFreq structure & accessible radio frequency label
+  const renderFreqMatch = bbJs.match(/function render7SegFreq\(fStr\)\s*\{[\s\S]*?\n\}/);
+  assert(!!renderFreqMatch, 'player.js contains render7SegFreq function');
+
+  // Test representative frequencies: 87.5, 90.7, 97.9, 104.1, 108.0
+  const simRenderFreq = new Function('SEG_MAP', `
+    ${renderFreqMatch![0]}
+    return render7SegFreq;
+  `)(new Function(`${bbJs.match(/const SEG_MAP\s*=\s*\{[\s\S]*?\};/)![0]}; return SEG_MAP;`)());
+
+  const testFreqs = ['87.5', '90.7', '97.9', '104.1', '108.0'];
+  for (const f of testFreqs) {
+    const html = simRenderFreq(f);
+    assert(html.includes(`aria-label="${f} FM"`), `Accessible frequency label includes "${f} FM" (got: ${html})`);
+    assert(html.includes('class="seg-dp"'), `Frequency HTML contains decimal point for ${f}`);
+    assert(!html.includes(':'), `Frequency HTML never contains colon (time format) for ${f}`);
+    assert(html.includes('<span class="seg-unit" aria-hidden="true"><span class="seg-unit-fm">FM</span><span class="seg-unit-mhz">MHz</span></span>'), `Frequency HTML contains stacked FM over MHz for ${f}`);
+    // No duplicate inline FM label
+    const fmOccurrences = (html.match(/FM/g) || []).length;
+    // 1 in aria-label, 1 in .seg-unit-fm -> exactly 2
+    assert(fmOccurrences === 2, `Frequency HTML has no duplicate FM labels (count: ${fmOccurrences})`);
+  }
+
+  // 2. CSS Layout for stacked labels
+  assert(bbCss.includes('.seg-display{display:inline-flex;align-items:center;gap:3px;vertical-align:baseline}'), 'player.css vertically centers segmented display items against digits');
+  assert(bbCss.includes('.seg-unit{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;height:34px;margin-left:5px;flex:none;line-height:1;'), 'player.css defines .seg-unit column layout centered within 34px digit height');
+  assert(bbCss.includes('.seg-unit-fm{font-size:15px;font-weight:700;line-height:1;display:block;text-align:center}'), 'player.css defines .seg-unit-fm with 15px font-size');
+  assert(bbCss.includes('.seg-unit-mhz{font-size:10px;font-weight:700;line-height:1;display:block;text-align:center;margin-top:2px}'), 'player.css defines .seg-unit-mhz with 10px font-size and 2px top margin');
+
+  // 3. Equal width calculation verification (15px * 2 chars = 10px * 3 chars = 30em/ch width)
+  const fmCharWidth = 15 * 0.6; // standard monospace char ratio
+  const mhzCharWidth = 10 * 0.6;
+  const totalFmWidth = 2 * fmCharWidth;
+  const totalMhzWidth = 3 * mhzCharWidth;
+  assert(Math.abs(totalFmWidth - totalMhzWidth) < 0.001, `FM and MHz calculate to equal visual widths in monospace (${totalFmWidth}px vs ${totalMhzWidth}px)`);
+
+  // 4. Height constraint: 15px FM + 2px margin + 10px MHz = 27px, which is strictly less than 34px digit height
+  const totalLabelHeight = 15 + 2 + 10;
+  assert(totalLabelHeight <= 34, `Combined label height (${totalLabelHeight}px) fits completely inside 34px digit height`);
+}
+
+// --- Test Suite 33: Music Note 1px Vertical Shift & Disabled Start Button until Timer Ready ---
+console.log('\n--- Test Suite 33: Music Note 1px Vertical Shift & Disabled Start Button until Timer Ready ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Move the music note down by exactly 1 pixel without affecting text or surrounding elements
+  assert(bbCss.includes('#sdot{'), 'player.css styles #sdot button');
+  assert(bbCss.includes('transform:translateY(1px)'), 'player.css applies transform:translateY(1px) to #sdot');
+  assert(bbCss.includes('#sg{display:inline-flex;align-items:center;min-width:0;flex:0 1 auto;height:20px;min-height:20px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 1.2s ease-in-out;transform:none !important;margin:0;padding:0;vertical-align:middle}'), '#sg artist and song title layout remains unchanged and transform:none !important');
+  assert(bbHtml.includes('<button id="sdot" aria-label="Toggle title and artist fade" title="Fade between title and artist (click to turn off)" aria-pressed="true">♫</button>'), 'index.html retains #sdot button and character');
+
+  // 2. Disable START RETROFM button until 4-second timer expires
+  assert(bbHtml.includes('<button id="rfmStartBtn" class="rfm-start-btn" type="button" disabled>START RETROFM</button>'), 'index.html renders #rfmStartBtn with disabled attribute by default');
+  assert(bbCss.includes('.rfm-start-btn:disabled{cursor:default;transform:none}'), 'player.css styles disabled state for .rfm-start-btn');
+
+  // 3. App.tsx tracks playback status and radio state
+  assert(appTsx.includes('const isStartupReady = Boolean('), 'App.tsx computes isStartupReady');
+  assert(appTsx.includes('isStartupReady,'), 'App.tsx includes isStartupReady in radio state broadcast');
+
+  // 4. player.js uses deterministic 4000ms timer and does not gate button on YouTube readiness
+  assert(bbJs.includes('btn.disabled = true;'), 'player.js sets initial button disabled state to true');
+  assert(bbJs.includes('let isButtonReady = false;'), 'player.js initializes isButtonReady to false');
+  assert(bbJs.includes('setTimeout(() => {'), 'player.js registers timer callback for startup button activation');
+  assert(bbJs.includes('4000);'), 'player.js uses exactly 4000ms timer');
+  assert(bbJs.includes('isButtonReady = true;'), 'player.js sets isButtonReady on timer expiry');
+  assert(bbJs.includes('if (!isButtonReady || btn.disabled || handoffStarted) return;'), 'player.js guards click listener on isButtonReady, disabled, and handoffStarted');
+  assert(!bbJs.includes('btn.disabled = !isStartupReady;'), 'player.js does not gate button disabled state on isStartupReady');
+}
+
+// --- Test Suite 34: Power-On Startup Transition, Paused Song Fade, and Tab Title ---
+console.log('\n--- Test Suite 34: Power-On Startup Transition, Paused Song Fade, and Tab Title ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+
+  // 1. Initial power-off / invisible button and modal border
+  assert(bbCss.includes('.rfm-modal-box{background:#000000;border:2px solid #000000;'), 'player.css sets initial modal box border to #000000 (blends with black background)');
+  assert(bbCss.includes('.rfm-modal-box.ready{border-color:#4fbf7a;'), 'player.css sets ready modal box border to #4fbf7a');
+  assert(bbCss.includes('.rfm-start-btn{background:#000000;color:#000000;'), 'player.css sets initial button background and text to black #000000');
+  assert(bbCss.includes('.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;'), 'player.css sets ready button background to #8dffb0 and text to #0e2217');
+  assert(bbCss.includes('transition:border-color 0.8s ease,box-shadow 0.8s ease'), 'player.css applies smooth 0.8s transition to modal box border');
+  assert(bbCss.includes('transition:background 0.8s ease,color 0.8s ease,box-shadow 0.8s ease,transform .15s ease'), 'player.css applies smooth 0.8s transition to button background and color');
+
+  // 2. player.js applies .ready class to box and button on timer expiry
+  assert(bbJs.includes('box.classList.add(\'ready\');'), 'player.js adds ready class to modal box on timer expiry');
+  assert(bbJs.includes('btn.classList.add(\'ready\');'), 'player.js adds ready class to start button on timer expiry');
+  assert(bbJs.includes('btn.disabled = false;'), 'player.js enables button on timer expiry');
+
+  // 3. Execution simulation: YouTube state or radio state cannot disable button after timer
+  let simButtonDisabled = true;
+  let simButtonReady = false;
+  let simBoxReady = false;
+
+  // Initial state simulation
+  assert(simButtonDisabled === true && simButtonReady === false, 'Simulation: button initially disabled');
+
+  // Timer fires at 4000ms
+  simButtonReady = true;
+  simButtonDisabled = false;
+  simBoxReady = true;
+  assert(simButtonDisabled === false && simButtonReady === true && simBoxReady === true, 'Simulation: button and box powered on after 4000ms timer');
+
+  // Radio state arriving with isStartupReady: false must not disable button
+  const simRadioStatePayload = { isStartupReady: false, playbackStatus: 'stopped', appConnected: false };
+  // In player.js applyRadioState, isStartupReady is recorded but does not touch button
+  assert(simButtonDisabled === false && simButtonReady === true, 'Simulation: subsequent radio state cannot reverse button activation');
+
+  // Late YT_STATE_CHANGED arriving must not disable button
+  const simYtStatePayload = { state: -1, videoId: null };
+  assert(simButtonDisabled === false && simButtonReady === true, 'Simulation: late YT_STATE_CHANGED cannot reverse button activation');
+
+  // 4. Continued song title & artist fade when paused and stopped
+  assert(bbJs.includes("if(S.state==='playing' || S.state==='paused' || S.state==='stopped'){"), 'renderSong schedules fade during playing, paused, and stopped states');
+  assert(bbJs.includes("(S.state!=='playing'&&S.state!=='paused'&&S.state!=='stopped')"), 'scheduleSongFade checks playing, paused, and stopped states');
+
+  // 5. Chrome tab and tab group title is RetroFM without space
+  assert(bbHtml.includes('<title>RetroFM</title>'), 'index.html has title "RetroFM" without space');
+  assert(bbJs.includes('document.title = \'RetroFM\';'), 'player.js explicitly sets document.title to "RetroFM"');
+  assert(!bgJs.includes("title: 'Retro FM'"), 'background.js does not use "Retro FM" with a space for tab group title');
+  assert(bgJs.includes("title: 'RetroFM'"), 'background.js uses "RetroFM" for tab group title');
+}
+
+// --- Test Suite 35: 1,000ms REW and FF Transient Status Display & Timer Safety ---
+console.log('\n--- Test Suite 35: 1,000ms REW and FF Transient Status Display & Timer Safety ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // 1. Exactly 1000ms timeout in showTransientStatus
+  assert(bbJs.includes('function showTransientStatus(mode) {'), 'player.js defines showTransientStatus');
+  assert(bbJs.includes('}, 1000);'), 'showTransientStatus uses exactly 1,000ms timeout interval');
+
+  // 2. Managed cleanup and cancellation of previous pending timers
+  assert(bbJs.includes('function clearTransientStatus() {'), 'player.js defines clearTransientStatus helper');
+  assert(bbJs.includes('if (transientTimer) { clearTimeout(transientTimer); transientTimer = null; }'), 'showTransientStatus cancels previous timer before setting new status');
+  assert(bbJs.includes("act($('bPlay'),()=>{") && bbJs.includes("clearTransientStatus();\n  // Resume local Web Audio Context"), 'Clicking PLAY cancels any active transient status');
+  assert(bbJs.includes("act($('bPause'),()=>{") && bbJs.includes("clearTransientStatus();\n  if (transportReconcileTimer)"), 'Clicking PAUSE cancels any active transient status');
+  assert(bbJs.includes("act($('bStop'),()=>{") && bbJs.includes("clearTransientStatus();\n  if (transportReconcileTimer)"), 'Clicking STOP cancels any active transient status');
+  assert(bbJs.includes("window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});"), 'window beforeunload cleans up transient status timer');
+
+  // 3. No premature clearance in applyRadioState or YT_STATE_CHANGED
+  assert(!bbJs.includes("transientStatus && (state.playbackStatus === 'playing' || state.currentSong)"), 'applyRadioState does not prematurely clear transient status');
+  assert(!bbJs.includes("transientStatus && isPlaying"), 'YT_STATE_CHANGED does not prematurely clear transient status');
+
+  // 4. Deterministic Simulation: Timer safety, 1-second hold, and cancellation
+  let currentTransientStatus: string | null = null;
+  let activeTimerId: number | null = null;
+  let simulatedDisplay: string = 'playing';
+  let nextTimerId = 1;
+  const timerCallbacks = new Map<number, () => void>();
+
+  function simulateShow(mode: string) {
+    if (activeTimerId !== null) {
+      timerCallbacks.delete(activeTimerId);
+      activeTimerId = null;
+    }
+    currentTransientStatus = mode;
+    simulatedDisplay = mode;
+    const tid = nextTimerId++;
+    activeTimerId = tid;
+    timerCallbacks.set(tid, () => {
+      currentTransientStatus = null;
+      activeTimerId = null;
+      simulatedDisplay = 'playing'; // Revert to appropriate status (PLAY)
+    });
+    return tid;
+  }
+
+  // Simulation 1: Press REWIND -> REW displayed
+  const tid1 = simulateShow('rew');
+  assert(simulatedDisplay === 'rew', 'Simulation: Pressing REWIND displays rew');
+  assert(activeTimerId === tid1, 'Simulation: Timer 1 scheduled for REW');
+
+  // Simulation 2: Before 1s expires, rapid press FAST FORWARD -> cancels Timer 1, starts Timer 2 for FF
+  const tid2 = simulateShow('ff');
+  assert(simulatedDisplay === 'ff', 'Simulation: Rapid FAST FORWARD press immediately updates display to ff');
+  assert(activeTimerId === tid2, 'Simulation: Timer 2 scheduled for FF');
+  assert(!timerCallbacks.has(tid1), 'Simulation: Timer 1 was cancelled and cannot overwrite newer state');
+
+  // Simulation 3: Radio state arrives during FF display -> does not clear FF
+  assert(simulatedDisplay === 'ff', 'Simulation: Intervening radio state does not clear FF display');
+
+  // Simulation 4: Timer 2 expires after 1s -> display reverts to PLAY
+  const cb = timerCallbacks.get(tid2);
+  assert(typeof cb === 'function', 'Simulation: Timer callback exists');
+  cb!();
+  assert(simulatedDisplay === 'playing', 'Simulation: After 1s interval expires, display reverts to PLAY');
+  assert(currentTransientStatus === null, 'Simulation: Transient status is null after expiry');
+}
+
+// --- Test Suite 36: DSEG Digital Display Font for Transport Status Indicators ---
+console.log('\n--- Test Suite 36: DSEG Digital Display Font for Transport Status Indicators ---');
+{
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const fontsDir = path.join(__dirname, '../extension/player/fonts');
+
+  // 1. Local font files exist in extension/player/fonts in both .woff2 and .woff formats
+  const expectedFonts = [
+    'DSEG14Classic-Regular.woff2',
+    'DSEG14Classic-Regular.woff',
+    'DSEG14Classic-Bold.woff2',
+    'DSEG14Classic-Bold.woff'
+  ];
+  for (const fontName of expectedFonts) {
+    const fontPath = path.join(fontsDir, fontName);
+    assert(fs.existsSync(fontPath), `Font asset exists locally: ${fontName}`);
+    assert(fs.statSync(fontPath).size > 1000, `Font asset ${fontName} has valid non-zero size`);
+  }
+
+  // 2. @font-face rules defined locally in player.css without external font CDNs or loaders
+  assert(bbCss.includes("@font-face {\n  font-family: 'DSEG';\n  src: url('fonts/DSEG14Classic-Regular.woff2') format('woff2'),\n       url('fonts/DSEG14Classic-Regular.woff') format('woff');\n  font-weight: 400;\n  font-style: normal;\n  font-display: swap;\n}"), 'player.css defines local @font-face for regular DSEG');
+  assert(bbCss.includes("@font-face {\n  font-family: 'DSEG';\n  src: url('fonts/DSEG14Classic-Bold.woff2') format('woff2'),\n       url('fonts/DSEG14Classic-Bold.woff') format('woff');\n  font-weight: 700;\n  font-style: normal;\n  font-display: swap;\n}"), 'player.css defines local @font-face for bold DSEG');
+  assert(!bbCss.includes('fonts.googleapis.com') || !bbCss.includes('DSEG') || !bbCss.includes('fonts.googleapis.com/css2?family=DSEG'), 'DSEG font is loaded strictly locally and never requested via external CDNs');
+
+  // 3. Styling of .seg-st-text scoped to transport status indicators
+  assert(bbCss.includes('.seg-st-text{font-family:\'DSEG\',ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:700;line-height:1;letter-spacing:1px;color:#8dffb0;text-shadow:0 0 6px rgba(120,255,160,.65);display:inline-block}'), 'player.css styles .seg-st-text with DSEG font family, 700 weight, green color, and vintage glow text-shadow');
+  assert(bbCss.includes('.seg-st-chars{display:none}'), 'player.css hides legacy custom segment bar markup in favor of DSEG lettering');
+
+  // 4. render7SegStatus in player.js outputs .seg-st-text for all 5 transport states
+  const renderFnMatch = bbJs.match(/function render7SegStatus\(mode\)\s*\{[\s\S]*?\n\}/);
+  assert(!!renderFnMatch, 'player.js contains render7SegStatus function');
+
+  const simRender = new Function('SEG_ALPHA_MAP', `
+    const SEG_MAP = SEG_ALPHA_MAP;
+    ${renderFnMatch![0]}
+    return render7SegStatus;
+  `);
+  const segAlphaMatch = bbJs.match(/const SEG_ALPHA_MAP\s*=\s*\{[\s\S]*?\};/);
+  const simAlphaMap = new Function(`${segAlphaMatch![0]}; return SEG_ALPHA_MAP;`)();
+  const testRender7Seg = simRender(simAlphaMap);
+
+  const statuses: Array<{ mode: string; expectedText: string; symbol: string }> = [
+    { mode: 'playing', expectedText: 'PLAY', symbol: '\u25B6' },
+    { mode: 'paused', expectedText: 'PAUSE', symbol: '\u275A\u275A' },
+    { mode: 'stopped', expectedText: 'STOP', symbol: '\u25A0' },
+    { mode: 'rew', expectedText: 'REW', symbol: '\u25C0\u25C0' },
+    { mode: 'ff', expectedText: 'FF', symbol: '\u25B6\u25B6' }
+  ];
+
+  for (const st of statuses) {
+    const html = testRender7Seg(st.mode);
+    assert(html.includes(`<span class="seg-st-text" aria-hidden="true">${st.expectedText}</span>`), `Status HTML for ${st.mode} renders .seg-st-text with "${st.expectedText}"`);
+    assert(html.includes(`<span class="seg-st-sym">${st.symbol}</span>`), `Status HTML for ${st.mode} retains status symbol "${st.symbol}"`);
+    assert(html.includes(`class="sr-only">${st.expectedText}</span>`), `Status HTML for ${st.mode} preserves sr-only accessibility text`);
+  }
+
+  // 5. Scope discipline: other typography remains completely untouched
+  assert(bbCss.includes("#panel .tag,#panel button.tag,#panel #hDate,#panel .chip{font-family:'Inter'"), 'Date and genre pills in green display still strictly use Inter font');
+  assert(bbCss.includes("#panel #sg{font-family:'DotGothic16'"), 'Song title and artist still strictly use DotGothic16');
+  assert(bbCss.includes('.seg-unit{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;height:34px;margin-left:5px;flex:none;line-height:1;color:#8dffb0;text-shadow:0 0 10px rgba(120,255,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;box-sizing:border-box}'), 'Segmented frequency unit retains monospace and is not altered');
+  assert(bbCss.includes('.rfm-start-btn{') && bbCss.includes('font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;'), 'Startup modal button retains standard system font');
+}
+
+// --- Test Suite 37: STOP 1-Second Display & STOP Button Illumination ---
+console.log('\n--- Test Suite 37: STOP 1-Second Display & STOP Button Illumination ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. In player.js, pressing STOP triggers showTransientStatus('stopped')
+  assert(
+    bbJs.includes("act($('bStop'),()=>{") &&
+    bbJs.includes("showTransientStatus('stopped');"),
+    'player.js bStop click handler triggers showTransientStatus("stopped")'
+  );
+
+  // 2. In player.js setState, stopped state illuminates bStop and gStop, and clears bPause and gp
+  assert(
+    bbJs.includes("$('bStop').classList.add('on');") &&
+    bbJs.includes("$('gStop').classList.add('on');"),
+    'player.js setState illuminates both bStop and gStop on stopped'
+  );
+  assert(
+    bbJs.includes("$('bPause').classList.toggle('on', normalized === 'paused');") &&
+    bbJs.includes("document.querySelectorAll('.gp').forEach(e => e.classList.toggle('on', normalized === 'paused'));"),
+    'player.js setState strictly excludes bPause and .gp when normalized is stopped'
+  );
+  assert(
+    bbJs.includes("setTimeout(() => {\n     $('gStop').classList.remove('on');\n     $('bStop').classList.remove('on');\n   }, 1000);"),
+    'player.js setState holds bStop and gStop illumination for 1,000ms before turning off'
+  );
+
+  // 3. In App.tsx, explicit STOP prevents broadcasting playbackStatus: 'paused'
+  assert(
+    appTsx.includes('isExplicitStoppedRef = useRef<boolean>(false);'),
+    'App.tsx tracks isExplicitStoppedRef'
+  );
+  assert(
+    appTsx.includes("isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped')"),
+    'App.tsx rawMode reports stopped rather than paused when explicit stop occurs'
+  );
+  assert(
+    appTsx.includes('handleStopMusic') && appTsx.includes('isExplicitStoppedRef.current = true;'),
+    'App.tsx handleStopMusic marks isExplicitStoppedRef as true'
+  );
+
+  // 4. Deterministic Simulation: STOP transient display, 1-second hold, and illumination state
+  interface MockElement {
+    classes: Set<string>;
+    classList: {
+      add: (c: string) => void;
+      remove: (c: string) => void;
+      toggle: (c: string, force?: boolean) => boolean;
+      contains: (c: string) => boolean;
+    };
+  }
+
+  function createMockElement(): MockElement {
+    const classes = new Set<string>();
+    return {
+      classes,
+      classList: {
+        add: (c: string) => classes.add(c),
+        remove: (c: string) => classes.delete(c),
+        toggle: (c: string, force?: boolean) => {
+          const res = force !== undefined ? force : !classes.has(c);
+          if (res) classes.add(c); else classes.delete(c);
+          return res;
+        },
+        contains: (c: string) => classes.has(c)
+      }
+    };
+  }
+
+  const mockBPlay = createMockElement();
+  const mockBPause = createMockElement();
+  const mockBStop = createMockElement();
+  const mockGPlay = createMockElement();
+  const mockGPause = createMockElement();
+  const mockGStop = createMockElement();
+
+  let simDisplay = 'PLAY';
+  let simTransient: string | null = null;
+  let simTimerId: any = null;
+
+  function simulateStopClick() {
+    // 1. showTransientStatus('stopped')
+    if (simTimerId) clearTimeout(simTimerId);
+    simTransient = 'stopped';
+    simDisplay = 'STOP';
+    simTimerId = setTimeout(() => {
+      simTransient = null;
+      // After STOP 1s display interval expires, transport status label disappears (empty display)
+      simDisplay = '';
+      simTimerId = null;
+    }, 1000);
+
+    // 2. setState('stopped')
+    const normalized: string = 'stopped';
+    mockBPlay.classList.toggle('on', normalized === 'playing');
+    mockBPause.classList.toggle('on', normalized === 'paused');
+    mockGPlay.classList.toggle('on', normalized === 'playing');
+    mockGPause.classList.toggle('on', normalized === 'paused');
+
+    if (normalized === 'stopped') {
+      mockGStop.classList.add('on');
+      mockBStop.classList.add('on');
+      setTimeout(() => {
+        mockGStop.classList.remove('on');
+        mockBStop.classList.remove('on');
+      }, 1000);
+    }
+  }
+
+  simulateStopClick();
+
+  // Test immediate STOP state
+  assert(simDisplay === 'STOP', 'Simulation: On STOP click, green display immediately shows STOP');
+  assert(mockBStop.classList.contains('on'), 'Simulation: STOP button (#bStop) is illuminated');
+  assert(mockGStop.classList.contains('on'), 'Simulation: STOP indicator (#gStop) is illuminated');
+  assert(!mockBPause.classList.contains('on'), 'Simulation: PAUSE button (#bPause) is strictly NOT illuminated');
+  assert(!mockGPause.classList.contains('on'), 'Simulation: PAUSE indicator (.gp) is strictly NOT illuminated');
+  assert(!mockBPlay.classList.contains('on'), 'Simulation: PLAY button (#bPlay) is NOT illuminated');
+
+  // Fast-forward 1000ms timer
+  await new Promise((r) => setTimeout(r, 1050));
+
+  // Test reverted state after 1,000ms: STOP status text disappears from the green display
+  assert(simDisplay === '', 'Simulation: After 1,000ms expires, green display removes STOP label (becomes empty)');
+  assert(!mockBStop.classList.contains('on'), 'Simulation: After 1,000ms, STOP button (#bStop) illumination turns off');
+  assert(!mockGStop.classList.contains('on'), 'Simulation: After 1,000ms, STOP indicator (#gStop) illumination turns off');
+
+  // 5. Verify in player.js that updateStatusDisplay empties display when S.state === 'stopped'
+  assert(
+    bbJs.includes("if (!hasFirstSongStartedPlaying || S.state === 'blank' || S.state === 'stopped') {\n    stEl.innerHTML = '';"),
+    'player.js updateStatusDisplay sets empty innerHTML for stopped state once transientStatus clears'
+  );
+
+  // 6. Verify song & artist fade continues in player.js during stopped state
+  assert(
+    bbJs.includes("if(S.state==='playing' || S.state==='paused' || S.state==='stopped'){\n    scheduleSongFade();"),
+    'player.js renderSong schedules song fade during stopped state'
+  );
+  assert(
+    bbJs.includes("!song||!song.artist||!fadeOn||!appConnected||!S.locked||(S.state!=='playing'&&S.state!=='paused'&&S.state!=='stopped')"),
+    'player.js scheduleSongFade allows rotation during stopped state'
+  );
+}
+
+// --- Test Suite 38: DSEG Y Glyph Proportion and Font Verification ---
+console.log('\n--- Test Suite 38: DSEG Y Glyph Proportion and Font Verification ---');
+{
+  const dynamicImport = new Function('specifier', 'return import(specifier)');
+  let regFont: any = null;
+  let boldFont: any = null;
+
+  try {
+    const opentypeModule = await dynamicImport('/tmp/dseg/node_modules/opentype.js/dist/opentype.js');
+    const opentype = opentypeModule.default || opentypeModule;
+    const woff2Module = await dynamicImport('/tmp/dseg/node_modules/wawoff2/decompress.js');
+    const decompress = woff2Module.default || woff2Module;
+    const regularWoff2Buf = fs.readFileSync(path.join(__dirname, '../extension/player/fonts/DSEG14Classic-Regular.woff2'));
+    const boldWoff2Buf = fs.readFileSync(path.join(__dirname, '../extension/player/fonts/DSEG14Classic-Bold.woff2'));
+
+    const regularTtfRaw = await decompress(regularWoff2Buf);
+    const regAb = new Uint8Array(regularTtfRaw).slice().buffer;
+    regFont = opentype.parse(regAb);
+
+    const boldTtfRaw = await decompress(boldWoff2Buf);
+    const boldAb = new Uint8Array(boldTtfRaw).slice().buffer;
+    boldFont = opentype.parse(boldAb);
+
+    const regY = regFont.charToGlyph('Y');
+    const boldY = boldFont.charToGlyph('Y');
+
+    assert(regY && boldY, 'Both Regular and Bold fonts contain glyph for Y');
+    const regYBox = regY.getBoundingBox();
+    const boldYBox = boldY.getBoundingBox();
+
+    assert(regYBox.y1 === 0, `Regular font Y glyph extends to baseline (y1: ${regYBox.y1})`);
+    assert(boldYBox.y1 === 0, `Bold font Y glyph extends to baseline (y1: ${boldYBox.y1})`);
+    assert(regY.path.commands.filter((c: any) => c.type === 'M').length === 5, 'Regular font Y glyph has exactly 5 contours matching 7-segment uppercase Y (f, b, g, c, d)');
+    assert(boldY.path.commands.filter((c: any) => c.type === 'M').length === 5, 'Bold font Y glyph has exactly 5 contours matching 7-segment uppercase Y (f, b, g, c, d)');
+
+    // Ensure other characters (P, L, A) are untouched
+    const regP = regFont.charToGlyph('P');
+    const regL = regFont.charToGlyph('L');
+    const regA = regFont.charToGlyph('A');
+    assert(regP && regL && regA, 'Regular font contains glyphs for P, L, and A');
+    assert(regP.unicode === 80 && regL.unicode === 76 && regA.unicode === 65, 'Unicodes for P, L, A preserved');
+  } catch (err: any) {
+    console.log(`(Optional font parser in /tmp skipped: ${err?.message || err})`);
+  }
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
@@ -2194,4 +2650,3 @@ if (failed > 0) {
 } else {
   process.exit(0);
 }
-

@@ -614,10 +614,13 @@ export default function App() {
   // Monotonically increasing command sequence number to eliminate race conditions
   const transportCommandSeqRef = useRef<number>(0);
   const isTransportCommandInFlightRef = useRef<boolean>(false);
+  const isExplicitStoppedRef = useRef<boolean>(false);
   const lastBroadcastStateKeyRef = useRef<string>('');
+  const playbackStatusRef = useRef<MusicPlaybackStatus>(playbackStatus);
+  playbackStatusRef.current = playbackStatus;
 
   // --- Broadcast Current Radio State to Boom Box ---
-  const broadcastCurrentRadioState = useCallback((force: boolean = false, clearSong: boolean = false) => {
+  const broadcastCurrentRadioState = useCallback((force: boolean = false, clearSong: boolean = false, explicitStatus?: MusicPlaybackStatus) => {
     const vc = volumeControllerRef.current;
     const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
     const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
@@ -668,14 +671,27 @@ export default function App() {
     };
 
     const station = DECADE_STATIONS[decade] || { freq: 100.3, genre: 'Teen Pop' };
+    const effectiveStatus = explicitStatus || playbackStatusRef.current || playbackStatus;
     const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;
-    const rawMode = isPlayingOrAdvancing ? 'playing' : (playbackStatus.available ? 'paused' : 'stopped');
+    const effectivePlayingOrAdvancing = isAdvancingRef.current || effectiveStatus.isPlaying;
+    const rawMode = effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped'));
     const playbackMode = hasFirstSongStarted ? rawMode : 'blank';
+
+    // Ready when YouTube tab is connected and first video (jingle or song) is prepared/ready
+    const isStartupReady = Boolean(
+      effectiveStatus.available &&
+      effectiveStatus.connectedTabId &&
+      effectiveStatus.videoId &&
+      effectiveStatus.videoId !== 'Unknown' &&
+      effectiveStatus.videoId !== 'Unknown Video' &&
+      (jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing' || jingleStateRef.current === 'completed' || hasFirstSongStarted)
+    );
 
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
       playbackStatus: playbackMode,
       hasFirstSongStarted,
+      isStartupReady,
       currentSongTitle: currentSong?.title || '',
       currentSongArtist: currentSong?.artist || '',
       currentSongYear: currentSong?.year || '',
@@ -695,6 +711,7 @@ export default function App() {
     const statePayload = {
       playbackStatus: playbackMode,
       hasFirstSongStartedPlaying: hasFirstSongStarted,
+      isStartupReady,
       currentSong,
       clearSong,
       date: programYear ? `${programYear}-07-04` : '1995-07-04',
@@ -1064,13 +1081,23 @@ export default function App() {
       const res = await musicProviderRef.current.prepare(targetUrl, videoId, targetVolFraction);
       if (res.success) {
         logMessage(`[Pre-Prepare] Ready: "${title || videoId}" is cued and prepared.`);
+        let updatedStatus = res.status;
         if (res.status) {
-          setPlaybackStatus((prev) => ({
-            ...prev,
-            ...res.status,
-            connectedTabId: res.status?.connectedTabId || prev.connectedTabId
-          }));
+          setPlaybackStatus((prev) => {
+            const next = {
+              ...prev,
+              ...res.status,
+              connectedTabId: res.status?.connectedTabId || prev.connectedTabId
+            };
+            playbackStatusRef.current = next;
+            return next;
+          });
+          updatedStatus = {
+            ...playbackStatusRef.current,
+            ...res.status
+          };
         }
+        broadcastCurrentRadioState(true, false, updatedStatus);
       }
       return res.success;
     } catch (err: any) {
@@ -1294,6 +1321,7 @@ export default function App() {
       }
 
       if (playRes.success && playRes.status) {
+        isExplicitStoppedRef.current = false;
         if (volumeControllerRef.current) {
           await volumeControllerRef.current.syncInitialVolume('Play button pressed');
         }
@@ -1354,6 +1382,7 @@ export default function App() {
         return;
       }
 
+      isExplicitStoppedRef.current = false;
       if (pauseRes.status) {
         setPlaybackStatus(pauseRes.status);
       } else {
@@ -1376,6 +1405,7 @@ export default function App() {
   const handleStopMusic = async () => {
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
+    isExplicitStoppedRef.current = true;
     musicProviderRef.current.recordTrace('HANDLE_STOP_START', { seq });
     logMessage('Sending Stop command to YouTube tab...');
 
@@ -1395,7 +1425,6 @@ export default function App() {
         jingleStateRef.current = 'cancelled';
         logMessage('[Auto Advance] Playback sequence stopped by STOP command.');
       }
-      hasFirstSongStartedPlayingRef.current = false;
 
       if (stopRes.status) {
         setPlaybackStatus({ ...stopRes.status, isPlaying: false, currentTime: 0 });
@@ -1452,6 +1481,7 @@ export default function App() {
       }
 
       jingleStateRef.current = 'completed';
+      isExplicitStoppedRef.current = false;
       hasFirstSongStartedPlayingRef.current = true;
       logMessage(`▶ ${reason} and playing: "${targetSong.title}"`);
 

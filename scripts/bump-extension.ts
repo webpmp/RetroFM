@@ -45,9 +45,10 @@ function scanDirectory(dir: string, baseDir: string) {
     if (entry.isDirectory()) {
       scanDirectory(fullPath, baseDir);
     } else if (entry.isFile()) {
-      if (entry.name.endsWith('.png')) {
+      if (entry.name.endsWith('.png') || entry.name.endsWith('.woff') || entry.name.endsWith('.woff2') || entry.name.endsWith('.ttf')) {
         const buf = fs.readFileSync(fullPath);
-        filesRecord[relPath] = `data:image/png;base64,${buf.toString('base64')}`;
+        const mime = entry.name.endsWith('.png') ? 'image/png' : (entry.name.endsWith('.woff2') ? 'font/woff2' : 'font/woff');
+        filesRecord[relPath] = `data:${mime};base64,${buf.toString('base64')}`;
       } else {
         filesRecord[relPath] = fs.readFileSync(fullPath, 'utf8');
       }
@@ -75,8 +76,8 @@ export async function generateAndDownloadExtensionZip(): Promise<void> {
 
   const now = new Date();
   for (const [filename, content] of Object.entries(EXTENSION_FILES)) {
-    if (filename.endsWith('.png') || content.startsWith('data:image/png;base64,')) {
-      const b64 = content.replace(/^data:image\\/png;base64,/, '');
+    if (content.startsWith('data:')) {
+      const b64 = content.replace(/^data:[^;]+;base64,/, '');
       folder.file(filename, b64, {
         base64: true,
         date: now,
@@ -120,8 +121,8 @@ async function verifyZip() {
   const folderName = 'retrofm-extension';
   const folder = zip.folder(folderName) || zip;
   for (const [filename, content] of Object.entries(filesRecord)) {
-    if (filename.endsWith('.png') || content.startsWith('data:image/png;base64,')) {
-      const b64 = content.replace(/^data:image\/png;base64,/, '');
+    if (content.startsWith('data:')) {
+      const b64 = content.replace(/^data:[^;]+;base64,/, '');
       folder.file(filename, b64, { base64: true });
     } else {
       folder.file(filename, content);
