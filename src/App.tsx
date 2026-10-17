@@ -43,6 +43,7 @@ import { generateTTS, fetchKokoroStatus, KokoroVoice } from './services/ttsClien
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
+import { loadLibrary, newPlayState, pickSong, getAvailableGenres, isStrictlyReleasedBefore, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
 import manifest from '../extension/manifest.json';
 
 // Minimum required Chrome extension version
@@ -172,7 +173,7 @@ export function getPresetForStation(stationCfg?: StationConfig): HardcodedPreset
 
 export const STATIONS_BY_DECADE: Record<number, StationConfig[]> = {
   1960: [
-    { genre: 'Top 40/Pop', frequency: 95.1, presetKey: 'a-ha|take on me', stationId: 'WPOP-FM' }, // 0
+    { genre: 'Pop', frequency: 95.1, presetKey: 'a-ha|take on me', stationId: 'WPOP-FM' }, // 0
     { genre: 'Motown', frequency: 101.5, presetKey: 'michael jackson|billie jean', stationId: 'WMOT-FM' }, // 1
     { genre: 'Soul', frequency: 107.1, presetKey: 'prince|when doves cry', stationId: 'WSOL-FM' }, // 2
     { genre: 'R&B', frequency: 93.5, presetKey: 'u2|with or without you', stationId: 'WRNB-FM' }, // 3
@@ -233,6 +234,43 @@ export const STATIONS_BY_DECADE: Record<number, StationConfig[]> = {
     { genre: 'Lofi Hip-Hop', frequency: 88.5, presetKey: 'michael jackson|billie jean', stationId: 'WLOF-FM' } // 1
   ]
 };
+
+/**
+ * Calculates dynamic station configs with distinct FM dial frequencies (88.1 - 107.9 FM)
+ * for all genres historically available in the library for the given broadcast date.
+ * If the library has eligible songs for that date, returns stations for those exact genres.
+ * Otherwise, falls back to the default decade stations.
+ */
+export function calculateDynamicStationsForDate(
+  library: LibrarySong[],
+  broadcastDate: string,
+  decade: number
+): StationConfig[] {
+  if (library.length > 0) {
+    const availableGenres = getAvailableGenres(library, broadcastDate);
+    if (availableGenres.length > 0) {
+      const minFreq = 88.5;
+      const maxFreq = 107.5;
+      const step = availableGenres.length > 1
+        ? (maxFreq - minFreq) / (availableGenres.length - 1)
+        : 0;
+
+      return availableGenres.map((genre, idx) => {
+        const rawFreq = minFreq + idx * step;
+        // Round to nearest odd tenth on the FM dial (e.g. 88.5, 89.1, 89.7...)
+        const tenths = Math.round(rawFreq * 10);
+        const oddTenths = tenths % 2 === 0 ? tenths + 1 : tenths;
+        const frequency = Math.min(107.9, Math.max(88.1, parseFloat((oddTenths / 10).toFixed(1))));
+        return {
+          genre,
+          frequency,
+          stationId: `W${genre.slice(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X')}-FM`
+        };
+      });
+    }
+  }
+  return STATIONS_BY_DECADE[decade] || [];
+}
 
 /**
  * Normalizes YouTube URLs (including /shorts/ and youtu.be) to a 11-char video ID
@@ -336,6 +374,13 @@ export default function App() {
   const currentPlayingYearRef = useRef<string>('1985');
   const isTuningSeekingRef = useRef<boolean>(false);
 
+  // --- Historical Song Selector & Library State ---
+  const songLibraryRef = useRef<LibrarySong[]>([]);
+  const songPlayStateRef = useRef<PlayState>(newPlayState());
+  const nextSongRef = useRef<SongPick | null>(null);
+  const activeDateRef = useRef<string>('1964-07-04');
+  const [isLibraryLoaded, setIsLibraryLoaded] = useState<boolean>(false);
+
   // --- PROGRAM SONG Test State ---
   const [programArtist, setProgramArtist] = useState<string>('a-ha');
   const [programSongTitle, setProgramSongTitle] = useState<string>('Take on Me');
@@ -361,7 +406,7 @@ export default function App() {
     message: string;
     artist?: string;
     song?: string;
-    type?: 'not_found' | 'api_error';
+    type?: 'not_found' | 'api_error' | 'info';
   } | null>(null);
 
   // --- Audio Diagnostics State ---
@@ -616,6 +661,20 @@ export default function App() {
     } catch {}
   }, [selectedModel]);
 
+  // --- Load Song Library once at startup ---
+  useEffect(() => {
+    songPlayStateRef.current = newPlayState();
+    loadLibrary()
+      .then((lib) => {
+        songLibraryRef.current = lib;
+        logMessage(`[Song Selector] Loaded historical song library (${lib.length} tracks).`);
+        setIsLibraryLoaded(true);
+      })
+      .catch((err) => {
+        logMessage(`[Song Selector Error] Failed to load song library: ${err?.message || err}`);
+      });
+  }, []);
+
   // --- Extension Heartbeat / Detection Loop ---
   useEffect(() => {
     const checkExt = async () => {
@@ -814,6 +873,9 @@ export default function App() {
     );
     isStartupReadyRef.current = isStartupReady;
 
+    const broadcastDate = activeDateRef.current || (programYear ? `${programYear}-07-04` : '1963-05-01');
+    const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, broadcastDate, decade);
+
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
       playbackStatus: playbackMode,
@@ -827,7 +889,8 @@ export default function App() {
       freq: station.freq,
       isDuck,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
-      clearSong
+      clearSong,
+      stationCount: dynamicStations.length
     });
 
     if (!force && stateFingerprint === lastBroadcastStateKeyRef.current) {
@@ -841,11 +904,12 @@ export default function App() {
       isStartupReady,
       currentSong,
       clearSong,
-      date: programYear ? `${programYear}-07-04` : '1995-07-04',
+      date: broadcastDate,
       decade,
       frequency: station.freq,
       genre: station.genre,
-      stations: STATIONS_BY_DECADE[decade] || [],
+      stations: dynamicStations.length > 0 ? dynamicStations : (/* fallback */ STATIONS_BY_DECADE[decade] || []),
+      // stations: STATIONS_BY_DECADE[decade] || []
       masterVolume: currentVol,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       isDucking: isDuck,
@@ -871,10 +935,10 @@ export default function App() {
   const handleFastForwardMusicRef = useRef<() => Promise<void>>(async () => {});
   const advanceToNextSongRef = useRef<(isInitialAfterJingle?: boolean) => Promise<boolean>>(async () => false);
 
-  // Synchronize state to Boom Box whenever session properties change
+  // Synchronize state to Boom Box whenever session properties change or library loads
   useEffect(() => {
-    broadcastCurrentRadioState();
-  }, [broadcastCurrentRadioState]);
+    broadcastCurrentRadioState(true);
+  }, [broadcastCurrentRadioState, isLibraryLoaded]);
 
   // Listen for actions and state requests from Boom Box
   useEffect(() => {
@@ -1053,8 +1117,38 @@ export default function App() {
                   }
                   await handlePlayMusicRef.current();
                 }
+              } else if (songLibraryRef.current.length > 0) {
+                // Scenario A: First visit to station with library loaded
+                const pick = pickSong(
+                  songLibraryRef.current,
+                  activeDateRef.current,
+                  genre,
+                  songPlayStateRef.current
+                );
+                if (pick) {
+                  logMessage(`[Tuner] Selected library song for ${genre}: "${pick.song.artist} - ${pick.song.title}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  await playLibrarySong(pick, `Tuned to station ${genre}`);
+                } else if (preset) {
+                  logMessage(`[Tuner] No library song for ${genre} on ${activeDateRef.current}. Falling back to preset: "${preset.artist} - ${preset.song}"`);
+                  currentPlayingArtistRef.current = preset.artist;
+                  currentPlayingSongRef.current = preset.song;
+                  currentPlayingYearRef.current = preset.year;
+                  setProgramArtist(preset.artist);
+                  setProgramSongTitle(preset.song);
+                  setProgramYear(preset.year);
+
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  await handleProgramSong({ artist: preset.artist, song: preset.song, year: preset.year });
+                }
               } else if (preset) {
-                // Scenario A: First visit to station with preset
+                // Scenario A fallback: library not loaded, use preset
                 logMessage(`[Tuner] Auto-playing preset for ${genre}: "${preset.artist} - ${preset.song}"`);
                 currentPlayingArtistRef.current = preset.artist;
                 currentPlayingSongRef.current = preset.song;
@@ -1119,6 +1213,31 @@ export default function App() {
             }
             if (action.genre) {
               activeStationGenreRef.current = action.genre;
+            }
+            if (action.date) {
+              activeDateRef.current = action.date;
+            }
+
+            const targetDate = action.date || activeDateRef.current;
+            const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
+
+            if (songLibraryRef.current.length > 0) {
+              const pick = pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
+              if (pick) {
+                await playLibrarySong(pick, 'Date/genre selection');
+              } else {
+                const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+                logMessage(`[Song Selector] ${noticeMsg}`);
+                setSongPlaybackNotice({
+                  message: noticeMsg,
+                  artist: targetGenre,
+                  song: targetDate,
+                  type: 'not_found'
+                });
+                broadcastCurrentRadioState(true, true);
+              }
+            } else {
+              // Debug fallback: preset selection
               const dec = action.decade || (selectedYear ? Math.floor(parseInt(selectedYear, 10) / 10) * 10 : 1980);
               const stationsForDec = STATIONS_BY_DECADE[dec] || [];
               const stationCfg = stationsForDec.find(s => s.genre === action.genre);
@@ -1131,8 +1250,8 @@ export default function App() {
                 setProgramSongTitle(preset.song);
                 setProgramYear(preset.year);
               }
+              setTimeout(() => broadcastCurrentRadioState(true), 10);
             }
-            setTimeout(() => broadcastCurrentRadioState(true), 10);
             break;
           }
           case 'BOOMBOX_RELOADED':
@@ -1423,6 +1542,100 @@ export default function App() {
     }
   };
 
+  // Helper to play a chosen library song directly via NAVIGATE_YOUTUBE without YouTube search API
+  const playLibrarySong = async (pick: SongPick, reason: string = 'Library song'): Promise<boolean> => {
+    const videoId = pick.song.streaming?.youtube?.id;
+    if (!videoId) return false;
+
+    console.log(`[Song Selector] Chosen song: "${pick.song.title}" by "${pick.song.artist}" | tier: ${pick.tier} | genreMatched: ${pick.genreMatched} | reason: ${reason}`);
+    console.log(`tier: ${pick.tier}, genreMatched: ${pick.genreMatched}`);
+
+    // Update play state
+    songPlayStateRef.current = pick.state;
+
+    // Notice handling for genreMatched
+    if (!pick.genreMatched) {
+      setSongPlaybackNotice({
+        message: `No songs in genre "${activeStationGenreRef.current || 'selected genre'}" were charting then. Selected a charting contemporary track (${pick.song.title} by ${pick.song.artist}).`,
+        artist: pick.song.artist,
+        song: pick.song.title,
+        type: 'info'
+      });
+    } else {
+      setSongPlaybackNotice(null);
+    }
+
+    const songTitle = pick.song.title;
+    const songArtist = pick.song.artist;
+    const songYear = String(pick.song.chart_year || activeDateRef.current.slice(0, 4));
+
+    setProgramArtist(songArtist);
+    setProgramSongTitle(songTitle);
+    setProgramYear(songYear);
+    currentPlayingArtistRef.current = songArtist;
+    currentPlayingSongRef.current = songTitle;
+    currentPlayingYearRef.current = songYear;
+
+    const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+
+    setProgramSongResult({
+      status: 'NAVIGATING',
+      requested: `${songArtist} — ${songTitle}`,
+      selectedTitle: songTitle,
+      selectedChannel: 'Official Recording',
+      selectedVideoId: videoId,
+      selectedUrl: targetUrl,
+      confidenceScore: 100,
+      reason: `${reason} (Tier ${pick.tier})`,
+      source: 'song library'
+    });
+
+    logMessage(`[Song Selector] Playing "${songArtist} - ${songTitle}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
+
+    const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, videoId, targetVolFraction, revealYouTubeToStart);
+    if (volumeControllerRef.current) {
+      await volumeControllerRef.current.syncInitialVolume(`${reason} start: "${songTitle}"`);
+    }
+
+    jingleStateRef.current = 'completed';
+    isExplicitStoppedRef.current = false;
+    hasFirstSongStartedPlayingRef.current = true;
+
+    const freshStat = navRes.status || (await musicProviderRef.current.getStatus().catch(() => null));
+    const provTabId = musicProviderRef.current.getConnectedTabId();
+    if (freshStat) {
+      setPlaybackStatus({
+        ...freshStat,
+        connectedTabId: freshStat.connectedTabId || provTabId || null
+      });
+    } else if (provTabId) {
+      setPlaybackStatus((prev) => ({
+        ...prev,
+        connectedTabId: provTabId
+      }));
+    }
+
+    setTestResults((prev) => ({ ...prev, playbackControl: true }));
+    broadcastCurrentRadioState();
+
+    // Immediately choose the next song as soon as the current one starts and keep it
+    if (songLibraryRef.current.length > 0) {
+      const nextPick = pickSong(
+        songLibraryRef.current,
+        activeDateRef.current,
+        activeStationGenreRef.current || 'Pop',
+        songPlayStateRef.current
+      );
+      nextSongRef.current = nextPick;
+      if (nextPick) {
+        console.log('[Song Selector] Pre-selected next song:', nextPick.song.title, 'by', nextPick.song.artist, '| tier:', nextPick.tier, '| genreMatched:', nextPick.genreMatched);
+      }
+    }
+
+    return !!(freshStat?.isPlaying || navRes.success);
+  };
+
   // --- Playback Controls ---
   const handlePlayMusic = async (playClickTsOrEvent?: number | React.MouseEvent) => {
     const playClickTs = typeof playClickTsOrEvent === 'number' ? playClickTsOrEvent : undefined;
@@ -1437,13 +1650,22 @@ export default function App() {
       let desiredArtist: string = (programArtist || '').trim();
       let desiredYear: string = (programYear || '').trim();
 
-      // PLAY always plays music track from queue / selection, never the jingle.
-      // 1. Resolve Desired Song:
-      // Priority 1: programSongResult.selectedVideoId if already programmed
       if (programSongResult && programSongResult.selectedVideoId) {
         desiredVideoId = programSongResult.selectedVideoId;
         desiredTitle = programSongResult.selectedTitle || programSongTitle;
-      } else {
+      } else if (songLibraryRef.current.length > 0) {
+        // Priority 1.5: Pick from library for active date and genre
+        const targetDate = activeDateRef.current;
+        const targetGenre = activeStationGenreRef.current || 'Pop';
+        const pick = nextSongRef.current || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
+        if (pick) {
+          nextSongRef.current = null;
+          await playLibrarySong(pick, 'Play button library selection');
+          return true;
+        }
+      }
+
+      if (!desiredVideoId) {
         // Priority 2: Check selected preset's video ID
         const lookupKey = `${desiredArtist.toLowerCase()}|${(programSongTitle || '').trim().toLowerCase()}`;
         const preset = HARDCODED_PRESETS[lookupKey];
@@ -1828,6 +2050,28 @@ export default function App() {
   };
 
   const advanceToNextSong = async (isInitialAfterJingle: boolean = false): Promise<boolean> => {
+    if (songLibraryRef.current.length > 0) {
+      const pick = nextSongRef.current || pickSong(
+        songLibraryRef.current,
+        activeDateRef.current,
+        activeStationGenreRef.current || 'Pop',
+        songPlayStateRef.current
+      );
+      if (pick) {
+        nextSongRef.current = null;
+        return playLibrarySong(pick, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+      }
+      const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+      logMessage(`[Song Selector] ${noticeMsg}`);
+      setSongPlaybackNotice({
+        message: noticeMsg,
+        artist: activeStationGenreRef.current || 'Station',
+        song: activeDateRef.current,
+        type: 'not_found'
+      });
+      broadcastCurrentRadioState(true, true);
+      return false;
+    }
     let nextIndex = 0;
     if (!isInitialAfterJingle) {
       nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
@@ -1858,6 +2102,33 @@ export default function App() {
     musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_START');
     logMessage('Fast-forwarding to next song in queue...');
     try {
+      if (songLibraryRef.current.length > 0) {
+        const pick = nextSongRef.current || pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          activeStationGenreRef.current || 'Pop',
+          songPlayStateRef.current
+        );
+        if (pick) {
+          nextSongRef.current = null;
+          const ok = await playLibrarySong(pick, 'SKIP / Fast Forward');
+          if (ok) {
+            logMessage(`⏩ Skipped to next track: "${pick.song.artist} - ${pick.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, song: pick.song.title });
+            return;
+          }
+        }
+        const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+        logMessage(`[Song Selector] ${noticeMsg}`);
+        setSongPlaybackNotice({
+          message: noticeMsg,
+          artist: activeStationGenreRef.current || 'Station',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return;
+      }
       const nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
       const ok = await navigateToQueueSong(nextIndex, 'Fast Forward Next');
       if (ok) {
@@ -2665,30 +2936,40 @@ export default function App() {
             className={`p-4 rounded-lg shadow-2xl flex items-start justify-between gap-3 font-mono text-xs animate-in fade-in duration-200 border-2 ${
               songPlaybackNotice.type === 'api_error'
                 ? 'bg-amber-950/90 border-amber-500 text-amber-100'
+                : songPlaybackNotice.type === 'info'
+                ? 'bg-blue-950/90 border-blue-500 text-blue-100'
                 : 'bg-rose-950/90 border-rose-600 text-rose-100'
             }`}
           >
             <div className="flex items-start gap-3">
               <AlertCircle
                 className={`w-5 h-5 shrink-0 mt-0.5 ${
-                  songPlaybackNotice.type === 'api_error' ? 'text-amber-400' : 'text-rose-400'
+                  songPlaybackNotice.type === 'api_error' ? 'text-amber-400' : songPlaybackNotice.type === 'info' ? 'text-blue-400' : 'text-rose-400'
                 }`}
               />
               <div>
                 <div
                   className={`font-bold text-sm tracking-wide uppercase flex items-center gap-2 ${
-                    songPlaybackNotice.type === 'api_error' ? 'text-amber-300' : 'text-rose-300'
+                    songPlaybackNotice.type === 'api_error' ? 'text-amber-300' : songPlaybackNotice.type === 'info' ? 'text-blue-300' : 'text-rose-300'
                   }`}
                 >
-                  <span>{songPlaybackNotice.type === 'api_error' ? 'API / QUOTA NOTICE' : 'RECORDING NOT FOUND'}</span>
+                  <span>
+                    {songPlaybackNotice.type === 'api_error'
+                      ? 'API / QUOTA NOTICE'
+                      : songPlaybackNotice.type === 'info'
+                      ? 'GENRE UNAVAILABLE ON THIS DATE'
+                      : 'RECORDING NOT FOUND'}
+                  </span>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded border font-normal ${
                       songPlaybackNotice.type === 'api_error'
                         ? 'bg-amber-900/60 border-amber-700 text-amber-200'
+                        : songPlaybackNotice.type === 'info'
+                        ? 'bg-blue-900/60 border-blue-700 text-blue-200'
                         : 'bg-rose-900/60 border-rose-700 text-rose-200'
                     }`}
                   >
-                    Nothing was played
+                    {songPlaybackNotice.type === 'info' ? 'Playing Contemporary Track' : 'Nothing was played'}
                   </span>
                 </div>
                 <div className="mt-1 text-zinc-100 text-xs leading-relaxed font-semibold">
@@ -4561,6 +4842,17 @@ export default function App() {
             executeDJOverMusic(script);
           }}
           isMixingAudio={isDuckingActive}
+          initialDate={activeDateRef.current}
+          initialSongPlayed={
+            programArtist && programSongTitle
+              ? `${programArtist} - ${programSongTitle}`
+              : undefined
+          }
+          initialSongNext={
+            nextSongRef.current
+              ? `${nextSongRef.current.song.artist} - ${nextSongRef.current.song.title}`
+              : undefined
+          }
         />
 
         {/* --- SECTION 7: LIVE SYSTEM CONSOLE / LOG --- */}

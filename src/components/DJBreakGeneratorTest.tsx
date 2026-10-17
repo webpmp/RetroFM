@@ -51,6 +51,9 @@ interface DJBreakGeneratorTestProps {
   onSpeakScript?: (scriptText: string) => void;
   onSpeakOverMusic?: (scriptText: string) => void;
   isMixingAudio?: boolean;
+  initialDate?: string;
+  initialSongPlayed?: string;
+  initialSongNext?: string;
 }
 
 export function DJBreakGeneratorTest({
@@ -58,6 +61,9 @@ export function DJBreakGeneratorTest({
   onSpeakScript,
   onSpeakOverMusic,
   isMixingAudio = false,
+  initialDate,
+  initialSongPlayed,
+  initialSongNext,
 }: DJBreakGeneratorTestProps) {
   // Input parameters
   const [selectedDate, setSelectedDate] = useState<string>('1985-07-13');
@@ -104,6 +110,18 @@ export function DJBreakGeneratorTest({
 
   // Track currently speaking break
   const [speakingBreakId, setSpeakingBreakId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialDate) setSelectedDate(initialDate);
+  }, [initialDate]);
+
+  useEffect(() => {
+    if (initialSongPlayed) setSongPlayed(initialSongPlayed);
+  }, [initialSongPlayed]);
+
+  useEffect(() => {
+    if (initialSongNext) setSongNext(initialSongNext);
+  }, [initialSongNext]);
 
   const fetchStats = async () => {
     try {
