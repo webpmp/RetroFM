@@ -154,67 +154,83 @@ export interface StationConfig {
   stationId?: string;
 }
 
+export const ROTATING_TEST_PRESET_KEYS = [
+  'a-ha|take on me',
+  'michael jackson|billie jean',
+  'prince|when doves cry',
+  'u2|with or without you',
+  'peter gabriel|sledgehammer'
+];
+
+export function getPresetForStation(stationCfg?: StationConfig): HardcodedPresetInfo {
+  if (stationCfg?.presetKey && HARDCODED_PRESETS[stationCfg.presetKey]) {
+    return HARDCODED_PRESETS[stationCfg.presetKey];
+  }
+  const idx = Math.abs(Math.round((stationCfg?.frequency ?? 90) * 10)) % ROTATING_TEST_PRESET_KEYS.length;
+  return HARDCODED_PRESETS[ROTATING_TEST_PRESET_KEYS[idx]];
+}
+
 export const STATIONS_BY_DECADE: Record<number, StationConfig[]> = {
   1960: [
-    { genre: 'Top 40/Pop', frequency: 95.1, stationId: 'WPOP-FM' },
-    { genre: 'Motown', frequency: 101.5, stationId: 'WMOT-FM' },
-    { genre: 'Soul', frequency: 107.1, stationId: 'WSOL-FM' },
-    { genre: 'R&B', frequency: 93.5, stationId: 'WRNB-FM' },
-    { genre: 'Freeform/Underground', frequency: 99.5, stationId: 'WFRM-FM' },
-    { genre: 'Folk Rock', frequency: 102.7, stationId: 'WFLK-FM' },
-    { genre: 'Psychedelic Rock', frequency: 104.1, stationId: 'WPSY-FM' }
+    { genre: 'Top 40/Pop', frequency: 95.1, presetKey: 'a-ha|take on me', stationId: 'WPOP-FM' }, // 0
+    { genre: 'Motown', frequency: 101.5, presetKey: 'michael jackson|billie jean', stationId: 'WMOT-FM' }, // 1
+    { genre: 'Soul', frequency: 107.1, presetKey: 'prince|when doves cry', stationId: 'WSOL-FM' }, // 2
+    { genre: 'R&B', frequency: 93.5, presetKey: 'u2|with or without you', stationId: 'WRNB-FM' }, // 3
+    { genre: 'Freeform/Underground', frequency: 99.5, presetKey: 'peter gabriel|sledgehammer', stationId: 'WFRM-FM' }, // 4
+    { genre: 'Folk Rock', frequency: 102.7, presetKey: 'a-ha|take on me', stationId: 'WFLK-FM' }, // 0
+    { genre: 'Psychedelic Rock', frequency: 104.1, presetKey: 'michael jackson|billie jean', stationId: 'WPSY-FM' } // 1
   ],
   1970: [
-    { genre: 'AOR', frequency: 95.5, stationId: 'WAOR-FM' },
-    { genre: 'Disco', frequency: 98.7, stationId: 'WDIS-FM' },
-    { genre: 'Progressive Rock', frequency: 92.3, stationId: 'WPRG-FM' },
-    { genre: 'Soft Rock', frequency: 103.5, stationId: 'WSFT-FM' },
-    { genre: 'Funk', frequency: 107.5, stationId: 'WFNK-FM' },
-    { genre: 'Punk Rock', frequency: 91.1, stationId: 'WPNK-FM' },
-    { genre: 'Outlaw Country', frequency: 97.1, stationId: 'WOUT-FM' }
+    { genre: 'AOR', frequency: 95.5, presetKey: 'prince|when doves cry', stationId: 'WAOR-FM' }, // 2
+    { genre: 'Disco', frequency: 98.7, presetKey: 'u2|with or without you', stationId: 'WDIS-FM' }, // 3
+    { genre: 'Progressive Rock', frequency: 92.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WPRG-FM' }, // 4
+    { genre: 'Soft Rock', frequency: 103.5, presetKey: 'a-ha|take on me', stationId: 'WSFT-FM' }, // 0
+    { genre: 'Funk', frequency: 107.5, presetKey: 'michael jackson|billie jean', stationId: 'WFNK-FM' }, // 1
+    { genre: 'Punk Rock', frequency: 91.1, presetKey: 'prince|when doves cry', stationId: 'WPNK-FM' }, // 2
+    { genre: 'Outlaw Country', frequency: 97.1, presetKey: 'u2|with or without you', stationId: 'WOUT-FM' } // 3
   ],
   1980: [
-    { genre: 'College Rock', frequency: 88.9, presetKey: 'u2|with or without you', stationId: 'WCRK-FM' },
-    { genre: 'Hip-Hop', frequency: 89.9, stationId: 'WHIP-FM' },
-    { genre: 'New Wave', frequency: 90.7, presetKey: 'a-ha|take on me', stationId: 'WNEW-FM' },
-    { genre: 'Synth-Pop', frequency: 93.1, presetKey: 'peter gabriel|sledgehammer', stationId: 'WSYN-FM' },
-    { genre: 'Urban Contemporary', frequency: 97.9, presetKey: 'prince|when doves cry', stationId: 'WURB-FM' },
-    { genre: 'CHR', frequency: 101.9, presetKey: 'michael jackson|billie jean', stationId: 'WCHR-FM' },
-    { genre: 'Hair Metal', frequency: 105.5, stationId: 'WHAR-FM' }
+    { genre: 'College Rock', frequency: 88.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WCRK-FM' }, // 4
+    { genre: 'Hip-Hop', frequency: 89.9, presetKey: 'a-ha|take on me', stationId: 'WHIP-FM' }, // 0
+    { genre: 'New Wave', frequency: 90.7, presetKey: 'michael jackson|billie jean', stationId: 'WNEW-FM' }, // 1
+    { genre: 'Synth-Pop', frequency: 93.1, presetKey: 'prince|when doves cry', stationId: 'WSYN-FM' }, // 2
+    { genre: 'Urban Contemporary', frequency: 97.9, presetKey: 'u2|with or without you', stationId: 'WURB-FM' }, // 3
+    { genre: 'CHR', frequency: 101.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WCHR-FM' }, // 4
+    { genre: 'Hair Metal', frequency: 105.5, presetKey: 'a-ha|take on me', stationId: 'WHAR-FM' } // 0
   ],
   1990: [
-    { genre: 'Grunge', frequency: 99.9, stationId: 'WGRN-FM' },
-    { genre: 'Alternative Rock', frequency: 106.7, stationId: 'WALT-FM' },
-    { genre: 'Gangsta Rap', frequency: 92.7, stationId: 'WRAP-FM' },
-    { genre: 'Contemporary R&B', frequency: 105.1, stationId: 'WRNB-FM' },
-    { genre: 'Teen Pop', frequency: 100.3, stationId: 'WTEN-FM' },
-    { genre: 'Eurodance', frequency: 96.3, stationId: 'WEUR-FM' },
-    { genre: 'Country Pop', frequency: 94.7, stationId: 'WCPY-FM' }
+    { genre: 'Grunge', frequency: 99.9, presetKey: 'michael jackson|billie jean', stationId: 'WGRN-FM' }, // 1
+    { genre: 'Alternative Rock', frequency: 106.7, presetKey: 'prince|when doves cry', stationId: 'WALT-FM' }, // 2
+    { genre: 'Gangsta Rap', frequency: 92.7, presetKey: 'u2|with or without you', stationId: 'WRAP-FM' }, // 3
+    { genre: 'Contemporary R&B', frequency: 105.1, presetKey: 'peter gabriel|sledgehammer', stationId: 'WRNB-FM' }, // 4
+    { genre: 'Teen Pop', frequency: 100.3, presetKey: 'a-ha|take on me', stationId: 'WTEN-FM' }, // 0
+    { genre: 'Eurodance', frequency: 96.3, presetKey: 'michael jackson|billie jean', stationId: 'WEUR-FM' }, // 1
+    { genre: 'Country Pop', frequency: 94.7, presetKey: 'prince|when doves cry', stationId: 'WCPY-FM' } // 2
   ],
   2000: [
-    { genre: 'Nu-Metal', frequency: 93.7, stationId: 'WNUM-FM' },
-    { genre: 'Post-Grunge', frequency: 107.3, stationId: 'WPST-FM' },
-    { genre: 'Emo', frequency: 91.3, stationId: 'WEMO-FM' },
-    { genre: 'Crunk', frequency: 106.1, stationId: 'WCRK-FM' },
-    { genre: 'Electropop', frequency: 102.3, stationId: 'WEPO-FM' },
-    { genre: 'Indie Rock', frequency: 90.3, stationId: 'WIND-FM' },
-    { genre: 'Reggaeton', frequency: 96.7, stationId: 'WREG-FM' }
+    { genre: 'Nu-Metal', frequency: 93.7, presetKey: 'u2|with or without you', stationId: 'WNUM-FM' }, // 3
+    { genre: 'Post-Grunge', frequency: 107.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WPST-FM' }, // 4
+    { genre: 'Emo', frequency: 91.3, presetKey: 'a-ha|take on me', stationId: 'WEMO-FM' }, // 0
+    { genre: 'Crunk', frequency: 106.1, presetKey: 'michael jackson|billie jean', stationId: 'WCRK-FM' }, // 1
+    { genre: 'Electropop', frequency: 102.3, presetKey: 'prince|when doves cry', stationId: 'WEPO-FM' }, // 2
+    { genre: 'Indie Rock', frequency: 90.3, presetKey: 'u2|with or without you', stationId: 'WIND-FM' }, // 3
+    { genre: 'Reggaeton', frequency: 96.7, presetKey: 'peter gabriel|sledgehammer', stationId: 'WREG-FM' } // 4
   ],
   2010: [
-    { genre: 'EDM', frequency: 101.1, stationId: 'WEDM-FM' },
-    { genre: 'Trap', frequency: 104.5, stationId: 'WTRP-FM' },
-    { genre: 'Indie Pop', frequency: 91.9, stationId: 'WIND-FM' },
-    { genre: 'Mumble Rap', frequency: 99.1, stationId: 'WMUM-FM' },
-    { genre: 'Synthwave', frequency: 89.3, stationId: 'WSYN-FM' },
-    { genre: 'Afrobeats', frequency: 105.9, stationId: 'WAFR-FM' }
+    { genre: 'EDM', frequency: 101.1, presetKey: 'a-ha|take on me', stationId: 'WEDM-FM' }, // 0
+    { genre: 'Trap', frequency: 104.5, presetKey: 'michael jackson|billie jean', stationId: 'WTRP-FM' }, // 1
+    { genre: 'Indie Pop', frequency: 91.9, presetKey: 'prince|when doves cry', stationId: 'WIND-FM' }, // 2
+    { genre: 'Mumble Rap', frequency: 99.1, presetKey: 'u2|with or without you', stationId: 'WMUM-FM' }, // 3
+    { genre: 'Synthwave', frequency: 89.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WSYN-FM' }, // 4
+    { genre: 'Afrobeats', frequency: 105.9, presetKey: 'a-ha|take on me', stationId: 'WAFR-FM' } // 0
   ],
   2020: [
-    { genre: 'Bedroom Pop', frequency: 88.1, stationId: 'WBED-FM' },
-    { genre: 'Hyperpop', frequency: 90.9, stationId: 'WHYP-FM' },
-    { genre: 'Amapiano', frequency: 103.9, stationId: 'WAMA-FM' },
-    { genre: 'Drift Phonk', frequency: 95.9, stationId: 'WDRF-FM' },
-    { genre: 'Regional Mexican', frequency: 102.9, stationId: 'WMEX-FM' },
-    { genre: 'Lofi Hip-Hop', frequency: 88.5, stationId: 'WLOF-FM' }
+    { genre: 'Bedroom Pop', frequency: 88.1, presetKey: 'michael jackson|billie jean', stationId: 'WBED-FM' }, // 1
+    { genre: 'Hyperpop', frequency: 90.9, presetKey: 'prince|when doves cry', stationId: 'WHYP-FM' }, // 2
+    { genre: 'Amapiano', frequency: 103.9, presetKey: 'u2|with or without you', stationId: 'WAMA-FM' }, // 3
+    { genre: 'Drift Phonk', frequency: 95.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WDRF-FM' }, // 4
+    { genre: 'Regional Mexican', frequency: 102.9, presetKey: 'a-ha|take on me', stationId: 'WMEX-FM' }, // 0
+    { genre: 'Lofi Hip-Hop', frequency: 88.5, presetKey: 'michael jackson|billie jean', stationId: 'WLOF-FM' } // 1
   ]
 };
 
@@ -299,6 +315,7 @@ export default function App() {
   // --- Station Song Queue Tracking ---
   const currentQueueIndexRef = useRef<number>(0);
   const isAdvancingRef = useRef<boolean>(false);
+  const isStartupReadyRef = useRef<boolean>(false);
 
   // --- Station Tuning & Position Preservation State ---
   const stationPlaybackCacheRef = useRef<Record<string, {
@@ -314,6 +331,10 @@ export default function App() {
   }>>({});
   const activeStationGenreRef = useRef<string | null>(null);
   const tuneSequenceRef = useRef<number>(0);
+  const currentPlayingArtistRef = useRef<string>('a-ha');
+  const currentPlayingSongRef = useRef<string>('Take on Me');
+  const currentPlayingYearRef = useRef<string>('1985');
+  const isTuningSeekingRef = useRef<boolean>(false);
 
   // --- PROGRAM SONG Test State ---
   const [programArtist, setProgramArtist] = useState<string>('a-ha');
@@ -326,6 +347,7 @@ export default function App() {
     selectedTitle?: string;
     selectedChannel?: string;
     selectedDuration?: string;
+    selectedDurationSec?: number;
     selectedVideoId?: string;
     selectedUrl?: string;
     confidenceScore?: number;
@@ -642,7 +664,10 @@ export default function App() {
             .then((res) => {
               if (res.success && res.connectedTabId) {
                 if (res.status) {
-                  setPlaybackStatus(res.status);
+                  setPlaybackStatus({
+                    ...res.status,
+                    connectedTabId: res.connectedTabId
+                  });
                 }
                 setTestResults((prev) => ({
                   ...prev,
@@ -701,6 +726,7 @@ export default function App() {
   const transportCommandSeqRef = useRef<number>(0);
   const isTransportCommandInFlightRef = useRef<boolean>(false);
   const isExplicitStoppedRef = useRef<boolean>(false);
+  const activeDecadeRef = useRef<number | null>(null);
   const lastBroadcastStateKeyRef = useRef<string>('');
   const playbackStatusRef = useRef<MusicPlaybackStatus>(playbackStatus);
   playbackStatusRef.current = playbackStatus;
@@ -710,6 +736,7 @@ export default function App() {
     const vc = volumeControllerRef.current;
     const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
     const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
+    const effectiveStatus = explicitStatus || playbackStatusRef.current || playbackStatus;
 
     // Green display remains blank until PLAY confirms audible real song playback.
     // The startup jingle is not a song selection and must never populate the user-facing Artist/Song Title fields.
@@ -719,31 +746,45 @@ export default function App() {
 
     if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
       currentSong = null;
-    } else if (programSongResult && programSongResult.selectedTitle) {
+    } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
       currentSong = {
         title: programSongResult.selectedTitle,
-        artist: programArtist || '',
-        year: programYear || '',
-        duration: programSongResult.selectedDuration
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: programSongResult.selectedDuration,
+        durationSec: programSongResult.selectedDurationSec,
+        videoId: programSongResult.selectedVideoId,
+        currentTime: effectiveStatus.currentTime
       };
-    } else if (playbackStatus && playbackStatus.title && playbackStatus.title !== 'Unknown Title' && playbackStatus.title !== 'Unknown Video') {
+    } else if (effectiveStatus && effectiveStatus.title && effectiveStatus.title !== 'Unknown Title' && effectiveStatus.title !== 'Unknown Video') {
       currentSong = {
-        title: playbackStatus.title,
-        artist: programArtist || '',
-        year: programYear || ''
+        title: effectiveStatus.title,
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: effectiveStatus.duration ? `${Math.floor(effectiveStatus.duration / 60).toString().padStart(2, '0')}:${Math.floor(effectiveStatus.duration % 60).toString().padStart(2, '0')}` : undefined,
+        durationSec: effectiveStatus.duration || undefined,
+        videoId: effectiveStatus.videoId,
+        currentTime: effectiveStatus.currentTime
       };
     } else if (programSongTitle) {
       currentSong = {
         title: programSongTitle,
-        artist: programArtist || '',
-        year: programYear || ''
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: programSongResult?.selectedDuration,
+        durationSec: programSongResult?.selectedDurationSec,
+        videoId: effectiveStatus.videoId,
+        currentTime: effectiveStatus.currentTime
       };
     }
 
     const yearNum = parseInt(programYear, 10);
-    const decade = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
+    const decadeFromYear = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
       ? Math.floor(yearNum / 10) * 10
       : 1990;
+    const decade = (activeDecadeRef.current && activeDecadeRef.current >= 1960 && activeDecadeRef.current <= 2020)
+      ? activeDecadeRef.current
+      : decadeFromYear;
 
     // Default primary stations per decade from Boom Box ST table
     const DECADE_STATIONS: Record<number, { freq: number; genre: string }> = {
@@ -757,21 +798,21 @@ export default function App() {
     };
 
     const station = DECADE_STATIONS[decade] || { freq: 100.3, genre: 'Teen Pop' };
-    const effectiveStatus = explicitStatus || playbackStatusRef.current || playbackStatus;
     const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;
     const effectivePlayingOrAdvancing = isAdvancingRef.current || effectiveStatus.isPlaying;
-    const rawMode = effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped'));
-    const playbackMode = hasFirstSongStarted ? rawMode : 'blank';
+    const rawMode = isTuningSeekingRef.current ? 'seek' : (effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped')));
+    const playbackMode = isTuningSeekingRef.current ? 'seek' : (hasFirstSongStarted ? rawMode : 'blank');
 
     // Ready when YouTube tab is connected and first video (jingle or song) is prepared/ready
+    const connectedId = effectiveStatus.connectedTabId || playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
+    const hasValidVideo = Boolean(effectiveStatus.videoId && effectiveStatus.videoId !== 'Unknown' && effectiveStatus.videoId !== 'Unknown Video');
     const isStartupReady = Boolean(
-      effectiveStatus.available &&
-      effectiveStatus.connectedTabId &&
-      effectiveStatus.videoId &&
-      effectiveStatus.videoId !== 'Unknown' &&
-      effectiveStatus.videoId !== 'Unknown Video' &&
+      (effectiveStatus.available || Boolean(effectiveStatus.videoId)) &&
+      connectedId &&
+      hasValidVideo &&
       (jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing' || jingleStateRef.current === 'completed' || hasFirstSongStarted)
     );
+    isStartupReadyRef.current = isStartupReady;
 
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
@@ -891,27 +932,29 @@ export default function App() {
             const genre = action.genre;
 
             if (!isLocked) {
+              isTuningSeekingRef.current = false;
               logMessage(`[Boom Box Dial] Untuned: ${freq !== null ? freq.toFixed(1) : ''} FM`);
               setLastBoomBoxCommand({ action: `TUNE (${freq !== null ? freq.toFixed(1) : ''} FM untuned)`, result: 'SUCCESS', time: timeStr });
 
               // Save current station's position before pausing
               const currentGenre = activeStationGenreRef.current;
-              if (currentGenre && playbackStatus.videoId && playbackStatus.currentTime > 0) {
+              const liveStatus = playbackStatusRef.current || playbackStatus;
+              if (currentGenre && liveStatus.videoId) {
                 stationPlaybackCacheRef.current[currentGenre] = {
                   genre: currentGenre,
-                  frequency: (playbackStatus as any).frequency || (freq ?? 0),
-                  videoId: playbackStatus.videoId,
-                  title: playbackStatus.title,
-                  artist: programArtist,
-                  song: programSongTitle,
-                  year: programYear,
-                  currentTime: playbackStatus.currentTime,
-                  duration: playbackStatus.duration
+                  frequency: (liveStatus as any).frequency || (freq ?? 0),
+                  videoId: liveStatus.videoId,
+                  title: liveStatus.title,
+                  artist: currentPlayingArtistRef.current || programArtist,
+                  song: currentPlayingSongRef.current || programSongTitle,
+                  year: currentPlayingYearRef.current || programYear,
+                  currentTime: liveStatus.currentTime,
+                  duration: liveStatus.duration
                 };
               }
 
               // Immediately pause YouTube playback
-              if (playbackStatus.isPlaying || isAdvancingRef.current) {
+              if (liveStatus.isPlaying || isAdvancingRef.current) {
                 await handlePauseMusicRef.current();
               }
               break;
@@ -922,22 +965,24 @@ export default function App() {
             setLastBoomBoxCommand({ action: `TUNE (${freq} FM - ${genre})`, result: 'SUCCESS', time: timeStr });
 
             const prevGenre = activeStationGenreRef.current;
-            if (prevGenre && prevGenre !== genre && playbackStatus.videoId && playbackStatus.currentTime > 0) {
+            const liveStatus = playbackStatusRef.current || playbackStatus;
+            if (prevGenre && prevGenre !== genre && liveStatus.videoId) {
               stationPlaybackCacheRef.current[prevGenre] = {
                 genre: prevGenre,
-                frequency: (playbackStatus as any).frequency || (freq ?? 0),
-                videoId: playbackStatus.videoId,
-                title: playbackStatus.title,
-                artist: programArtist,
-                song: programSongTitle,
-                year: programYear,
-                currentTime: playbackStatus.currentTime,
-                duration: playbackStatus.duration
+                frequency: (liveStatus as any).frequency || (freq ?? 0),
+                videoId: liveStatus.videoId,
+                title: liveStatus.title,
+                artist: currentPlayingArtistRef.current || programArtist,
+                song: currentPlayingSongRef.current || programSongTitle,
+                year: currentPlayingYearRef.current || programYear,
+                currentTime: liveStatus.currentTime,
+                duration: liveStatus.duration
               };
             }
             activeStationGenreRef.current = genre;
 
             if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
+              activeDecadeRef.current = action.decade;
               const currentDec = Math.floor(parseInt(programYear || '1985', 10) / 10) * 10;
               if (currentDec !== action.decade) {
                 setProgramYear(String(action.decade + 5));
@@ -950,32 +995,43 @@ export default function App() {
             const stationCfg = stationsForDecade.find(s => s.genre === genre || (freq !== null && Math.abs(s.frequency - freq) < 0.05));
 
             const cached = stationPlaybackCacheRef.current[genre];
-            const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : null;
+            const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
 
-            if (!cached && !preset) {
-              // Scenario D: Valid station with no playable music available
-              logMessage(`[Tuner] Station ${freq} FM (${genre}) has no playable music currently available.`);
-              if (playbackStatus.isPlaying) {
-                await handlePauseMusicRef.current();
-              }
-              broadcastCurrentRadioState(true, true);
-              break;
-            }
+            // In radio simulation mode, tuning to a genre station always automatically starts or resumes playback
+            isExplicitStoppedRef.current = false;
+            const shouldAutoPlay = true;
 
-            const shouldAutoPlay = Boolean(action.autoPlay) && !isExplicitStoppedRef.current;
+            // Broadcast 'seek' so green display immediately shows SEEK while loading or restoring position
+            isTuningSeekingRef.current = true;
+            broadcastCurrentRadioState(true);
+
             if (shouldAutoPlay) {
               if (tuneSeq !== tuneSequenceRef.current) break;
 
               if (cached) {
                 // Scenario B: Return to previously visited station
                 logMessage(`[Tuner] Resuming ${genre} from saved position ${Math.round(cached.currentTime)}s ("${cached.title}")`);
+                currentPlayingArtistRef.current = cached.artist;
+                currentPlayingSongRef.current = cached.song;
+                currentPlayingYearRef.current = cached.year;
                 setProgramArtist(cached.artist);
                 setProgramSongTitle(cached.song);
                 setProgramYear(cached.year);
+                setProgramSongResult({
+                  status: 'PLAYING',
+                  requested: `${cached.artist} - ${cached.song}`,
+                  selectedVideoId: cached.videoId,
+                  selectedTitle: cached.song,
+                  selectedDurationSec: cached.duration
+                });
 
-                if (playbackStatus.connectedTabId && playbackStatus.videoId === cached.videoId) {
-                  if (tuneSeq !== tuneSequenceRef.current) break;
-                  if (cached.currentTime > 0) {
+                const currentLive = playbackStatusRef.current || playbackStatus;
+                if (currentLive.connectedTabId && currentLive.videoId === cached.videoId) {
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  if (cached.currentTime > 0 && Math.abs(currentLive.currentTime - cached.currentTime) > 2) {
                     await musicProviderRef.current.seek(cached.currentTime).catch(() => {});
                   }
                   await handlePlayMusicRef.current();
@@ -983,9 +1039,15 @@ export default function App() {
                   const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
                   const targetUrl = `https://www.youtube.com/watch?v=${cached.videoId}`;
                   await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart);
-                  if (tuneSeq !== tuneSequenceRef.current) break;
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
                   await new Promise(r => setTimeout(r, 600));
-                  if (tuneSeq !== tuneSequenceRef.current) break;
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
                   if (cached.currentTime > 0) {
                     await musicProviderRef.current.seek(cached.currentTime).catch(() => {});
                   }
@@ -994,19 +1056,42 @@ export default function App() {
               } else if (preset) {
                 // Scenario A: First visit to station with preset
                 logMessage(`[Tuner] Auto-playing preset for ${genre}: "${preset.artist} - ${preset.song}"`);
+                currentPlayingArtistRef.current = preset.artist;
+                currentPlayingSongRef.current = preset.song;
+                currentPlayingYearRef.current = preset.year;
                 setProgramArtist(preset.artist);
                 setProgramSongTitle(preset.song);
                 setProgramYear(preset.year);
 
-                if (tuneSeq !== tuneSequenceRef.current) break;
+                if (tuneSeq !== tuneSequenceRef.current) {
+                  isTuningSeekingRef.current = false;
+                  break;
+                }
                 await handleProgramSong({ artist: preset.artist, song: preset.song, year: preset.year });
+              }
+              if (tuneSeq === tuneSequenceRef.current) {
+                isTuningSeekingRef.current = false;
+                broadcastCurrentRadioState(true);
               }
             } else {
               if (cached) {
+                currentPlayingArtistRef.current = cached.artist;
+                currentPlayingSongRef.current = cached.song;
+                currentPlayingYearRef.current = cached.year;
                 setProgramArtist(cached.artist);
                 setProgramSongTitle(cached.song);
                 setProgramYear(cached.year);
+                setProgramSongResult({
+                  status: 'IDLE',
+                  requested: `${cached.artist} - ${cached.song}`,
+                  selectedVideoId: cached.videoId,
+                  selectedTitle: cached.song,
+                  selectedDurationSec: cached.duration
+                });
               } else if (preset) {
+                currentPlayingArtistRef.current = preset.artist;
+                currentPlayingSongRef.current = preset.song;
+                currentPlayingYearRef.current = preset.year;
                 setProgramArtist(preset.artist);
                 setProgramSongTitle(preset.song);
                 setProgramYear(preset.year);
@@ -1021,6 +1106,14 @@ export default function App() {
               setLastBoomBoxCommand({ action: `SELECT_DATE (${action.date})`, result: 'SUCCESS', time: timeStr });
             }
             const selectedYear = action.year ? String(action.year) : (action.date ? action.date.split('-')[0] : (action.decade ? String(action.decade + 5) : null));
+            if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
+              activeDecadeRef.current = action.decade;
+            } else if (selectedYear) {
+              const parsedDec = Math.floor(parseInt(selectedYear, 10) / 10) * 10;
+              if (parsedDec >= 1960 && parsedDec <= 2020) {
+                activeDecadeRef.current = parsedDec;
+              }
+            }
             if (selectedYear) {
               setProgramYear(selectedYear);
             }
@@ -1029,8 +1122,11 @@ export default function App() {
               const dec = action.decade || (selectedYear ? Math.floor(parseInt(selectedYear, 10) / 10) * 10 : 1980);
               const stationsForDec = STATIONS_BY_DECADE[dec] || [];
               const stationCfg = stationsForDec.find(s => s.genre === action.genre);
-              if (stationCfg?.presetKey && HARDCODED_PRESETS[stationCfg.presetKey]) {
-                const preset = HARDCODED_PRESETS[stationCfg.presetKey];
+              const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
+              if (preset) {
+                currentPlayingArtistRef.current = preset.artist;
+                currentPlayingSongRef.current = preset.song;
+                currentPlayingYearRef.current = preset.year;
                 setProgramArtist(preset.artist);
                 setProgramSongTitle(preset.song);
                 setProgramYear(preset.year);
@@ -1110,6 +1206,11 @@ export default function App() {
         connectedTabId: prev.connectedTabId || provTabId || null,
       }));
 
+      // Broadcast state update only if startup readiness or playback status actually changed
+      if (payload.videoId && !isStartupReadyRef.current) {
+        broadcastCurrentRadioState();
+      }
+
       // If playing a real song (not the station jingle), mark first song as started
       if (rawState === 1) {
         const currentPlayingVid = payload.videoId || playbackStatus.videoId;
@@ -1117,8 +1218,8 @@ export default function App() {
           if (!hasFirstSongStartedPlayingRef.current) {
             hasFirstSongStartedPlayingRef.current = true;
             logMessage(`▶ Confirmed real song playback active: "${payload.title || currentPlayingVid}". Unsuppressing Boom Box status.`);
+            broadcastCurrentRadioState(true);
           }
-          broadcastCurrentRadioState();
         }
       }
 
@@ -1301,23 +1402,19 @@ export default function App() {
       const res = await musicProviderRef.current.prepare(targetUrl, videoId, targetVolFraction);
       if (res.success) {
         logMessage(`[Pre-Prepare] Ready: "${title || videoId}" is cued and prepared.`);
-        let updatedStatus = res.status;
-        if (res.status) {
-          setPlaybackStatus((prev) => {
-            const next = {
-              ...prev,
-              ...res.status,
-              connectedTabId: res.status?.connectedTabId || prev.connectedTabId
-            };
-            playbackStatusRef.current = next;
-            return next;
-          });
-          updatedStatus = {
-            ...playbackStatusRef.current,
-            ...res.status
-          };
-        }
-        broadcastCurrentRadioState(true, false, updatedStatus);
+        const provTabId = musicProviderRef.current.getConnectedTabId();
+        const baseStatus = (res.status || {}) as Partial<MusicPlaybackStatus>;
+        const nextStatus: MusicPlaybackStatus = {
+          ...playbackStatusRef.current,
+          ...baseStatus,
+          available: true,
+          videoId: videoId,
+          title: title || baseStatus.title || videoId,
+          connectedTabId: baseStatus.connectedTabId || playbackStatusRef.current?.connectedTabId || provTabId || null,
+        };
+        setPlaybackStatus(nextStatus);
+        playbackStatusRef.current = nextStatus;
+        broadcastCurrentRadioState(true, false, nextStatus);
       }
       return res.success;
     } catch (err: any) {
@@ -1794,6 +1891,9 @@ export default function App() {
       setProgramSongTitle(customOverride.song);
       setProgramYear(customOverride.year);
     }
+    currentPlayingArtistRef.current = artist;
+    currentPlayingSongRef.current = song;
+    currentPlayingYearRef.current = year;
 
     const requestedStr = `${artist} — ${song}${year ? ` (${year})` : ''}`;
 

@@ -38,6 +38,7 @@ export interface SongSearchResult {
     channel: string;
     url: string;
     duration?: string;
+    durationSec?: number;
     confidenceScore: number;
     reason: string;
   };
@@ -958,6 +959,7 @@ export function evaluateCandidateVideos(
       channel: topCandidate.channel,
       url: `https://www.youtube.com/watch?v=${topCandidate.videoId}`,
       duration: topCandidate.duration,
+      durationSec: topCandidate.durationSec,
       confidenceScore: topCandidate.score,
       reason: topCandidate.reason,
     },
@@ -1253,3 +1255,46 @@ export async function searchYouTubeForSong(
     };
   }
 }
+
+/**
+ * Fallback duration lookup from SQLite ~/retrofm/library.sqlite
+ * Reads duration_sec for artist/song match when YouTube duration is unavailable.
+ */
+export function lookupDurationFromSqlite(artist: string, song: string): number | null {
+  try {
+    const homedir = process.env.HOME || '/root';
+    const dbPath = path.join(homedir, 'retrofm', 'library.sqlite');
+    if (!fs.existsSync(dbPath)) return null;
+
+    // Use bun:sqlite if running in bun runtime
+    const BunGlobal = (globalThis as any).Bun;
+    if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+      const db = BunGlobal.openDatabase(dbPath);
+      const query = db.query('SELECT duration_sec FROM songs WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) LIMIT 1');
+      const row = query.get(artist.trim(), song.trim()) as { duration_sec?: number } | null;
+      return typeof row?.duration_sec === 'number' && row.duration_sec > 0 ? row.duration_sec : null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Caches duration_sec in SQLite ~/retrofm/library.sqlite if present.
+ */
+export function storeDurationInSqlite(artist: string, song: string, durationSec: number): boolean {
+  try {
+    const homedir = process.env.HOME || '/root';
+    const dbPath = path.join(homedir, 'retrofm', 'library.sqlite');
+    if (!fs.existsSync(dbPath)) return false;
+
+    const BunGlobal = (globalThis as any).Bun;
+    if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+      const db = BunGlobal.openDatabase(dbPath);
+      const stmt = db.query('UPDATE songs SET duration_sec = ? WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) AND (duration_sec IS NULL OR duration_sec = 0)');
+      stmt.run(Math.floor(durationSec), artist.trim(), song.trim());
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+

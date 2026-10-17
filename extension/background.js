@@ -801,10 +801,14 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (!freshState && lastKnownRadioState) {
             freshState = { ...lastKnownRadioState, appConnected: true };
           }
+          if (freshState && latestYouTubeState && latestYouTubeState.videoId) {
+            freshState.videoId = latestYouTubeState.videoId;
+            freshState.isStartupReady = true;
+          }
 
           sendResponse({
             success: true,
-            data: freshState || { appConnected: true, playbackStatus: 'stopped' }
+            data: freshState || { appConnected: true, playbackStatus: 'stopped', isStartupReady: Boolean(latestYouTubeState?.videoId), videoId: latestYouTubeState?.videoId || null }
           });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
@@ -1160,6 +1164,32 @@ function handleIncomingRequest(request, sender, sendResponse) {
             } catch (e) {
               preparedStatus = { available: true, videoId: videoId || null, url: targetUrl };
             }
+            if (!preparedStatus || typeof preparedStatus !== 'object') {
+              preparedStatus = { available: true, videoId: videoId || null, url: targetUrl };
+            }
+            preparedStatus.connectedTabId = tabId;
+            preparedStatus.available = true;
+            if (videoId) preparedStatus.videoId = videoId;
+
+            // Cache and push YT_STATE_CHANGED to Boom Box
+            latestYouTubeState = {
+              state: -1,
+              videoId: videoId || null,
+              title: preparedStatus.title || '',
+              currentTime: 0,
+              duration: preparedStatus.duration || 0
+            };
+
+            const bbTabId = await resolveBoomBoxTab();
+            if (bbTabId) {
+              try {
+                chrome.tabs.sendMessage(bbTabId, {
+                  type: 'YT_STATE_CHANGED',
+                  payload: latestYouTubeState
+                }).catch(() => {});
+              } catch (e) {}
+            }
+
             sendResponse({
               success: true,
               data: {

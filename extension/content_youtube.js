@@ -279,6 +279,20 @@ if (!window.__retroFmContentLoaded) {
     return document.title.replace(' - YouTube', '').trim() || 'Unknown Video';
   }
 
+  // If YouTube page loaded with a video in URL, report initial presence to background
+  try {
+    const initialVid = getVideoId();
+    if (initialVid) {
+      handleStateChangeFromMainWorld({
+        state: -1,
+        videoId: initialVid,
+        title: getTitle(),
+        currentTime: 0,
+        duration: 0
+      });
+    }
+  } catch (e) {}
+
   function getPlaybackStatus() {
     const video = getVideoElement();
     const reportedVolFraction = Number((latestPlayerVolume / 100).toFixed(2));
@@ -471,6 +485,7 @@ if (!window.__retroFmContentLoaded) {
 
         // If already actively playing, confirm immediately
         if (!video.paused && !video.ended && (video.readyState >= 3 || video.currentTime > 0)) {
+          sendPlayerCommandToMainWorld('PLAY', { t_boombox_play_click, t_cs_play_recv });
           sendResponse({ success: true, state: 'already_playing', status: getPlaybackStatus() });
           break;
         }

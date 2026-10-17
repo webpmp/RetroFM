@@ -218,6 +218,10 @@
     const player = getPlayer();
     if (!player) return false;
 
+    if (cmd === 'PLAY' || cmd === 'STOP' || cmd === 'SEEK') {
+      lastReportedTime = -1;
+    }
+
     const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
 
     if (cmd === 'PLAY') {
@@ -238,6 +242,7 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.playVideo threw:', e);
       }
+      syncPlaybackProgress(true);
     } else if (cmd === 'PAUSE') {
       try {
         if (typeof player.pauseVideo === 'function') {
@@ -246,6 +251,7 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.pauseVideo threw:', e);
       }
+      syncPlaybackProgress(false);
     } else if (cmd === 'STOP') {
       try {
         if (typeof player.pauseVideo === 'function') {
@@ -257,6 +263,7 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player STOP threw:', e);
       }
+      syncPlaybackProgress(false);
     } else if (cmd === 'SEEK') {
       const time = typeof payload?.time === 'number' ? payload.time : (typeof payload === 'number' ? payload : 0);
       try {
@@ -266,6 +273,8 @@
       } catch (e) {
         console.warn('[RetroFM MainWorld] player.seekTo threw:', e);
       }
+      lastReportedTime = -1;
+      emitCurrentProgress();
     }
 
     const stateAfter = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
@@ -372,6 +381,7 @@
           `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}`
         );
         onMediaLifecycle('playing');
+        syncPlaybackProgress(true);
       } catch (err) {
         reportError(err, 'media.addEventListener:playing');
       }
@@ -390,9 +400,16 @@
           pausedRightAfterUnmute: unmutedRecently,
           timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
         });
+        syncPlaybackProgress(false);
       } catch (err) {
         reportError(err, 'media.addEventListener:pause');
       }
+    });
+
+    media.addEventListener('ended', () => {
+      try {
+        syncPlaybackProgress(false);
+      } catch (err) {}
     });
   }
 
@@ -494,6 +511,7 @@
             reportError(e, 'postMessage:RETROFM_YT_STATE_CHANGED_MSG');
           }
           sendDiagnosticsSnapshot('stateChange');
+          syncPlaybackProgress(state === 1);
         });
 
         // Also catch and record any error YouTube reports
@@ -502,8 +520,120 @@
             recordError('ytPlayerError', { errorCode: errCode });
           });
         }
+
+        // Immediately emit current player state upon attachment so listeners learn current video/readiness
+        try {
+          let curState = -1;
+          if (typeof player.getPlayerState === 'function') {
+            curState = player.getPlayerState();
+          }
+          let curVid = null;
+          let curTitle = '';
+          if (typeof player.getVideoData === 'function') {
+            const vd = player.getVideoData();
+            curVid = vd?.video_id || null;
+            curTitle = vd?.title || '';
+          }
+          if (!curVid) {
+            const match = window.location.href.match(/[?&]v=([^&#]+)/);
+            if (match) curVid = match[1];
+          }
+          if (curVid) {
+            const initialDetail = {
+              state: curState,
+              videoId: curVid,
+              title: curTitle,
+              currentTime: typeof player.getCurrentTime === 'function' ? Math.floor(player.getCurrentTime() || 0) : 0,
+              duration: typeof player.getDuration === 'function' ? Math.floor(player.getDuration() || 0) : 0
+            };
+            window.dispatchEvent(new CustomEvent(EVENT_STATE_CHANGE, { detail: JSON.stringify(initialDetail) }));
+            window.postMessage({ type: 'RETROFM_YT_STATE_CHANGED_MSG', ...initialDetail }, '*');
+          }
+          if (curState === 1) {
+            syncPlaybackProgress(true);
+          }
+        } catch (initErr) {}
       }
     } catch (e) {}
+  }
+
+  // --- Active Playback Position Synchronization (~1s periodic tick) ---
+  let progressTrackingTimer = null;
+  let lastReportedTime = -1;
+
+  function emitCurrentProgress() {
+    try {
+      const player = getPlayer();
+      const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+      if (!player && !video) return;
+      let currentTime = 0;
+      let duration = 0;
+      try {
+        if (player && typeof player.getCurrentTime === 'function') {
+          currentTime = Math.floor(player.getCurrentTime() || 0);
+        } else if (video && typeof video.currentTime === 'number') {
+          currentTime = Math.floor(video.currentTime || 0);
+        }
+      } catch (e) {}
+      try {
+        if (player && typeof player.getDuration === 'function') {
+          duration = Math.floor(player.getDuration() || 0);
+        } else if (video && typeof video.duration === 'number') {
+          duration = Math.floor(video.duration || 0);
+        }
+      } catch (e) {}
+
+      if (currentTime === lastReportedTime) return;
+      lastReportedTime = currentTime;
+
+      let videoId = null;
+      let title = '';
+      try {
+        if (player && typeof player.getVideoData === 'function') {
+          const vd = player.getVideoData();
+          videoId = vd?.video_id || null;
+          title = vd?.title || '';
+        }
+      } catch (e) {}
+      if (!videoId) {
+        const match = window.location.href.match(/[?&]v=([^&#]+)/);
+        if (match) videoId = match[1];
+      }
+
+      let state = 1;
+      try {
+        if (player && typeof player.getPlayerState === 'function') {
+          state = player.getPlayerState();
+        } else if (video) {
+          state = video.paused ? 2 : 1;
+        }
+      } catch (e) {}
+
+      const detail = { state, videoId, title, currentTime, duration };
+      try {
+        window.dispatchEvent(new CustomEvent(EVENT_STATE_CHANGE, { detail: JSON.stringify(detail) }));
+      } catch (e) {}
+      try {
+        window.postMessage({ type: 'RETROFM_YT_STATE_CHANGED_MSG', ...detail }, '*');
+      } catch (e) {}
+    } catch (e) {}
+  }
+
+  function syncPlaybackProgress(isPlaying) {
+    if (isPlaying) {
+      if (!progressTrackingTimer) {
+        lastReportedTime = -1;
+        emitCurrentProgress();
+        progressTrackingTimer = setInterval(emitCurrentProgress, 1000);
+      }
+    } else {
+      if (progressTrackingTimer) {
+        clearInterval(progressTrackingTimer);
+        progressTrackingTimer = null;
+      }
+      lastReportedTime = -1;
+      emitCurrentProgress();
+    }
   }
 
   // --- Audio Diagnostics Collection ---
@@ -667,6 +797,9 @@
       const video = player.querySelector('video') || document.querySelector('video');
       if (video) {
         attachMediaListeners(video);
+        if (!video.paused && !video.ended && video.readyState >= 3 && !progressTrackingTimer) {
+          syncPlaybackProgress(true);
+        }
       }
     }
   }, 200);
@@ -680,8 +813,13 @@
         if (player) {
           flushPendingPlayerCommand('intervalHeartbeat');
           const video = player.querySelector('video') || document.querySelector('video');
-          if (video && !video.__retroFmListenersAttached) {
-            attachMediaListeners(video);
+          if (video) {
+            if (!video.__retroFmListenersAttached) {
+              attachMediaListeners(video);
+            }
+            if (!video.paused && !video.ended && video.readyState >= 3 && !progressTrackingTimer) {
+              syncPlaybackProgress(true);
+            }
           }
         }
       }, 2000);
