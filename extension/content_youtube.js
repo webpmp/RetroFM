@@ -279,7 +279,7 @@ if (!window.__retroFmContentLoaded) {
     return document.title.replace(' - YouTube', '').trim() || 'Unknown Video';
   }
 
-  // If YouTube page loaded with a video in URL, report initial presence to background
+  // Report content script presence and readiness to background
   try {
     const initialVid = getVideoId();
     if (initialVid) {
@@ -291,6 +291,20 @@ if (!window.__retroFmContentLoaded) {
         duration: 0
       });
     }
+    // Always announce YouTube integration readiness to background service worker
+    if (isContextValid()) {
+      chrome.runtime.sendMessage({
+        type: 'YT_PAGE_READY',
+        payload: {
+          videoId: initialVid || null,
+          title: getTitle(),
+          url: window.location.href,
+          hasVideoElement: !!getVideoElement()
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    }
   } catch (e) {}
 
   function getPlaybackStatus() {
@@ -299,7 +313,8 @@ if (!window.__retroFmContentLoaded) {
 
     if (!video) {
       return {
-        available: false,
+        available: true,
+        hasVideoElement: false,
         title: getTitle(),
         url: window.location.href,
         videoId: getVideoId(),
@@ -314,6 +329,7 @@ if (!window.__retroFmContentLoaded) {
 
     return {
       available: true,
+      hasVideoElement: true,
       title: getTitle(),
       url: window.location.href,
       videoId: getVideoId(),

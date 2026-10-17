@@ -45,6 +45,11 @@ export class YouTubeMusicProvider implements MusicProvider {
               try { listener(event.data.payload); } catch (e) {}
             }
           }
+          if (event.data.type === 'YT_PAGE_READY' && event.data.payload) {
+            for (const listener of this.ytStateChangedListeners) {
+              try { listener({ state: -1, available: true, ...event.data.payload }); } catch (e) {}
+            }
+          }
           if (event.data.type === 'YOUTUBE_REVEALED_TO_START') {
             for (const listener of this.revealListeners) {
               try { listener(); } catch (e) {}
@@ -556,12 +561,12 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
   }
 
-  public async navigate(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<boolean> {
-    const res = await this.navigateDetailed(url, videoId, targetVolume, revealYouTubeToStart);
+  public async navigate(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true, initialTime?: number): Promise<boolean> {
+    const res = await this.navigateDetailed(url, videoId, targetVolume, revealYouTubeToStart, initialTime);
     return res.success;
   }
 
-  public async navigateDetailed(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+  public async navigateDetailed(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true, initialTime?: number): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
@@ -571,6 +576,7 @@ export class YouTubeMusicProvider implements MusicProvider {
         videoId,
         targetVolume,
         revealYouTubeToStart,
+        initialTime,
       });
       return {
         success: !!res?.success,

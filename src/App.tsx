@@ -177,9 +177,9 @@ export const STATIONS_BY_DECADE: Record<number, StationConfig[]> = {
     { genre: 'Motown', frequency: 101.5, presetKey: 'michael jackson|billie jean', stationId: 'WMOT-FM' }, // 1
     { genre: 'Soul', frequency: 107.1, presetKey: 'prince|when doves cry', stationId: 'WSOL-FM' }, // 2
     { genre: 'R&B', frequency: 93.5, presetKey: 'u2|with or without you', stationId: 'WRNB-FM' }, // 3
-    { genre: 'Freeform/Underground', frequency: 99.5, presetKey: 'peter gabriel|sledgehammer', stationId: 'WFRM-FM' }, // 4
+    { genre: 'Rock', frequency: 99.5, presetKey: 'peter gabriel|sledgehammer', stationId: 'WROC-FM' }, // 4
     { genre: 'Folk Rock', frequency: 102.7, presetKey: 'a-ha|take on me', stationId: 'WFLK-FM' }, // 0
-    { genre: 'Psychedelic Rock', frequency: 104.1, presetKey: 'michael jackson|billie jean', stationId: 'WPSY-FM' } // 1
+    { genre: 'Rock and Roll', frequency: 104.1, presetKey: 'michael jackson|billie jean', stationId: 'WRNR-FM' } // 1
   ],
   1970: [
     { genre: 'AOR', frequency: 95.5, presetKey: 'prince|when doves cry', stationId: 'WAOR-FM' }, // 2
@@ -710,6 +710,20 @@ export default function App() {
         try {
           const tabs = await musicProviderRef.current.listTabs().catch(() => []);
           setAvailableTabs(tabs);
+          if (tabs.length > 0 && !playbackStatusRef.current?.connectedTabId) {
+            musicProviderRef.current.connect(tabs[0].id).then((cRes) => {
+              if (cRes.success && cRes.status) {
+                const updated: MusicPlaybackStatus = {
+                  ...cRes.status,
+                  connectedTabId: tabs[0].id,
+                  available: true
+                };
+                setPlaybackStatus(updated);
+                playbackStatusRef.current = updated;
+                broadcastCurrentRadioState(true, false, updated);
+              }
+            }).catch(() => {});
+          }
         } catch (e) {
           // Tabs query might require permissions or extension reload
         }
@@ -723,10 +737,14 @@ export default function App() {
             .then((res) => {
               if (res.success && res.connectedTabId) {
                 if (res.status) {
-                  setPlaybackStatus({
+                  const initialReadyStatus: MusicPlaybackStatus = {
                     ...res.status,
-                    connectedTabId: res.connectedTabId
-                  });
+                    connectedTabId: res.connectedTabId,
+                    available: true
+                  };
+                  setPlaybackStatus(initialReadyStatus);
+                  playbackStatusRef.current = initialReadyStatus;
+                  broadcastCurrentRadioState(true, false, initialReadyStatus);
                 }
                 setTestResults((prev) => ({
                   ...prev,
@@ -805,6 +823,8 @@ export default function App() {
 
     if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
       currentSong = null;
+    } else if (isTuningSeekingRef.current) {
+      currentSong = null;
     } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
       currentSong = {
         title: programSongResult.selectedTitle,
@@ -815,6 +835,8 @@ export default function App() {
         videoId: programSongResult.selectedVideoId,
         currentTime: effectiveStatus.currentTime
       };
+    } else if (programSongResult && programSongResult.selectedVideoId && programSongResult.selectedVideoId !== effectiveStatus.videoId) {
+      currentSong = null;
     } else if (effectiveStatus && effectiveStatus.title && effectiveStatus.title !== 'Unknown Title' && effectiveStatus.title !== 'Unknown Video') {
       currentSong = {
         title: effectiveStatus.title,
@@ -859,22 +881,25 @@ export default function App() {
     const station = DECADE_STATIONS[decade] || { freq: 100.3, genre: 'Teen Pop' };
     const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;
     const effectivePlayingOrAdvancing = isAdvancingRef.current || effectiveStatus.isPlaying;
-    const rawMode = isTuningSeekingRef.current ? 'seek' : (effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped')));
-    const playbackMode = isTuningSeekingRef.current ? 'seek' : (hasFirstSongStarted ? rawMode : 'blank');
+    const isSongTransition = isAdvancingRef.current && !effectiveStatus.isPlaying;
+    const rawMode = (isTuningSeekingRef.current || isSongTransition) ? 'seek' : (effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped')));
+    const playbackMode = (isTuningSeekingRef.current || isSongTransition) ? 'seek' : (hasFirstSongStarted ? rawMode : 'blank');
 
-    // Ready when YouTube tab is connected and first video (jingle or song) is prepared/ready
+    // Ready when YouTube tab is connected and RetroFM integration is ready
     const connectedId = effectiveStatus.connectedTabId || playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
-    const hasValidVideo = Boolean(effectiveStatus.videoId && effectiveStatus.videoId !== 'Unknown' && effectiveStatus.videoId !== 'Unknown Video');
     const isStartupReady = Boolean(
-      (effectiveStatus.available || Boolean(effectiveStatus.videoId)) &&
       connectedId &&
-      hasValidVideo &&
-      (jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing' || jingleStateRef.current === 'completed' || hasFirstSongStarted)
+      (effectiveStatus.available || Boolean(effectiveStatus.videoId) || Boolean(effectiveStatus.title))
     );
     isStartupReadyRef.current = isStartupReady;
 
     const broadcastDate = activeDateRef.current || (programYear ? `${programYear}-07-04` : '1963-05-01');
     const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, broadcastDate, decade);
+    const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[decade] || []);
+    const currentGenre = activeStationGenreRef.current;
+    const activeStation = (currentGenre ? allStations.find(s => s.genre === currentGenre) : null)
+      || allStations[0]
+      || (DECADE_STATIONS[decade] ? { frequency: DECADE_STATIONS[decade].freq, genre: DECADE_STATIONS[decade].genre } : { frequency: 100.3, genre: 'Teen Pop' });
 
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
@@ -886,11 +911,12 @@ export default function App() {
       currentSongYear: currentSong?.year || '',
       masterVolume: currentVol,
       decade,
-      freq: station.freq,
+      freq: activeStation.frequency,
+      genre: activeStation.genre,
       isDuck,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       clearSong,
-      stationCount: dynamicStations.length
+      stationCount: allStations.length
     });
 
     if (!force && stateFingerprint === lastBroadcastStateKeyRef.current) {
@@ -906,10 +932,9 @@ export default function App() {
       clearSong,
       date: broadcastDate,
       decade,
-      frequency: station.freq,
-      genre: station.genre,
-      stations: dynamicStations.length > 0 ? dynamicStations : (/* fallback */ STATIONS_BY_DECADE[decade] || []),
-      // stations: STATIONS_BY_DECADE[decade] || []
+      frequency: activeStation.frequency,
+      genre: activeStation.genre,
+      stations: allStations, // stations: STATIONS_BY_DECADE[decade] || []
       masterVolume: currentVol,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       isDucking: isDuck,
@@ -1000,10 +1025,16 @@ export default function App() {
               logMessage(`[Boom Box Dial] Untuned: ${freq !== null ? freq.toFixed(1) : ''} FM`);
               setLastBoomBoxCommand({ action: `TUNE (${freq !== null ? freq.toFixed(1) : ''} FM untuned)`, result: 'SUCCESS', time: timeStr });
 
-              // Save current station's position before pausing
+              // Save current station's position before pausing only if playback was confirmed for this genre
               const currentGenre = activeStationGenreRef.current;
               const liveStatus = playbackStatusRef.current || playbackStatus;
-              if (currentGenre && liveStatus.videoId) {
+              const isConfirmedForGenre = Boolean(
+                currentGenre &&
+                liveStatus.videoId &&
+                (!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId) &&
+                !isTuningSeekingRef.current
+              );
+              if (currentGenre && liveStatus.videoId && isConfirmedForGenre) {
                 stationPlaybackCacheRef.current[currentGenre] = {
                   genre: currentGenre,
                   frequency: (liveStatus as any).frequency || (freq ?? 0),
@@ -1030,7 +1061,8 @@ export default function App() {
 
             const prevGenre = activeStationGenreRef.current;
             const liveStatus = playbackStatusRef.current || playbackStatus;
-            if (prevGenre && prevGenre !== genre && liveStatus.videoId) {
+            const isPrevConfirmed = !isTuningSeekingRef.current && (!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId);
+            if (prevGenre && prevGenre !== genre && liveStatus.videoId && isPrevConfirmed) {
               stationPlaybackCacheRef.current[prevGenre] = {
                 genre: prevGenre,
                 frequency: (liveStatus as any).frequency || (freq ?? 0),
@@ -1042,6 +1074,14 @@ export default function App() {
                 currentTime: liveStatus.currentTime,
                 duration: liveStatus.duration
               };
+              // Immediately clear program song metadata for the previous station
+              setProgramSongResult(null);
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
+            } else if (prevGenre && prevGenre !== genre) {
+              setProgramSongResult(null);
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
             }
             activeStationGenreRef.current = genre;
 
@@ -1055,8 +1095,10 @@ export default function App() {
 
             // Determine if music is available for this station
             const decadeNum = action.decade || (programYear ? Math.floor(parseInt(programYear, 10) / 10) * 10 : 1980);
-            const stationsForDecade = STATIONS_BY_DECADE[decadeNum] || [];
-            const stationCfg = stationsForDecade.find(s => s.genre === genre || (freq !== null && Math.abs(s.frequency - freq) < 0.05));
+            const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, activeDateRef.current, decadeNum);
+            const stationsForDecade = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[decadeNum] || []);
+            const stationCfg = stationsForDecade.find(s => s.genre === genre || (freq !== null && Math.abs(s.frequency - freq) <= 0.15));
+            nextSongRef.current = null;
 
             const cached = stationPlaybackCacheRef.current[genre];
             const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
@@ -1065,9 +1107,9 @@ export default function App() {
             isExplicitStoppedRef.current = false;
             const shouldAutoPlay = true;
 
-            // Broadcast 'seek' so green display immediately shows SEEK while loading or restoring position
+            // Broadcast 'seek' with clearSong so green display immediately shows SEEK without previous station song info
             isTuningSeekingRef.current = true;
-            broadcastCurrentRadioState(true);
+            broadcastCurrentRadioState(true, true);
 
             if (shouldAutoPlay) {
               if (tuneSeq !== tuneSequenceRef.current) break;
@@ -1095,25 +1137,18 @@ export default function App() {
                     isTuningSeekingRef.current = false;
                     break;
                   }
-                  if (cached.currentTime > 0 && Math.abs(currentLive.currentTime - cached.currentTime) > 2) {
+                  if (cached.currentTime > 0 && Math.abs(currentLive.currentTime - cached.currentTime) > 1) {
                     await musicProviderRef.current.seek(cached.currentTime).catch(() => {});
+                    await new Promise(r => setTimeout(r, 100));
                   }
                   await handlePlayMusicRef.current();
                 } else {
                   const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
                   const targetUrl = `https://www.youtube.com/watch?v=${cached.videoId}`;
-                  await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart);
+                  await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart, cached.currentTime);
                   if (tuneSeq !== tuneSequenceRef.current) {
                     isTuningSeekingRef.current = false;
                     break;
-                  }
-                  await new Promise(r => setTimeout(r, 600));
-                  if (tuneSeq !== tuneSequenceRef.current) {
-                    isTuningSeekingRef.current = false;
-                    break;
-                  }
-                  if (cached.currentTime > 0) {
-                    await musicProviderRef.current.seek(cached.currentTime).catch(() => {});
                   }
                   await handlePlayMusicRef.current();
                 }
@@ -1131,21 +1166,20 @@ export default function App() {
                     isTuningSeekingRef.current = false;
                     break;
                   }
-                  await playLibrarySong(pick, `Tuned to station ${genre}`);
-                } else if (preset) {
-                  logMessage(`[Tuner] No library song for ${genre} on ${activeDateRef.current}. Falling back to preset: "${preset.artist} - ${preset.song}"`);
-                  currentPlayingArtistRef.current = preset.artist;
-                  currentPlayingSongRef.current = preset.song;
-                  currentPlayingYearRef.current = preset.year;
-                  setProgramArtist(preset.artist);
-                  setProgramSongTitle(preset.song);
-                  setProgramYear(preset.year);
-
-                  if (tuneSeq !== tuneSequenceRef.current) {
-                    isTuningSeekingRef.current = false;
-                    break;
-                  }
-                  await handleProgramSong({ artist: preset.artist, song: preset.song, year: preset.year });
+                  await playLibrarySong(pick, `Tuned to station ${genre}`, tuneSeq);
+                } else {
+                  logMessage(`[Tuner] No eligible library song for ${genre} on ${activeDateRef.current}.`);
+                  currentPlayingArtistRef.current = '';
+                  currentPlayingSongRef.current = '';
+                  setProgramArtist('');
+                  setProgramSongTitle('');
+                  setSongPlaybackNotice({
+                    message: "No eligible songs charting in this genre for this broadcast date",
+                    artist: genre,
+                    song: activeDateRef.current,
+                    type: 'not_found'
+                  });
+                  broadcastCurrentRadioState(true, true);
                 }
               } else if (preset) {
                 // Scenario A fallback: library not loaded, use preset
@@ -1221,6 +1255,7 @@ export default function App() {
             const targetDate = action.date || activeDateRef.current;
             const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
 
+            nextSongRef.current = null;
             if (songLibraryRef.current.length > 0) {
               const pick = pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
               if (pick) {
@@ -1251,6 +1286,16 @@ export default function App() {
                 setProgramYear(preset.year);
               }
               setTimeout(() => broadcastCurrentRadioState(true), 10);
+            }
+            break;
+          }
+          case 'REQUEST_DATE_STATIONS': {
+            if (action.date) {
+              activeDateRef.current = action.date;
+              if (typeof action.decade === 'number') {
+                activeDecadeRef.current = action.decade;
+              }
+              broadcastCurrentRadioState(true);
             }
             break;
           }
@@ -1326,7 +1371,7 @@ export default function App() {
       }));
 
       // Broadcast state update only if startup readiness or playback status actually changed
-      if (payload.videoId && !isStartupReadyRef.current) {
+      if (!isStartupReadyRef.current) {
         broadcastCurrentRadioState();
       }
 
@@ -1353,6 +1398,9 @@ export default function App() {
           broadcastCurrentRadioState(true);
         } else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {
           // Case 2: A regular music track finished naturally -> advance to next song in the queue
+          if (activeStationGenreRef.current) {
+            delete stationPlaybackCacheRef.current[activeStationGenreRef.current];
+          }
           logMessage('[Auto Advance] Song finished naturally. Advancing to next song in queue...');
           advanceToNextSongRef.current(false).catch((err) => {
             logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
@@ -1543,9 +1591,13 @@ export default function App() {
   };
 
   // Helper to play a chosen library song directly via NAVIGATE_YOUTUBE without YouTube search API
-  const playLibrarySong = async (pick: SongPick, reason: string = 'Library song'): Promise<boolean> => {
+  const playLibrarySong = async (pick: SongPick, reason: string = 'Library song', expectedTuneSeq?: number): Promise<boolean> => {
     const videoId = pick.song.streaming?.youtube?.id;
     if (!videoId) return false;
+
+    if (typeof expectedTuneSeq === 'number' && expectedTuneSeq !== tuneSequenceRef.current) {
+      return false;
+    }
 
     console.log(`[Song Selector] Chosen song: "${pick.song.title}" by "${pick.song.artist}" | tier: ${pick.tier} | genreMatched: ${pick.genreMatched} | reason: ${reason}`);
     console.log(`tier: ${pick.tier}, genreMatched: ${pick.genreMatched}`);
@@ -1569,13 +1621,6 @@ export default function App() {
     const songArtist = pick.song.artist;
     const songYear = String(pick.song.chart_year || activeDateRef.current.slice(0, 4));
 
-    setProgramArtist(songArtist);
-    setProgramSongTitle(songTitle);
-    setProgramYear(songYear);
-    currentPlayingArtistRef.current = songArtist;
-    currentPlayingSongRef.current = songTitle;
-    currentPlayingYearRef.current = songYear;
-
     const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
 
@@ -1594,6 +1639,19 @@ export default function App() {
     logMessage(`[Song Selector] Playing "${songArtist} - ${songTitle}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
 
     const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, videoId, targetVolFraction, revealYouTubeToStart);
+
+    if (typeof expectedTuneSeq === 'number' && expectedTuneSeq !== tuneSequenceRef.current) {
+      logMessage(`[Song Selector] Playback request for "${songTitle}" superseded (seq ${expectedTuneSeq} vs ${tuneSequenceRef.current})`);
+      return false;
+    }
+
+    setProgramArtist(songArtist);
+    setProgramSongTitle(songTitle);
+    setProgramYear(songYear);
+    currentPlayingArtistRef.current = songArtist;
+    currentPlayingSongRef.current = songTitle;
+    currentPlayingYearRef.current = songYear;
+
     if (volumeControllerRef.current) {
       await volumeControllerRef.current.syncInitialVolume(`${reason} start: "${songTitle}"`);
     }
@@ -1601,6 +1659,7 @@ export default function App() {
     jingleStateRef.current = 'completed';
     isExplicitStoppedRef.current = false;
     hasFirstSongStartedPlayingRef.current = true;
+    isTuningSeekingRef.current = false;
 
     const freshStat = navRes.status || (await musicProviderRef.current.getStatus().catch(() => null));
     const provTabId = musicProviderRef.current.getConnectedTabId();
@@ -1621,10 +1680,11 @@ export default function App() {
 
     // Immediately choose the next song as soon as the current one starts and keep it
     if (songLibraryRef.current.length > 0) {
+      const currentStationGenre = activeStationGenreRef.current || 'Pop';
       const nextPick = pickSong(
         songLibraryRef.current,
         activeDateRef.current,
-        activeStationGenreRef.current || 'Pop',
+        currentStationGenre,
         songPlayStateRef.current
       );
       nextSongRef.current = nextPick;
@@ -1657,7 +1717,12 @@ export default function App() {
         // Priority 1.5: Pick from library for active date and genre
         const targetDate = activeDateRef.current;
         const targetGenre = activeStationGenreRef.current || 'Pop';
-        const pick = nextSongRef.current || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
+        const isNextGenreValid = nextSongRef.current && (
+          !targetGenre ||
+          nextSongRef.current.song.genres?.toLowerCase().includes(targetGenre.toLowerCase()) ||
+          nextSongRef.current.song.primary_genre?.toLowerCase() === targetGenre.toLowerCase()
+        );
+        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
         if (pick) {
           nextSongRef.current = null;
           await playLibrarySong(pick, 'Play button library selection');
@@ -2050,33 +2115,46 @@ export default function App() {
   };
 
   const advanceToNextSong = async (isInitialAfterJingle: boolean = false): Promise<boolean> => {
-    if (songLibraryRef.current.length > 0) {
-      const pick = nextSongRef.current || pickSong(
-        songLibraryRef.current,
-        activeDateRef.current,
-        activeStationGenreRef.current || 'Pop',
-        songPlayStateRef.current
-      );
-      if (pick) {
-        nextSongRef.current = null;
-        return playLibrarySong(pick, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+    if (isAdvancingRef.current) return false;
+    isAdvancingRef.current = true;
+    broadcastCurrentRadioState(true);
+    try {
+      if (songLibraryRef.current.length > 0) {
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const isNextGenreValid = nextSongRef.current && (
+          !currentStationGenre ||
+          nextSongRef.current.song.genres?.toLowerCase().includes(currentStationGenre.toLowerCase()) ||
+          nextSongRef.current.song.primary_genre?.toLowerCase() === currentStationGenre.toLowerCase()
+        );
+        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current
+        );
+        if (pick) {
+          nextSongRef.current = null;
+          return await playLibrarySong(pick, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+        }
+        const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+        logMessage(`[Song Selector] ${noticeMsg}`);
+        setSongPlaybackNotice({
+          message: noticeMsg,
+          artist: activeStationGenreRef.current || 'Station',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return false;
       }
-      const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
-      logMessage(`[Song Selector] ${noticeMsg}`);
-      setSongPlaybackNotice({
-        message: noticeMsg,
-        artist: activeStationGenreRef.current || 'Station',
-        song: activeDateRef.current,
-        type: 'not_found'
-      });
-      broadcastCurrentRadioState(true, true);
-      return false;
+      let nextIndex = 0;
+      if (!isInitialAfterJingle) {
+        nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
+      }
+      return await navigateToQueueSong(nextIndex, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+    } finally {
+      isAdvancingRef.current = false;
     }
-    let nextIndex = 0;
-    if (!isInitialAfterJingle) {
-      nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
-    }
-    return navigateToQueueSong(nextIndex, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
   };
 
   const handleRewindMusic = async () => {
@@ -2103,10 +2181,16 @@ export default function App() {
     logMessage('Fast-forwarding to next song in queue...');
     try {
       if (songLibraryRef.current.length > 0) {
-        const pick = nextSongRef.current || pickSong(
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const isNextGenreValid = nextSongRef.current && (
+          !currentStationGenre ||
+          nextSongRef.current.song.genres?.toLowerCase().includes(currentStationGenre.toLowerCase()) ||
+          nextSongRef.current.song.primary_genre?.toLowerCase() === currentStationGenre.toLowerCase()
+        );
+        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(
           songLibraryRef.current,
           activeDateRef.current,
-          activeStationGenreRef.current || 'Pop',
+          currentStationGenre,
           songPlayStateRef.current
         );
         if (pick) {

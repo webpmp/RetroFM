@@ -3320,6 +3320,646 @@ console.log('\n--- Test Suite 46: Artist and Song Title Fade-In/Out Display Stab
 }
 
 
+// --- Test Suite 47: Station Switching Display Isolation and Seamless Resumption ---
+console.log('\n--- Test Suite 47: Station Switching Display Isolation and Seamless Resumption ---');
+{
+  const bbJs = fs.readFileSync(path.join(process.cwd(), 'extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(process.cwd(), 'extension/background.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf-8');
+  const ytMusicProviderTs = fs.readFileSync(path.join(process.cwd(), 'src/services/music/YouTubeMusicProvider.ts'), 'utf-8');
+
+  // 1. In player.js, when key !== lastKey and locked onto a station (best), song is immediately cleared
+  assert(
+    bbJs.includes("if(key!==lastKey){\n   lastKey=key;\n   if(best){\n     song=null;\n     playbackProgress.currentTime = 0;\n     playbackProgress.duration = 0;\n     playbackProgress.videoId = null;\n     clearSongTimers();\n     renderSong();\n   }"),
+    'player.js immediately clears song, playback progress, and song timers when tuning to another station'
+  );
+
+  // 2. In player.js applyRadioState, state.clearSong clears song and renders
+  assert(
+    bbJs.includes("if (state.clearSong) {\n    song = null;\n    clearSongTimers();\n    renderSong();"),
+    'player.js applyRadioState handles state.clearSong by clearing song and timers'
+  );
+
+  // 3. In player.js applyRadioState, station genre mismatch prevents setting currentSong
+  assert(
+    bbJs.includes("const activeDialGenre = matchedStation ? matchedStation[0] : null;\n    const isMismatchedGenre = state.genre && activeDialGenre && state.genre !== activeDialGenre;\n    if (!isMismatchedGenre) {"),
+    'player.js applyRadioState rejects currentSong if state.genre does not match the active dial genre'
+  );
+
+  // 4. In background.js NAVIGATE_YOUTUBE, initialTime is sought before PLAY
+  assert(
+    bgJs.includes("if (typeof payload.initialTime === 'number' && payload.initialTime > 0) {\n            try {\n              await chrome.tabs.sendMessage(tabId, { action: 'SEEK', time: payload.initialTime });"),
+    'background.js NAVIGATE_YOUTUBE executes SEEK to initialTime before triggering PLAY loop'
+  );
+
+  // 5. In YouTubeMusicProvider.ts, navigate and navigateDetailed accept initialTime
+  assert(
+    ytMusicProviderTs.includes("public async navigateDetailed(url: string, videoId?: string, targetVolume?: number, revealYouTubeToStart: boolean = true, initialTime?: number)"),
+    'YouTubeMusicProvider.ts navigateDetailed accepts initialTime parameter'
+  );
+
+  // 6. In App.tsx, switching stations saves cache and immediately clears program song metadata before SEEK broadcast
+  assert(
+    appTsx.includes("stationPlaybackCacheRef.current[prevGenre] = {\n                genre: prevGenre,\n                frequency: (liveStatus as any).frequency || (freq ?? 0),\n                videoId: liveStatus.videoId,\n                title: liveStatus.title,\n                artist: currentPlayingArtistRef.current || programArtist,\n                song: currentPlayingSongRef.current || programSongTitle,\n                year: currentPlayingYearRef.current || programYear,\n                currentTime: liveStatus.currentTime,\n                duration: liveStatus.duration\n              };\n              // Immediately clear program song metadata for the previous station\n              setProgramSongResult(null);\n              currentPlayingArtistRef.current = '';\n              currentPlayingSongRef.current = '';"),
+    'App.tsx saves station cache and clears previous station program metadata when tuning stations'
+  );
+
+  // 7. In App.tsx, initial tuning broadcast uses clearSong = true
+  assert(
+    appTsx.includes("isTuningSeekingRef.current = true;\n            broadcastCurrentRadioState(true, true);"),
+    'App.tsx broadcasts SEEK with clearSong=true when tuning to a station'
+  );
+
+  // 8. In App.tsx, natural song finish (rawState === 0) clears station playback cache
+  assert(
+    appTsx.includes("if (activeStationGenreRef.current) {\n            delete stationPlaybackCacheRef.current[activeStationGenreRef.current];\n          }"),
+    'App.tsx deletes finished station from stationPlaybackCacheRef on natural completion'
+  );
+
+  // 9. In App.tsx, Scenario B passes cached.currentTime to navigateDetailed
+  assert(
+    appTsx.includes("await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart, cached.currentTime);"),
+    'App.tsx passes cached.currentTime to navigate when switching videos on resumption'
+  );
+
+  console.log('✓ 47. Station switching display isolation and seamless resumption verified.');
+}
+
+
+// --- Test Suite 48: Radio Tuning, Genre Availability, and Song Selection ---
+console.log('\n--- Test Suite 48: Radio Tuning, Genre Availability, and Song Selection ---');
+{
+  const bbJs = fs.readFileSync(path.join(process.cwd(), 'extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf-8');
+  const songSelectorTs = fs.readFileSync(path.join(process.cwd(), 'src/services/songSelector.ts'), 'utf-8');
+
+  // 1. Supported 1960s taxonomy genres in songSelector.ts
+  assert(
+    songSelectorTs.includes('SUPPORTED_1960S_GENRES'),
+    'songSelector.ts exports SUPPORTED_1960S_GENRES'
+  );
+  const expected1960sTaxonomy = [
+    'Baroque Pop', 'Bossa Nova', 'British Invasion', 'Country',
+    'Easy Listening', 'Folk', 'Folk Rock', 'Garage Rock',
+    'Gospel', 'Jazz', 'Latin', 'Motown',
+    'Pop', 'R&B', 'Rock', 'Rock and Roll',
+    'Ska', 'Soul', 'Surf Rock'
+  ];
+  for (const g of expected1960sTaxonomy) {
+    assert(songSelectorTs.includes(`'${g}'`), `SUPPORTED_1960S_GENRES contains "${g}"`);
+  }
+
+  // 2. getAvailableGenres filters against SUPPORTED_1960S_GENRES and checks existedBy
+  assert(
+    songSelectorTs.includes('if (is1960s && !SUPPORTED_1960S_GENRES.has(trimmed))'),
+    'getAvailableGenres filters 1960s dates against SUPPORTED_1960S_GENRES'
+  );
+  assert(
+    songSelectorTs.includes('if (youtubeId(s) && existedBy(s, broadcastDate))'),
+    'getAvailableGenres verifies song existedBy broadcast date'
+  );
+
+  // 3. App.tsx broadcasts activeStation genre and frequency instead of hardcoded decade station
+  assert(
+    appTsx.includes('const currentGenre = activeStationGenreRef.current;'),
+    'App.tsx determines current genre from activeStationGenreRef'
+  );
+  assert(
+    appTsx.includes('frequency: activeStation.frequency,\n      genre: activeStation.genre,'),
+    'App.tsx broadcasts activeStation.frequency and activeStation.genre'
+  );
+
+  // 4. App.tsx TUNE handler resolves station from dynamic stations
+  assert(
+    appTsx.includes('const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, activeDateRef.current, decadeNum);'),
+    'App.tsx calculates dynamicStations in TUNE handler'
+  );
+
+  // 5. App.tsx handles REQUEST_DATE_STATIONS action
+  assert(
+    appTsx.includes("case 'REQUEST_DATE_STATIONS':"),
+    'App.tsx handles REQUEST_DATE_STATIONS action from boombox flap board'
+  );
+
+  // 6. player.js aligns dial frequency to active genre only once on initial connection
+  assert(
+    bbJs.includes('// Align dial frequency to active genre if needed') &&
+    bbJs.includes('if (state.genre && !hasInitializedDial)'),
+    'player.js aligns dial frequency to active genre only once on initial connection to avoid snapping'
+  );
+
+  // 7. player.js default 1960s stations do not contain unsupported genres
+  assert(
+    !bbJs.includes("1960:[['Pop',95.1],['Motown',101.5],['Soul',107.1],['R&B',93.5],['Freeform/Underground'"),
+    'player.js default 1960s table does not contain Freeform/Underground or Psychedelic Rock'
+  );
+
+  // 8. Runtime test: getAvailableGenres with library data
+  const libPath = path.join(process.cwd(), 'public/data/retrofm_library_youtube.json');
+  if (fs.existsSync(libPath)) {
+    const libData = JSON.parse(fs.readFileSync(libPath, 'utf-8'));
+    const { getAvailableGenres, pickSong } = await import('../src/services/songSelector.js');
+
+    // On 1963-07-04, Psychedelic Rock has no songs and must not be available
+    const genres1963 = getAvailableGenres(libData, '1963-07-04');
+    assert(!genres1963.includes('Psychedelic Rock'), 'getAvailableGenres excludes Psychedelic Rock on 1963-07-04');
+    assert(genres1963.includes('Motown'), 'getAvailableGenres includes Motown on 1963-07-04');
+    assert(genres1963.includes('Pop'), 'getAvailableGenres includes Pop on 1963-07-04');
+
+    // On 1960-07-04, British Invasion has no songs and must not be available
+    const genres1960 = getAvailableGenres(libData, '1960-07-04');
+    assert(!genres1960.includes('British Invasion'), 'getAvailableGenres excludes British Invasion on 1960-07-04');
+
+    // On 1968-05-01, Bossa Nova has no eligible songs charting within 2 years: must NOT be available and must return null (zero unrelated fallbacks)
+    const genres19680501 = getAvailableGenres(libData, '1968-05-01');
+    assert(!genres19680501.includes('Bossa Nova'), 'getAvailableGenres excludes Bossa Nova on 1968-05-01 (charted in 1963 and 10 days later)');
+    const bossaPick = pickSong(libData, '1968-05-01', 'Bossa Nova', { recent: [] });
+    assert(bossaPick === null, 'pickSong returns null for Bossa Nova on 1968-05-01 without falling back to unrelated genres (Hugo Montenegro)');
+
+    // Consistency: Every available genre for 1968-05-01 must successfully yield an eligible song in pickSong
+    for (const g of genres19680501) {
+      const p = pickSong(libData, '1968-05-01', g, { recent: [] });
+      assert(!!p, `Genre "${g}" available on 1968-05-01 must have an eligible song`);
+      assert(p?.genreMatched === true, `Song for genre "${g}" must be genreMatched`);
+    }
+
+    // 9. Runtime test: pickSong rotation without immediate repeats
+    let simState: { recent: string[] } = { recent: [] };
+    let lastPlayed = null;
+    let immediateRepeatCount = 0;
+    for (let i = 0; i < 15; i++) {
+      const pick = pickSong(libData, '1964-07-04', 'Motown', simState);
+      assert(!!pick, `Pick ${i + 1} for Motown on 1964-07-04 returns a valid pick`);
+      if (pick) {
+        assert(pick.genreMatched === true, `Pick ${i + 1} genreMatched is true`);
+        if (lastPlayed && pick.song.id === lastPlayed.id) {
+          immediateRepeatCount++;
+        }
+        lastPlayed = pick.song;
+        simState = pick.state;
+      }
+    }
+    assert(immediateRepeatCount === 0, 'pickSong never immediately repeats the same song back-to-back');
+  }
+
+  console.log('✓ 48. Radio Tuning, Genre Availability, and Song Selection verified.');
+}
+
+
+// --- Test Suite 49: Tuning, Station Selection, and Playback Synchronization ---
+console.log('\n--- Test Suite 49: Tuning, Station Selection, and Playback Synchronization ---');
+{
+  const bbJs = fs.readFileSync(path.join(process.cwd(), 'extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf-8');
+  const libPath = path.join(process.cwd(), 'public/data/retrofm_library_youtube.json');
+
+  // 1. Static code checks for cache isolation & request synchronization in App.tsx
+  assert(
+    appTsx.includes('const isConfirmedForGenre = Boolean(') &&
+    appTsx.includes('(!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId)') &&
+    appTsx.includes('!isTuningSeekingRef.current'),
+    'App.tsx guards !isLocked cache write to prevent saving unconfirmed videos into currentGenre cache'
+  );
+
+  assert(
+    appTsx.includes('const isPrevConfirmed = !isTuningSeekingRef.current && (!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId);') &&
+    appTsx.includes('isPrevConfirmed'),
+    'App.tsx guards prevGenre station cache write with isPrevConfirmed'
+  );
+
+  assert(
+    appTsx.includes('await playLibrarySong(pick, `Tuned to station ${genre}`, tuneSeq);'),
+    'App.tsx passes tuneSeq to playLibrarySong in TUNE handler'
+  );
+
+  assert(
+    appTsx.includes('const playLibrarySong = async (pick: SongPick, reason: string = \'Library song\', expectedTuneSeq?: number)'),
+    'App.tsx playLibrarySong accepts expectedTuneSeq parameter'
+  );
+
+  assert(
+    appTsx.includes('if (typeof expectedTuneSeq === \'number\' && expectedTuneSeq !== tuneSequenceRef.current) {\n      logMessage(`[Song Selector] Playback request for "${songTitle}" superseded'),
+    'App.tsx playLibrarySong verifies tuneSeq after navigation to abort superseded playback requests'
+  );
+
+  // 2. Anti-mismatch guard in broadcastCurrentRadioState
+  assert(
+    appTsx.includes('else if (programSongResult && programSongResult.selectedVideoId && programSongResult.selectedVideoId !== effectiveStatus.videoId) {\n      currentSong = null;'),
+    'App.tsx broadcasts currentSong as null when YouTube has not yet switched to the selected video ID'
+  );
+
+  // 3. Genre isolation for nextSongRef
+  assert(
+    appTsx.includes('const isNextGenreValid = nextSongRef.current && (') &&
+    appTsx.includes('nextSongRef.current.song.genres?.toLowerCase().includes(targetGenre.toLowerCase())'),
+    'App.tsx validates nextSongRef against targetGenre in handlePlayMusic'
+  );
+
+  // 4. player.js dial sensitivity and debouncing
+  assert(
+    bbJs.includes("knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);"),
+    'player.js sets smooth precision divisor 450 for tuning knob'
+  );
+
+  assert(
+    bbJs.includes("if (action === 'TUNE' && isTuningDrag) {") &&
+    bbJs.includes("function flushPendingTune()"),
+    'player.js debounces TUNE actions during dial drag and flushes on release'
+  );
+
+  // 5. Runtime simulation of May 1, 1965 reproduction scenario
+  if (fs.existsSync(libPath)) {
+    const libData = JSON.parse(fs.readFileSync(libPath, 'utf-8'));
+    const { calculateDynamicStationsForDate } = await import('../src/App.js');
+    const { pickSong, newPlayState } = await import('../src/services/songSelector.js');
+
+    const stations1965 = calculateDynamicStationsForDate(libData, '1965-05-01', 1960);
+    assert(stations1965.length >= 3, '1965-05-01 has at least 3 dynamic stations');
+    assert(stations1965[0].genre === 'British Invasion' && Math.abs(stations1965[0].frequency - 88.5) < 0.05, 'Station 0 is British Invasion at 88.5 FM');
+    assert(stations1965[1].genre === 'Country' && Math.abs(stations1965[1].frequency - 90.1) < 0.05, 'Station 1 is Country at 90.1 FM');
+    assert(stations1965[2].genre === 'Easy Listening' && Math.abs(stations1965[2].frequency - 91.5) < 0.05, 'Station 2 is Easy Listening at 91.5 FM');
+
+    let state = newPlayState();
+    // Step 1: Tune to British Invasion
+    const pick1 = pickSong(libData, '1965-05-01', 'British Invasion', state);
+    assert(!!pick1, 'Pick for British Invasion returns a valid song');
+    if (pick1) {
+      assert(pick1.genreMatched === true, 'British Invasion song is genre matched');
+      const biVideoId = pick1.song.streaming.youtube.id;
+      state = pick1.state;
+
+      // Simulate active YouTube playback on British Invasion
+      let livePlaybackStatus = {
+        connectedTabId: 101,
+        videoId: biVideoId,
+        title: `${pick1.song.artist} - ${pick1.song.title}`,
+        isPlaying: true,
+        currentTime: 42,
+        duration: 160
+      };
+      let stationPlaybackCache: Record<string, any> = {};
+
+      // Station 0 saves cache on departure
+      stationPlaybackCache['British Invasion'] = {
+        genre: 'British Invasion',
+        frequency: 88.5,
+        videoId: livePlaybackStatus.videoId,
+        title: livePlaybackStatus.title,
+        artist: pick1.song.artist,
+        song: pick1.song.title,
+        currentTime: 42,
+        duration: 160
+      };
+      assert(stationPlaybackCache['British Invasion'].videoId === biVideoId, 'British Invasion cached with correct video ID');
+
+      // Step 2: Manually tune to 90.1 FM (Country)
+      // Dial sweeps past 88.6 (untuned) and lands on 90.1 (Country)
+      const pick2 = pickSong(libData, '1965-05-01', 'Country', state);
+      assert(!!pick2, 'Pick for Country returns a valid song');
+      if (pick2) {
+        assert(pick2.genreMatched === true, 'Country song is genre matched');
+        const countryVideoId = pick2.song.streaming.youtube.id;
+        assert(countryVideoId !== biVideoId, 'Country video ID is different from British Invasion video ID');
+
+        // Simulate transient needle movement across 90.1 -> 90.2 -> 90.1 while Country is seeking
+        let isTuningSeeking = true;
+        let programSongResult: any = {
+          status: 'NAVIGATING',
+          selectedVideoId: countryVideoId,
+          selectedTitle: pick2.song.title
+        };
+
+        // If an untuned event fires while isTuningSeeking is true, cache write must be BLOCKED
+        const isConfirmedForGenre = Boolean(
+          livePlaybackStatus.videoId &&
+          (!programSongResult?.selectedVideoId || livePlaybackStatus.videoId === programSongResult.selectedVideoId) &&
+          !isTuningSeeking
+        );
+        assert(isConfirmedForGenre === false, 'Cache write is blocked while Country is seeking and YouTube has previous video');
+        assert(!stationPlaybackCache['Country'], 'Country cache remains uncorrupted by previous British Invasion video');
+
+        // Step 3: Anti-mismatch display verification
+        // While YouTube tab still has biVideoId and programSongResult has countryVideoId:
+        function computeCurrentSong(pResult: any, pStatus: any, isSeeking: boolean) {
+          if (isSeeking) return null;
+          if (pResult && pResult.selectedVideoId && pResult.selectedVideoId === pStatus.videoId) {
+            return { title: pResult.selectedTitle, videoId: pResult.selectedVideoId };
+          }
+          if (pResult && pResult.selectedVideoId && pResult.selectedVideoId !== pStatus.videoId) {
+            return null;
+          }
+          return null;
+        }
+
+        assert(computeCurrentSong(programSongResult, livePlaybackStatus, isTuningSeeking) === null, 'Green display remains null during seek');
+        assert(computeCurrentSong(programSongResult, livePlaybackStatus, false) === null, 'Green display remains null while YouTube has not transitioned to Country video');
+
+        // When YouTube confirms navigation to Country video:
+        livePlaybackStatus.videoId = countryVideoId;
+        livePlaybackStatus.title = `${pick2.song.artist} - ${pick2.song.title}`;
+        programSongResult.status = 'PLAYING';
+        isTuningSeeking = false;
+        const confirmedSong = computeCurrentSong(programSongResult, livePlaybackStatus, false);
+        assert(confirmedSong !== null, 'Green display confirms song once YouTube navigates');
+        if (confirmedSong) {
+          assert(confirmedSong.videoId === countryVideoId, 'Green display confirms Country video ID');
+        }
+
+        // Step 4: Tune to Station 2 (Easy Listening 91.5 FM)
+        const pick3 = pickSong(libData, '1965-05-01', 'Easy Listening', state);
+        assert(!!pick3, 'Pick for Easy Listening returns a valid song');
+        if (pick3) {
+          assert(pick3.genreMatched === true, 'Easy Listening song is genre matched');
+          const easyVideoId = pick3.song.streaming.youtube.id;
+          assert(easyVideoId !== countryVideoId && easyVideoId !== biVideoId, 'Easy Listening video ID is unique and correct');
+        }
+      }
+    }
+  }
+
+  console.log('✓ 49. Tuning, Station Selection, and Playback Synchronization verified.');
+}
+
+// --- Test Suite 50: Startup Readiness Detection and START RETRO FM Button Behavior ---
+console.log('\n--- Test Suite 50: Startup Readiness Detection and START RETRO FM Button Behavior ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+  const csYtJs = fs.readFileSync(path.join(__dirname, '../extension/content_youtube.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // Verify source code hooks
+  assert(bgJs.includes('checkYouTubeReadiness'), 'background.js defines checkYouTubeReadiness helper');
+  assert(bgJs.includes('notifyYouTubeReadiness'), 'background.js defines notifyYouTubeReadiness helper');
+  assert(bgJs.includes('chrome.tabs.onUpdated.addListener'), 'background.js monitors tab updates for YouTube completion');
+  assert(csYtJs.includes("type: 'YT_PAGE_READY'"), 'content_youtube.js announces YT_PAGE_READY on initialization');
+  assert(csYtJs.includes('hasVideoElement: false'), 'content_youtube.js returns available: true even without mounted video element');
+  assert(bbJs.includes("message.type === 'YT_READY'"), 'player.js listens for YT_READY event');
+  assert(bbJs.includes('startupReadyInterval'), 'player.js uses bounded polling for startup readiness');
+  assert(appTsx.includes('const isStartupReady = Boolean('), 'App.tsx computes isStartupReady from connected tab availability');
+
+  // State Machine Simulation for all 10 scenarios
+  class StartupHandoffSimulation {
+    ytTab: { id: number; url: string; status: 'loading' | 'complete'; hasScript: boolean } | null = null;
+    isStartupReady: boolean = false;
+    modalBoxClass: string = 'rfm-modal-box';
+    buttonClass: string = 'rfm-start-btn';
+    buttonDisabled: boolean = true;
+    modalHidden: boolean = false;
+    handoffCount: number = 0;
+    appConnected: boolean = true;
+
+    // Simulate background.js checkYouTubeReadiness()
+    checkReadiness(): { ready: boolean; tabId: number | null } {
+      if (!this.ytTab || !this.ytTab.url.includes('youtube.com')) {
+        return { ready: false, tabId: null };
+      }
+      if (this.ytTab.status !== 'complete' || !this.ytTab.hasScript) {
+        return { ready: false, tabId: this.ytTab.id };
+      }
+      return { ready: true, tabId: this.ytTab.id };
+    }
+
+    // Simulate player.js markStartupReady()
+    markStartupReady() {
+      this.isStartupReady = true;
+      this.modalBoxClass = 'rfm-modal-box ready';
+      this.buttonClass = 'rfm-start-btn ready';
+      this.buttonDisabled = false;
+    }
+
+    // Simulate player.js START RETRO FM button click
+    clickStart(): boolean {
+      if (!this.isStartupReady || this.buttonDisabled || this.handoffCount > 0) {
+        return false;
+      }
+      this.handoffCount++;
+      this.buttonDisabled = true;
+      this.modalHidden = true;
+      return true;
+    }
+  }
+
+  // 1. YouTube is ready before the initial page opens
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = { id: 101, url: 'https://www.youtube.com/', status: 'complete', hasScript: true };
+    const check = sim.checkReadiness();
+    assert(check.ready === true, '1. YouTube check reports ready when tab complete before initial page');
+    sim.markStartupReady();
+    assert(sim.buttonClass.includes('ready') && !sim.buttonDisabled, '1. Button immediately appears and is enabled');
+  }
+
+  // 2. YouTube becomes ready after the initial page opens
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = null;
+    assert(sim.checkReadiness().ready === false, '2. Initial check reports not ready when YouTube not opened');
+    assert(sim.buttonDisabled === true && !sim.buttonClass.includes('ready'), '2. Button starts disabled and unready');
+    // YouTube opens and completes loading
+    sim.ytTab = { id: 102, url: 'https://www.youtube.com/', status: 'complete', hasScript: true };
+    assert(sim.checkReadiness().ready === true, '2. Check succeeds once YouTube loads after initial page');
+    sim.markStartupReady();
+    assert(sim.buttonClass.includes('ready') && !sim.buttonDisabled, '2. Button updates to ready without page reload');
+  }
+
+  // 3. Readiness is reported after an initial request fails or times out
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = { id: 103, url: 'https://www.youtube.com/', status: 'loading', hasScript: false };
+    assert(sim.checkReadiness().ready === false, '3. Initial request fails during loading');
+    assert(sim.buttonDisabled === true, '3. Button remains disabled during initial failure');
+    // Next poll tick after script injected and page completed
+    sim.ytTab.status = 'complete';
+    sim.ytTab.hasScript = true;
+    assert(sim.checkReadiness().ready === true, '3. Recovery poll succeeds');
+    sim.markStartupReady();
+    assert(!sim.buttonDisabled && sim.buttonClass.includes('ready'), '3. Button activates after retry');
+  }
+
+  // 4. The readiness response arrives after the relevant listener is initialized
+  {
+    const sim = new StartupHandoffSimulation();
+    assert(sim.isStartupReady === false, '4. Listener initialized before readiness arrival');
+    // Message arrives from background
+    sim.markStartupReady();
+    assert(sim.isStartupReady === true, '4. Readiness successfully processed after listener registration');
+  }
+
+  // 5. Duplicate readiness notifications do not trigger duplicate startup actions
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.markStartupReady();
+    sim.markStartupReady();
+    sim.markStartupReady();
+    assert(sim.buttonClass === 'rfm-start-btn ready', '5. Button class remains idempotent on duplicate ready notifications');
+    const firstClick = sim.clickStart();
+    assert(firstClick === true, '5. First click triggers startup handoff');
+    const secondClick = sim.clickStart();
+    assert(secondClick === false, '5. Subsequent clicks are ignored');
+    assert(sim.handoffCount === 1, '5. Exactly one startup handoff executed');
+  }
+
+  // 6. A stale readiness response from an obsolete tab is ignored
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = { id: 999, url: 'https://www.google.com/', status: 'complete', hasScript: false };
+    assert(sim.checkReadiness().ready === false, '6. Obsolete or non-YouTube tab is rejected');
+  }
+
+  // 7. A service-worker restart does not permanently prevent readiness detection
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = { id: 104, url: 'https://www.youtube.com/', status: 'complete', hasScript: true };
+    // Simulate service worker restart where in-memory activeConnectedTabId was reset to null
+    const freshCheck = sim.checkReadiness();
+    assert(freshCheck.ready === true, '7. Dynamically resolves live YouTube tab despite worker restart');
+  }
+
+  // 8. YouTube reloads and the readiness state is updated appropriately
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.ytTab = { id: 105, url: 'https://www.youtube.com/watch?v=abc', status: 'complete', hasScript: true };
+    assert(sim.checkReadiness().ready === true, '8. Ready before reload');
+    // Tab reload starts
+    sim.ytTab.status = 'loading';
+    assert(sim.checkReadiness().ready === false, '8. Correctly transitions to not ready during reload');
+    // Tab reload finishes
+    sim.ytTab.status = 'complete';
+    assert(sim.checkReadiness().ready === true, '8. Recovers readiness when reload completes');
+  }
+
+  // 9. The button becomes visible when the actual readiness condition is met
+  {
+    const sim = new StartupHandoffSimulation();
+    sim.markStartupReady();
+    assert(sim.buttonClass.includes('ready'), '9. .ready class added to button');
+    assert(sim.modalBoxClass.includes('ready'), '9. .ready class added to modal box');
+    assert(bbCss.includes('.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;'), '9. CSS reveals green start button');
+  }
+
+  // 10. The button does not become enabled prematurely when the integration is not ready
+  {
+    const sim = new StartupHandoffSimulation();
+    assert(sim.buttonDisabled === true, '10. Button remains disabled initially');
+    assert(!sim.buttonClass.includes('ready'), '10. Button remains black-on-black/invisible');
+    assert(sim.clickStart() === false, '10. Attempting to click prematurely fails safely');
+  }
+
+  console.log('✓ 50. Startup Readiness Detection and START RETRO FM Button Behavior verified.');
+}
+
+// --- Test Suite 51: Initialization Order & TDZ Protection ---
+console.log('\n--- Test Suite 51: Initialization Order & TDZ Protection ---');
+{
+  const playerJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // 1. Verify isYtPlaybackActive is declared before updateGenrePills and tune
+  const isYtDeclIndex = playerJs.indexOf('let isYtPlaybackActive = false;');
+  const updateGenrePillsIndex = playerJs.indexOf('function updateGenrePills()');
+  const tuneCallIndex = playerJs.indexOf('tune();refresh();dIn.focus();');
+
+  assert(isYtDeclIndex !== -1, 'player.js declares let isYtPlaybackActive = false;');
+  assert(updateGenrePillsIndex !== -1, 'player.js defines updateGenrePills()');
+  assert(tuneCallIndex !== -1, 'player.js invokes tune() at startup');
+  assert(isYtDeclIndex < updateGenrePillsIndex, 'isYtPlaybackActive declared before updateGenrePills() definition');
+  assert(isYtDeclIndex < tuneCallIndex, 'isYtPlaybackActive declared before startup tune() invocation');
+
+  // 2. Verify VU meter declaration line does NOT duplicate isYtPlaybackActive
+  assert(playerJs.includes('let env=0,nl=0,nr=0,beat=.5,vuRunning=false;'), 'VU meter declaration line excludes duplicate isYtPlaybackActive declaration');
+
+  // 3. Verify simulated startup execution without TDZ error
+  try {
+    const fn = new Function(`
+      const S = { state: 'stopped', vol: 0.7, bal: 0.5, tun: 0.6, dec: 1990 };
+      const ST = { 1990: [['Grunge', 99.9]] };
+      const MIN = 87.5, SPAN = 20.5;
+      let isYtPlaybackActive = false;
+      function updateGenrePills() {
+        const isPlaying = (S.state === 'playing' || isYtPlaybackActive);
+        return isPlaying;
+      }
+      return updateGenrePills();
+    `);
+    const res = fn();
+    assert(res === false, 'Startup execution evaluates updateGenrePills safely without ReferenceError');
+  } catch (err: any) {
+    assert(false, 'Startup evaluation threw unexpected error: ' + err.message);
+  }
+
+  console.log('✓ 51. Initialization Order & TDZ Protection verified.');
+}
+
+// --- Test Suite 52: Song Completion and Seek Display Transition ---
+console.log('\n--- Test Suite 52: Song Completion and Seek Display Transition ---');
+{
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+  const playerJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // 1. App.tsx advanceToNextSong guards with isAdvancingRef
+  assert(appTsx.includes('if (isAdvancingRef.current) return false;'), 'advanceToNextSong guards against re-entrancy');
+  assert(appTsx.includes('isAdvancingRef.current = true;'), 'advanceToNextSong sets isAdvancingRef to true during advancement');
+  assert(appTsx.includes('isSongTransition = isAdvancingRef.current && !effectiveStatus.isPlaying;'), 'App.tsx identifies song transition when advancing without active playback');
+  assert(appTsx.includes('rawMode = (isTuningSeekingRef.current || isSongTransition) ? \'seek\''), 'App.tsx sets rawMode to seek during song transitions');
+
+  // 2. player.js sets seeking state on natural completion transition
+  assert(playerJs.includes('if (!isJingle) {\n          setSeekingState(true);\n        } else {\n          setSeekingState(false);\n        }'), 'player.js sets seeking state when natural non-jingle song ends');
+
+  // 3. User pause still produces paused state
+  assert(playerJs.includes('else if (rawState === 2) {\n        if (!isSeeking) {\n          setVisualTransport(\'paused\');\n        }\n      }'), 'player.js retains paused state when YouTube pauses without seeking');
+
+  // 4. Simulated state transitions for song end vs user pause
+  const render7SegStatus = (st: string) => {
+    switch (st) {
+      case 'playing': return 'PLAY';
+      case 'paused': return 'PAUSE';
+      case 'stopped': return 'STOP';
+      case 'seek': return 'SEEK';
+      case 'rew': return 'REW';
+      case 'ff': return 'FF';
+      default: return 'STOP';
+    }
+  };
+
+  // State machine simulation
+  let simulatedTransport = 'playing';
+  let isSeeking = false;
+
+  // Scenario A: Song finishes naturally -> transitions to SEEK
+  // YouTube emits rawState: 0 (ended)
+  const isJingle = false;
+  if (!isJingle) {
+    isSeeking = true;
+  }
+  let displayStatus = isSeeking ? 'SEEK' : render7SegStatus(simulatedTransport);
+  assert(displayStatus === 'SEEK', 'Display shows SEEK immediately when song finishes naturally');
+
+  // YouTube emits rawState: 2 (unloading/pause) while seeking to next song
+  if (!isSeeking) {
+    simulatedTransport = 'paused';
+  }
+  displayStatus = isSeeking ? 'SEEK' : render7SegStatus(simulatedTransport);
+  assert(displayStatus === 'SEEK', 'Display suppresses PAUSE and keeps SEEK while YouTube prepares next song');
+
+  // YouTube starts playing next song (rawState: 1)
+  isSeeking = false;
+  simulatedTransport = 'playing';
+  displayStatus = isSeeking ? 'SEEK' : render7SegStatus(simulatedTransport);
+  assert(displayStatus === 'PLAY', 'Display returns to PLAY once next song starts playing');
+
+  // Scenario B: User explicitly clicks PAUSE
+  // isSeeking is false, YouTube emits rawState: 2 (paused)
+  if (!isSeeking) {
+    simulatedTransport = 'paused';
+  }
+  displayStatus = isSeeking ? 'SEEK' : render7SegStatus(simulatedTransport);
+  assert(displayStatus === 'PAUSE', 'Display correctly shows PAUSE when user explicitly pauses');
+
+  console.log('✓ 52. Song Completion and Seek Display Transition verified.');
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);

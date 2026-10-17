@@ -88,18 +88,51 @@ export function existedBy(s: LibrarySong, date: string): boolean {
   return isStrictlyReleasedBefore(s, date);
 }
 
+export const SUPPORTED_1960S_GENRES = new Set([
+  'Baroque Pop',
+  'Bossa Nova',
+  'British Invasion',
+  'Country',
+  'Easy Listening',
+  'Folk',
+  'Folk Rock',
+  'Garage Rock',
+  'Gospel',
+  'Jazz',
+  'Latin',
+  'Motown',
+  'Pop',
+  'R&B',
+  'Rock',
+  'Rock and Roll',
+  'Ska',
+  'Soul',
+  'Surf Rock'
+]);
+
+export function isSongEligibleForGenre(s: LibrarySong, genre: string, broadcastDate: string): boolean {
+  if (!youtubeId(s) || !existedBy(s, broadcastDate) || !hasGenre(s, genre)) return false;
+  return chartedBetween(s, shift(broadcastDate, -730), broadcastDate);
+}
+
 /**
  * Derives distinct available genres from library songs that are historically eligible
- * (strictly released before the broadcast date and have a valid streaming YouTube ID).
+ * (strictly released before the broadcast date, charted within 2 years, and have a valid streaming YouTube ID).
+ * For 1960s dates, filters strictly to the supported 1960s taxonomy genres.
  */
 export function getAvailableGenres(library: LibrarySong[], broadcastDate: string): string[] {
+  const is1960s = broadcastDate.startsWith("196");
   const genreSet = new Set<string>();
   for (const s of library) {
-    if (youtubeId(s) && isStrictlyReleasedBefore(s, broadcastDate)) {
-      if (s.genres) {
-        for (const g of s.genres.split(",")) {
-          const trimmed = g.trim();
-          if (trimmed) {
+    if (youtubeId(s) && existedBy(s, broadcastDate)) {
+      if (chartedBetween(s, shift(broadcastDate, -730), broadcastDate)) {
+        if (s.genres) {
+          for (const g of s.genres.split(",")) {
+            const trimmed = g.trim();
+            if (!trimmed) continue;
+            if (is1960s && !SUPPORTED_1960S_GENRES.has(trimmed)) {
+              continue;
+            }
             genreSet.add(trimmed);
           }
         }
@@ -138,23 +171,49 @@ function weightedPick<T extends LibrarySong>(items: T[], rng: () => number): T {
 export function pickSong(library: LibrarySong[], date: string, genre: string, state: PlayState,
                          rng: () => number = Math.random): Pick | null {
   const playable = library.filter((s) => youtubeId(s) && existedBy(s, date));
-  const tiers: { tier: 1 | 2 | 3 | 4; songs: LibrarySong[]; genreMatched: boolean }[] = [
+  const genreTiers: { tier: 1 | 2 | 3; songs: LibrarySong[]; genreMatched: true }[] = [
     { tier: 1, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, date, date)) },
     { tier: 2, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, shift(date, -182), date)) },
     { tier: 3, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, shift(date, -730), date)) },
-    { tier: 4, genreMatched: false, songs: playable.filter((s) => chartedBetween(s, date, date)) },
   ];
-  // Skip songs already played this session; if a tier is used up, move to the next one.
-  for (const t of tiers) {
+
+  const lastPlayedId = state.recent.length > 0 ? state.recent[state.recent.length - 1] : null;
+
+  // 1. Try fresh songs in genre-matched tiers (Tier 1 -> Tier 2 -> Tier 3)
+  for (const t of genreTiers) {
     const fresh = t.songs.filter((s) => !state.recent.includes(s.id));
     if (fresh.length) {
       const song = weightedPick(fresh, rng);
-      return { song, tier: t.tier, genreMatched: t.genreMatched, state: { recent: [...state.recent, song.id].slice(-40) } };
+      return { song, tier: t.tier, genreMatched: true, state: { recent: [...state.recent, song.id].slice(-40) } };
     }
   }
-  // Everything has been played recently: allow a repeat rather than silence.
-  const any = tiers.find((t) => t.songs.length);
-  if (!any) return null;
-  const song = weightedPick(any.songs, rng);
-  return { song, tier: any.tier, genreMatched: any.genreMatched, state: { recent: [song.id] } };
+
+  // 2. If all songs across genre tiers have been played, but genre tiers have songs:
+  // Allow rotation of genre songs, but NEVER repeat the currently playing song if any other song exists!
+  const allGenreSongsMap = new Map<string, { song: LibrarySong; tier: 1 | 2 | 3 }>();
+  for (const t of genreTiers) {
+    for (const s of t.songs) {
+      if (!allGenreSongsMap.has(s.id)) {
+        allGenreSongsMap.set(s.id, { song: s, tier: t.tier });
+      }
+    }
+  }
+
+  if (allGenreSongsMap.size > 0) {
+    const allGenreList = Array.from(allGenreSongsMap.values());
+    const candidates = allGenreList.filter(item => item.song.id !== lastPlayedId);
+    const pool = candidates.length > 0 ? candidates : allGenreList;
+    const chosen = weightedPick(pool.map(p => p.song), rng);
+    const chosenMeta = pool.find(p => p.song.id === chosen.id) || pool[0];
+    const newRecent = lastPlayedId ? [lastPlayedId, chosen.id] : [chosen.id];
+    return {
+      song: chosen,
+      tier: chosenMeta.tier,
+      genreMatched: true,
+      state: { recent: newRecent }
+    };
+  }
+
+  // 3. If no genre songs were charting within 2 years, do not substitute unrelated genres
+  return null;
 }

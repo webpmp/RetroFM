@@ -280,6 +280,64 @@ async function resolveYouTubeTab(requestedTabId) {
   return null;
 }
 
+// Check whether a YouTube tab exists and RetroFM integration is ready
+async function checkYouTubeReadiness() {
+  const tabId = await resolveYouTubeTab();
+  if (!tabId) {
+    return { ready: false, tabId: null };
+  }
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url || !tab.url.includes('youtube.com')) {
+      return { ready: false, tabId: null };
+    }
+    if (tab.status !== 'complete') {
+      return { ready: false, tabId, loading: true };
+    }
+    const injected = await ensureYouTubeScriptInjected(tabId);
+    if (!injected) {
+      return { ready: false, tabId };
+    }
+    activeConnectedTabId = tabId;
+    return { ready: true, tabId };
+  } catch (e) {
+    return { ready: false, tabId: null };
+  }
+}
+
+// Notify connected Boom Box and RetroFM app when YouTube integration is ready
+async function notifyYouTubeReadiness(tabId) {
+  if (lastKnownRadioState) {
+    lastKnownRadioState.isStartupReady = true;
+  }
+  const bbTabId = await resolveBoomBoxTab();
+  if (bbTabId) {
+    try {
+      chrome.tabs.sendMessage(bbTabId, {
+        type: 'RADIO_STATE',
+        payload: {
+          ...(lastKnownRadioState || {}),
+          appConnected: true,
+          isStartupReady: true
+        }
+      }).catch(() => {});
+      chrome.tabs.sendMessage(bbTabId, {
+        type: 'YT_READY',
+        payload: { tabId, isStartupReady: true }
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  const retroTabId = await resolveRetroFmTab();
+  if (retroTabId) {
+    try {
+      chrome.tabs.sendMessage(retroTabId, {
+        type: 'YT_PAGE_READY',
+        payload: { connectedTabId: tabId }
+      }).catch(() => {});
+    } catch (e) {}
+  }
+}
+
 // Helper: Find existing tab group named "RetroFM" or "Retro FM" in window
 async function findRetroFmTabGroup(windowId) {
   if (!chrome.tabGroups) return null;
@@ -496,6 +554,26 @@ function handleIncomingRequest(request, sender, sendResponse) {
         } catch (err) {
           sendResponse({ success: false, error: err.message });
         }
+        return;
+      }
+
+      // Feature: YT_PAGE_READY - YouTube content script announced presence and readiness
+      if (type === 'YT_PAGE_READY') {
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+          activeConnectedTabId = tabId;
+        }
+        if (payload?.videoId) {
+          latestYouTubeState = {
+            state: -1,
+            videoId: payload.videoId,
+            title: payload.title || '',
+            currentTime: 0,
+            duration: 0
+          };
+        }
+        await notifyYouTubeReadiness(tabId);
+        sendResponse({ success: true, connectedTabId: tabId });
         return;
       }
 
@@ -769,12 +847,15 @@ function handleIncomingRequest(request, sender, sendResponse) {
       if (type === 'GET_RADIO_STATE') {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
+          const ytCheck = await checkYouTubeReadiness();
+          const isYtReady = ytCheck.ready;
+
           const retroTabId = await resolveRetroFmTab();
           if (!retroTabId) {
             sendResponse({
               success: false,
               error: 'RetroFM app not connected',
-              data: { appConnected: false, playbackStatus: 'stopped' }
+              data: { appConnected: false, playbackStatus: 'stopped', isStartupReady: isYtReady }
             });
             return;
           }
@@ -793,7 +874,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
             sendResponse({
               success: false,
               error: 'RetroFM app not connected',
-              data: { appConnected: false, playbackStatus: 'stopped' }
+              data: { appConnected: false, playbackStatus: 'stopped', isStartupReady: isYtReady }
             });
             return;
           }
@@ -801,14 +882,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (!freshState && lastKnownRadioState) {
             freshState = { ...lastKnownRadioState, appConnected: true };
           }
-          if (freshState && latestYouTubeState && latestYouTubeState.videoId) {
-            freshState.videoId = latestYouTubeState.videoId;
-            freshState.isStartupReady = true;
+          if (freshState) {
+            freshState.isStartupReady = freshState.isStartupReady || isYtReady;
+            if (latestYouTubeState && latestYouTubeState.videoId) {
+              freshState.videoId = latestYouTubeState.videoId;
+            }
           }
 
           sendResponse({
             success: true,
-            data: freshState || { appConnected: true, playbackStatus: 'stopped', isStartupReady: Boolean(latestYouTubeState?.videoId), videoId: latestYouTubeState?.videoId || null }
+            data: freshState || {
+              appConnected: true,
+              playbackStatus: 'stopped',
+              isStartupReady: isYtReady,
+              videoId: latestYouTubeState?.videoId || null
+            }
           });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
@@ -1204,6 +1292,20 @@ function handleIncomingRequest(request, sender, sendResponse) {
             return;
           }
 
+          // 2.5. If an initial playback time is requested (e.g. seamless station resumption), seek before starting playback
+          if (typeof payload.initialTime === 'number' && payload.initialTime > 0) {
+            try {
+              await chrome.tabs.sendMessage(tabId, { action: 'SEEK', time: payload.initialTime });
+              await new Promise((r) => setTimeout(r, 100));
+            } catch (seekErr) {
+              await ensureYouTubeScriptInjected(tabId);
+              try {
+                await chrome.tabs.sendMessage(tabId, { action: 'SEEK', time: payload.initialTime });
+                await new Promise((r) => setTimeout(r, 100));
+              } catch (e) {}
+            }
+          }
+
           // 3. Start playback using the same message pattern as PLAY command
           let playResult = null;
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -1283,10 +1385,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return handleIncomingRequest(request, sender, sendResponse);
 });
 
-// 3. Monitor tab closures for reliable connection recovery
+// 3. Monitor tab loading/updates to detect YouTube readiness immediately
+if (chrome.tabs?.onUpdated) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tab?.url && tab.url.includes('youtube.com')) {
+      if (changeInfo.status === 'complete') {
+        const check = await checkYouTubeReadiness();
+        if (check.ready) {
+          await notifyYouTubeReadiness(check.tabId);
+        }
+      }
+    }
+  });
+}
+
+// 4. Monitor tab closures for reliable connection recovery
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (tabId === activeConnectedTabId) {
     activeConnectedTabId = null;
+    const remainingYt = await resolveYouTubeTab();
+    if (!remainingYt) {
+      latestYouTubeState = null;
+      if (lastKnownRadioState) {
+        lastKnownRadioState.isStartupReady = false;
+      }
+    }
   }
   if (tabId === activeBoomBoxTabId) {
     activeBoomBoxTabId = null;

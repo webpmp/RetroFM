@@ -14,7 +14,7 @@ new ResizeObserver(scaleApp).observe(app);addEventListener('resize',scaleApp);sc
 
 const S={state:'stopped',vol:.7,bal:.5,tun:(100.3-87.5)/20.5,dec:1990};
 const ST={
-1960:[['Pop',95.1],['Motown',101.5],['Soul',107.1],['R&B',93.5],['Freeform/Underground',99.5],['Folk Rock',102.7],['Psychedelic Rock',104.1]],
+1960:[['Pop',95.1],['Motown',101.5],['Soul',107.1],['R&B',93.5],['Rock',99.5],['Folk Rock',102.7],['Rock and Roll',104.1]],
 1970:[['AOR',95.5],['Disco',98.7],['Progressive Rock',92.3],['Soft Rock',103.5],['Funk',107.5],['Punk Rock',91.1],['Outlaw Country',97.1]],
 1980:[['New Wave',90.7],['Synth-Pop',93.1],['Hair Metal',105.5],['Hip-Hop',89.9],['CHR',101.9],['Urban Contemporary',97.9],['College Rock',88.9]],
 1990:[['Grunge',99.9],['Alternative Rock',106.7],['Gangsta Rap',92.7],['Contemporary R&B',105.1],['Teen Pop',100.3],['Eurodance',96.3],['Country Pop',94.7]],
@@ -23,6 +23,8 @@ const ST={
 2020:[['Bedroom Pop',88.1],['Hyperpop',90.9],['Amapiano',103.9],['Drift Phonk',95.9],['Regional Mexican',102.9],['Lofi Hip-Hop',88.5]]};
 let hasFirstSongStartedPlaying = false;
 let isStartupReady = false;
+let isYtPlaybackActive = false;
+let hasInitializedDial = false;
 let transientStatus = null;
 let transientTimer = null;
 let playbackEnabled = false;
@@ -377,20 +379,32 @@ act($('bStop'),()=>{
 });
 
 // knobs
-function knob(el,key,base,min,max,onSet,step){
+let isTuningDrag = false;
+function knob(el,key,base,min,max,onSet,step,sens){
  const rot=()=>el.style.transform='rotate('+(min+S[key]*(max-min)-base)+'deg)';
  const set=v=>{S[key]=clamp(v);onSet&&onSet();rot();};
  let lx,ly,drag=false;
- el.onpointerdown=e=>{drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';staticController.ensureContext();};
- el.onpointermove=e=>{if(!drag)return;set(S[key]+((e.clientX-lx)-(e.clientY-ly))/220);lx=e.clientX;ly=e.clientY};
- el.onpointerup=el.onpointercancel=()=>{drag=false;el.style.cursor='grab'};
+ const divisor = typeof sens === 'number' ? sens : 220;
+ el.onpointerdown=e=>{
+   drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';
+   if(key==='tun') isTuningDrag=true;
+   staticController.ensureContext();
+ };
+ el.onpointermove=e=>{if(!drag)return;set(S[key]+((e.clientX-lx)-(e.clientY-ly))/divisor);lx=e.clientX;ly=e.clientY};
+ el.onpointerup=el.onpointercancel=()=>{
+   drag=false;el.style.cursor='grab';
+   if(key==='tun'){
+     isTuningDrag=false;
+     if(typeof flushPendingTune==='function') flushPendingTune();
+   }
+ };
  el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step)};
  el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step)}};
  rot();return set;
 }
 knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
 knob($('kBal'),'bal',10,-135,135,()=>{const bVal=Number((S.bal*2-1).toFixed(2));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
-knob($('kTun'),'tun',40,-135,135,tune,.2/20.5);
+knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);
 $('kBal').ondblclick=()=>{S.bal=.5;$('kBal').style.transform='rotate(-10deg)';emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
 
 // optional deck buttons: rewind / fast forward flash when clicked, record latches on/off.
@@ -497,6 +511,14 @@ function tune(){
  }
  if(key!==lastKey){
    lastKey=key;
+   if(best){
+     song=null;
+     playbackProgress.currentTime = 0;
+     playbackProgress.duration = 0;
+     playbackProgress.videoId = null;
+     clearSongTimers();
+     renderSong();
+   }
    marks();
    if(pan.classList.contains('live')){
      emit('tune',{decade:S.dec,frequency:f,genre:best?best[0]:null,locked:!!best});
@@ -548,7 +570,7 @@ function formatPlaybackTime(sec) {
 }
 
 function updateGenrePills() {
-  const isPlaying = S.state === 'playing' && isYtPlaybackActive;
+  const isPlaying = (S.state === 'playing' || isYtPlaybackActive);
   const stations = ST[S.dec] || [];
   const f = Math.round((MIN + S.tun * SPAN) * 10) / 10;
   let best = null;
@@ -714,6 +736,7 @@ function cleanArtist(rawArtist, rawTitle) {
 }
 
 function setSong(d){
+  if(!S.locked) return;
   let nextSong = null;
   if(d&&d.title){
     const rawTitle=String(d.title).trim();
@@ -791,7 +814,9 @@ function problem(v){v=v.trim();if(!v)return'';
   if(D){flap(fD,MON[D.getMonth()]+' '+D.getDate()+', '+D.getFullYear());
    const dec=Math.floor(D.getFullYear()/10)*10;if(gl!==ST[dec]){gl=ST[dec];gi=0}
    if(dec>=1960&&dec<=2020&&logoDec!==dec){logoDec=dec;paintLogo();}
-   flap(fG,gl[gi][0]);hint.textContent=step==='genre'?'\u2191\u2193 CHOOSE GENRE \u00B7 ENTER TO TUNE IN \u00B7 TAB: DATE':'ENTER OR TAB TO CHOOSE A GENRE';hint.className=''}
+   const dateStr=D.getFullYear()+'-'+String(D.getMonth()+1).padStart(2,'0')+'-'+String(D.getDate()).padStart(2,'0');
+   sendBoomBoxAction('REQUEST_DATE_STATIONS',{date:dateStr,decade:dec});
+   flap(fG,gl[gi]?gl[gi][0]:'GENRE');hint.textContent=step==='genre'?'\u2191\u2193 CHOOSE GENRE \u00B7 ENTER TO TUNE IN \u00B7 TAB: DATE':'ENTER OR TAB TO CHOOSE A GENRE';hint.className=''}
   else{flap(fD,v||'TYPE A DATE',!v);gl=[];flap(fG,'GENRE',1);
    if(logoDec!==S.dec){logoDec=S.dec;paintLogo();}
    const p=q?'':problem(v);hint.textContent=p||(v.length>5?'Try July 4, 1978 \u00B7 1960 to today':'e.g. July 4, 1978');hint.className=p?'err':''}
@@ -831,7 +856,7 @@ $('hDate').onclick=()=>back('date');if($('hGen'))$('hGen').onclick=()=>back('gen
 tune();refresh();dIn.focus();
 
 // VU meters (simulated: music plays in YouTube tab; needles scale directly with master volume)
-let env=0,nl=0,nr=0,beat=.5,vuRunning=false,isYtPlaybackActive=false;
+let env=0,nl=0,nr=0,beat=.5,vuRunning=false;
 function vu(){
  const isPlaying = S.state === 'playing' && isYtPlaybackActive;
  if(isPlaying){
@@ -924,7 +949,22 @@ function setVisualTransport(incomingState) {
   trace('APPLY_TRANSPORT_STATE', { incomingState, prevState, changedUI: changed });
 }
 
-function sendBoomBoxAction(action, data) {
+let pendingTuneData = null;
+let tuneActionTimer = null;
+
+function flushPendingTune() {
+  if (tuneActionTimer) {
+    clearTimeout(tuneActionTimer);
+    tuneActionTimer = null;
+  }
+  if (pendingTuneData) {
+    const data = pendingTuneData;
+    pendingTuneData = null;
+    rawSendBoomBoxAction('TUNE', data);
+  }
+}
+
+function rawSendBoomBoxAction(action, data) {
   try {
     if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
@@ -939,6 +979,26 @@ function sendBoomBoxAction(action, data) {
   } catch (err) {
     console.warn('[BoomBox] Action send error:', err);
   }
+}
+
+function sendBoomBoxAction(action, data) {
+  if (action === 'TUNE' && isTuningDrag) {
+    pendingTuneData = data;
+    if (tuneActionTimer) clearTimeout(tuneActionTimer);
+    tuneActionTimer = setTimeout(() => {
+      tuneActionTimer = null;
+      flushPendingTune();
+    }, 120);
+    return;
+  }
+  if (action === 'TUNE') {
+    if (tuneActionTimer) {
+      clearTimeout(tuneActionTimer);
+      tuneActionTimer = null;
+    }
+    pendingTuneData = null;
+  }
+  rawSendBoomBoxAction(action, data);
 }
 
 function applyRadioState(state) {
@@ -980,16 +1040,37 @@ function applyRadioState(state) {
       if (Array.isArray(s)) return s;
       return [s.genre || s.name, typeof s.frequency === 'number' ? s.frequency : s.freq];
     });
-    const currentStations = ST[S.dec] || [];
+    const targetDec = typeof state.decade === 'number' ? state.decade : S.dec;
+    const currentStations = ST[targetDec] || [];
     const hasStationsChanged = currentStations.length !== normalized.length ||
       normalized.some((s, idx) => !currentStations[idx] || currentStations[idx][0] !== s[0] || Math.abs(currentStations[idx][1] - s[1]) > 0.01);
 
     if (hasStationsChanged) {
+      ST[targetDec] = normalized;
       ST[S.dec] = normalized;
-      paintChips(S.dec);
+      paintChips(targetDec);
       marks();
+      if (gl === currentStations || (D && Math.floor(D.getFullYear() / 10) * 10 === targetDec)) {
+        gl = ST[targetDec];
+        if (gi >= gl.length) gi = 0;
+        if (gl[gi]) flap(fG, gl[gi][0]);
+      }
     } else {
       updateGenrePills();
+    }
+  }
+
+  // Align dial frequency to active genre if needed
+  if (state.genre && !hasInitializedDial) {
+    const stations = ST[S.dec] || [];
+    const matched = stations.find(s => s[0] === state.genre);
+    if (matched) {
+      const curF = Math.round((MIN + S.tun * SPAN) * 10) / 10;
+      if (Math.abs(curF - matched[1]) > 0.15) {
+        S.tun = (matched[1] - MIN) / SPAN;
+        tune();
+      }
+      hasInitializedDial = true;
     }
   }
 
@@ -1028,27 +1109,42 @@ function applyRadioState(state) {
   }
 
   // 3. Current Song
-  if (state.currentSong && state.currentSong.title) {
-    if (state.currentSong.videoId && state.currentSong.videoId !== playbackProgress.videoId) {
-      playbackProgress.videoId = state.currentSong.videoId;
-      playbackProgress.currentTime = typeof state.currentSong.currentTime === 'number' ? state.currentSong.currentTime : 0;
-    } else if (typeof state.currentSong.currentTime === 'number' && state.currentSong.currentTime > 0) {
-      playbackProgress.currentTime = state.currentSong.currentTime;
-    }
-    if (typeof state.currentSong.durationSec === 'number' && state.currentSong.durationSec > 0) {
-      playbackProgress.duration = state.currentSong.durationSec;
-    } else if (typeof state.currentSong.duration === 'string') {
-      const parts = state.currentSong.duration.split(':').map(Number);
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        playbackProgress.duration = parts[0] * 60 + parts[1];
-      } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-        playbackProgress.duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      }
-    }
-    setSong(state.currentSong);
-  } else if (state.clearSong) {
+  if (state.clearSong) {
     song = null;
+    clearSongTimers();
     renderSong();
+  } else if (state.playbackStatus === 'seek' || state.playbackStatus === 'seeking' || isSeeking) {
+    song = null;
+    clearSongTimers();
+    renderSong();
+  } else if (state.currentSong && state.currentSong.title) {
+    const stations = ST[S.dec] || [];
+    const f = Math.round((MIN + S.tun * SPAN) * 10) / 10;
+    let matchedStation = null;
+    stations.forEach(s => {
+      if (Math.abs(s[1] - f) < 0.05) matchedStation = s;
+    });
+    const activeDialGenre = matchedStation ? matchedStation[0] : null;
+    const isMismatchedGenre = state.genre && activeDialGenre && state.genre !== activeDialGenre;
+    if (!isMismatchedGenre) {
+      if (state.currentSong.videoId && state.currentSong.videoId !== playbackProgress.videoId) {
+        playbackProgress.videoId = state.currentSong.videoId;
+        playbackProgress.currentTime = typeof state.currentSong.currentTime === 'number' ? state.currentSong.currentTime : 0;
+      } else if (typeof state.currentSong.currentTime === 'number' && state.currentSong.currentTime > 0) {
+        playbackProgress.currentTime = state.currentSong.currentTime;
+      }
+      if (typeof state.currentSong.durationSec === 'number' && state.currentSong.durationSec > 0) {
+        playbackProgress.duration = state.currentSong.durationSec;
+      } else if (typeof state.currentSong.duration === 'string') {
+        const parts = state.currentSong.duration.split(':').map(Number);
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+          playbackProgress.duration = parts[0] * 60 + parts[1];
+        } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          playbackProgress.duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+      }
+      setSong(state.currentSong);
+    }
   } else if (!song) {
     renderSong();
   }
@@ -1076,7 +1172,15 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     if (message && message.type === 'RADIO_STATE') {
       applyRadioState(message.payload);
       sendResponse({ received: true });
+    } else if (message && message.type === 'YT_READY') {
+      isStartupReady = true;
+      markStartupReady();
+      sendResponse({ received: true });
     } else if (message && message.type === 'YT_STATE_CHANGED' && message.payload) {
+      if (message.payload.isStartupReady) {
+        isStartupReady = true;
+        markStartupReady();
+      }
       const rawState = message.payload.state;
       const isPlaying = rawState === 1;
       const vid = message.payload.videoId;
@@ -1097,7 +1201,11 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
           setVisualTransport('paused');
         }
       } else if (rawState === 0) {
-        setSeekingState(false);
+        if (!isJingle) {
+          setSeekingState(true);
+        } else {
+          setSeekingState(false);
+        }
       }
       if (rawState === 0) {
         // When startup jingle ends naturally, stop playback and reels until user clicks PLAY
@@ -1155,8 +1263,20 @@ setInterval(() => {
   }
 }, 6000);
 
+// Bounded polling while waiting for startup readiness (polls every 1.5s until YouTube is ready)
+const startupReadyInterval = setInterval(() => {
+  if (isStartupReady) {
+    clearInterval(startupReadyInterval);
+    return;
+  }
+  requestRadioState();
+}, 1500);
+
 function markStartupReady() {
   isStartupReady = true;
+  if (typeof startupReadyInterval !== 'undefined' && startupReadyInterval) {
+    clearInterval(startupReadyInterval);
+  }
   const modal = $('rfmModal');
   const btn = $('rfmStartBtn');
   if (modal && btn) {
