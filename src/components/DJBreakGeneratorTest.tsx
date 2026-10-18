@@ -76,6 +76,39 @@ export function DJBreakGeneratorTest({
   const [forceFresh, setForceFresh] = useState<boolean>(false);
   const [nationalFocus, setNationalFocus] = useState<boolean>(true); // ON by default: exclude NYC-local coverage
 
+  // AI Provider & Local Model (LM Studio) State
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'lmstudio'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('retrofm_ai_provider') as 'gemini' | 'lmstudio') || 'gemini';
+    }
+    return 'gemini';
+  });
+  const [lmStudioEndpoint, setLmStudioEndpoint] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_lmstudio_endpoint') || 'http://localhost:1234/v1';
+    }
+    return 'http://localhost:1234/v1';
+  });
+  const [selectedLmModel, setSelectedLmModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_lmstudio_model') || '';
+    }
+    return '';
+  });
+  const [lmStudioStatus, setLmStudioStatus] = useState<{
+    connected: boolean | null;
+    models: string[];
+    error: string | null;
+    isChecking: boolean;
+  }>({
+    connected: null,
+    models: [],
+    error: null,
+    isChecking: false,
+  });
+  const [isTestingLmConnection, setIsTestingLmConnection] = useState<boolean>(false);
+  const [lmTestResult, setLmTestResult] = useState<string | null>(null);
+
   // Execution & state
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | null>(null);
@@ -122,6 +155,95 @@ export function DJBreakGeneratorTest({
   useEffect(() => {
     if (initialSongNext) setSongNext(initialSongNext);
   }, [initialSongNext]);
+
+  // Persist selections to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_ai_provider', aiProvider);
+    }
+  }, [aiProvider]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_lmstudio_endpoint', lmStudioEndpoint);
+    }
+  }, [lmStudioEndpoint]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_lmstudio_model', selectedLmModel);
+    }
+  }, [selectedLmModel]);
+
+  const checkLmStudioStatus = async (endpointUrl = lmStudioEndpoint) => {
+    setLmStudioStatus((prev) => ({ ...prev, isChecking: true, error: null }));
+    try {
+      const res = await fetch('/api/ai/lmstudio/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: endpointUrl }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLmStudioStatus({
+          connected: true,
+          models: data.models || [],
+          error: null,
+          isChecking: false,
+        });
+        if (data.models && data.models.length > 0 && !selectedLmModel) {
+          setSelectedLmModel(data.models[0]);
+        }
+      } else {
+        setLmStudioStatus({
+          connected: false,
+          models: [],
+          error: data.error || 'Failed to connect to LM Studio',
+          isChecking: false,
+        });
+      }
+    } catch (err: any) {
+      setLmStudioStatus({
+        connected: false,
+        models: [],
+        error: err?.message || 'Network error querying LM Studio status',
+        isChecking: false,
+      });
+    }
+  };
+
+  const testLmStudioPrompt = async () => {
+    setIsTestingLmConnection(true);
+    setLmTestResult(null);
+    try {
+      const res = await fetch('/api/ai/lmstudio/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: lmStudioEndpoint,
+          model: selectedLmModel,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLmTestResult(`✓ Success (${data.callDurationSec}s, ${data.modelUsed}): "${data.sampleBreak}"`);
+        onLogEvent?.(`[LM Studio Test] Connected! Sample break generated in ${data.callDurationSec}s using ${data.modelUsed}.`);
+      } else {
+        setLmTestResult(`✗ Test Failed: ${data.error || 'Unknown error'}`);
+        onLogEvent?.(`[LM Studio Test Error] ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setLmTestResult(`✗ Network error: ${err?.message || 'Could not reach server'}`);
+    } finally {
+      setIsTestingLmConnection(false);
+    }
+  };
+
+  useEffect(() => {
+    if (aiProvider === 'lmstudio') {
+      checkLmStudioStatus();
+    }
+  }, [aiProvider]);
 
   const fetchStats = async () => {
     try {
@@ -225,6 +347,9 @@ export function DJBreakGeneratorTest({
           secondsAvailable,
           forceFresh,
           nationalFocus,
+          provider: aiProvider,
+          lmStudioEndpoint,
+          model: selectedLmModel,
         }),
       });
 
@@ -381,6 +506,8 @@ export function DJBreakGeneratorTest({
           secondsAvailable,
           nationalFocus,
           providedFactItems: step1Data.providedFactItems,
+          provider: aiProvider,
+          lmStudioEndpoint,
         }),
       });
 
@@ -567,7 +694,9 @@ export function DJBreakGeneratorTest({
 
         {/* Text Model Call Session Pill */}
         <div className="flex items-center gap-3 bg-[#0a0c10] border border-zinc-800 rounded px-3 py-1.5 text-[11px]">
-          <span className="text-zinc-500 uppercase font-semibold">Gemini Text Model Calls:</span>
+          <span className="text-zinc-500 uppercase font-semibold">
+            {aiProvider === 'lmstudio' ? 'LM Studio' : 'Gemini'} Calls:
+          </span>
           <span className="text-zinc-300">
             Session Calls: <strong className="text-amber-400">{sessionStats.textModelCalls}</strong>
           </span>
@@ -576,6 +705,157 @@ export function DJBreakGeneratorTest({
             Cache Hits: <strong className="text-emerald-400">{sessionStats.cacheHits}</strong>
           </span>
         </div>
+      </div>
+
+      {/* AI Model Provider Selector Section */}
+      <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              AI Text Generation Provider:
+            </span>
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setAiProvider('gemini')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                aiProvider === 'gemini'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              ⚡ Gemini Cloud
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAiProvider('lmstudio');
+                if (lmStudioStatus.connected === null) {
+                  checkLmStudioStatus();
+                }
+              }}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                aiProvider === 'lmstudio'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <span>💻 Local Model (LM Studio)</span>
+              {lmStudioStatus.connected === true && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" title="LM Studio online" />
+              )}
+              {lmStudioStatus.connected === false && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" title="LM Studio unreachable" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* LM Studio Specific Settings */}
+        {aiProvider === 'lmstudio' && (
+          <div className="pt-2 border-t border-zinc-800/80 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              {/* Endpoint Input */}
+              <div className="md:col-span-5">
+                <label className="text-[10px] text-zinc-400 font-semibold block mb-1 uppercase">
+                  LM Studio Server Endpoint:
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={lmStudioEndpoint}
+                    onChange={(e) => setLmStudioEndpoint(e.target.value)}
+                    placeholder="http://localhost:1234/v1"
+                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => checkLmStudioStatus()}
+                    disabled={lmStudioStatus.isChecking}
+                    className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 rounded text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {lmStudioStatus.isChecking ? 'Checking...' : 'Check'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Model Selector */}
+              <div className="md:col-span-4">
+                <label className="text-[10px] text-zinc-400 font-semibold block mb-1 uppercase">
+                  Discovered / Active Model:
+                </label>
+                {lmStudioStatus.models.length > 0 ? (
+                  <select
+                    value={selectedLmModel}
+                    onChange={(e) => setSelectedLmModel(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    {lmStudioStatus.models.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={selectedLmModel}
+                    onChange={(e) => setSelectedLmModel(e.target.value)}
+                    placeholder="e.g. openai/gpt-oss-20b or custom"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  />
+                )}
+              </div>
+
+              {/* Test Connection Button */}
+              <div className="md:col-span-3">
+                <button
+                  type="button"
+                  onClick={testLmStudioPrompt}
+                  disabled={isTestingLmConnection || lmStudioStatus.isChecking}
+                  className="w-full py-1.5 px-3 rounded bg-zinc-800 hover:bg-zinc-700 border border-amber-500/40 text-amber-300 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isTestingLmConnection ? 'animate-spin' : ''}`} />
+                  <span>{isTestingLmConnection ? 'Testing...' : 'Test Local Model'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Connection Status & Test Result Badges */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {lmStudioStatus.connected === true && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    Connected to LM Studio ({lmStudioStatus.models.length} model{lmStudioStatus.models.length === 1 ? '' : 's'} available)
+                  </span>
+                </span>
+              )}
+
+              {lmStudioStatus.connected === false && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/60 border border-rose-800 text-rose-300 text-[11px]">
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>{lmStudioStatus.error || 'LM Studio server offline at endpoint'}</span>
+                </span>
+              )}
+
+              {lmTestResult && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] ${
+                    lmTestResult.startsWith('✓')
+                      ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
+                      : 'bg-rose-950/50 border-rose-800 text-rose-300'
+                  }`}
+                >
+                  {lmTestResult}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Date Presets Row */}

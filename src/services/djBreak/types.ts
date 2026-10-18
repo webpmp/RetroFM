@@ -90,12 +90,41 @@ export interface BreakGeneratorResult {
   callStartTime?: string;
   callDurationSec?: number;
   stepTimedOut?: 'step1' | 'step2' | null;
+  provider?: 'gemini' | 'lmstudio';
 }
+
+export type AIProviderType = 'gemini' | 'lmstudio';
 
 export interface ScriptWriterProvider {
   readonly name: string;
   readonly modelName: string;
   generateBreaks(input: BreakGeneratorInput): Promise<BreakGeneratorResult>;
+  writeBreaksOnly(input: BreakGeneratorInput): Promise<{
+    success: boolean;
+    breaks: GeneratedDJBreak[];
+    providedFactItems: any[];
+    modelUsed: string;
+    callStartTime: string;
+    callDurationSec: number;
+    error?: string;
+    isUnavailable?: boolean;
+    quotaExceeded?: boolean;
+    stepTimedOut?: 'step1' | null;
+  }>;
+  auditBreaksOnly(
+    scripts: { breakNumber: number; scriptText: string }[],
+    targetDate: string,
+    modelToUse?: string
+  ): Promise<{
+    success: boolean;
+    audits: Record<number, AnachronismCheckResult>;
+    modelUsed: string;
+    callStartTime: string;
+    callDurationSec: number;
+    error?: string;
+    auditUnavailable?: boolean;
+    stepTimedOut?: 'step2' | null;
+  }>;
 }
 
 export interface DJBreakSessionStats {

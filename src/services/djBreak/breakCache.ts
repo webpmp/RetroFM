@@ -36,12 +36,16 @@ export function computeBreakCacheKey(input: {
   songNext: string;
   secondsAvailable: number;
   nationalFocus?: boolean;
+  provider?: string;
+  model?: string;
 }): string {
   const nf = input.nationalFocus !== false ? 'nf' : 'all';
-  const rawKey = `${input.targetDate}_${input.personality}_${input.timeOfDay}_${input.format}_${input.songPlayed.trim().toLowerCase()}_${input.songNext.trim().toLowerCase()}_${input.secondsAvailable}_${nf}`;
+  const prov = input.provider || 'gemini';
+  const mdl = input.model ? `_${input.model.trim().toLowerCase()}` : '';
+  const rawKey = `${input.targetDate}_${input.personality}_${input.timeOfDay}_${input.format}_${input.songPlayed.trim().toLowerCase()}_${input.songNext.trim().toLowerCase()}_${input.secondsAvailable}_${nf}_${prov}${mdl}`;
   const hash = crypto.createHash('md5').update(rawKey).digest('hex').substring(0, 10);
   const safeDate = input.targetDate.replace(/[^0-9-]/g, '_');
-  return `break_${safeDate}_${input.personality}_${input.secondsAvailable}s_${nf}_${hash}`;
+  return `break_${safeDate}_${input.personality}_${input.secondsAvailable}s_${nf}_${prov}_${hash}`;
 }
 
 export function readBreakCache(key: string): BreakGeneratorResult | null {

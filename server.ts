@@ -23,6 +23,7 @@ import {
   auditDJBreaksStep2Service,
   getDJBreakSessionStats,
 } from './src/services/djBreak/djBreakService.js';
+import { LMStudioScriptWriterProvider } from './src/services/djBreak/LMStudioScriptWriterProvider.js';
 
 dotenv.config();
 
@@ -396,6 +397,93 @@ async function startServer() {
     }
   });
 
+  // API Route: Check LM Studio connection and discover available models
+  app.post('/api/ai/lmstudio/status', async (req, res) => {
+    try {
+      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+      let endpoint = req.body?.endpoint || defaultEndpoint;
+      // If user typed localhost inside browser, resolve appropriately for Docker container backend
+      if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
+        endpoint = endpoint.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
+      }
+
+      // Validate URL format for security
+      try {
+        const parsed = new URL(endpoint);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return res.status(400).json({ success: false, error: 'Invalid URL protocol. Only http and https are allowed.' });
+        }
+      } catch {
+        return res.status(400).json({ success: false, error: 'Malformed endpoint URL.' });
+      }
+
+      const models = await LMStudioScriptWriterProvider.discoverModels(endpoint);
+      return res.json({
+        success: true,
+        endpoint,
+        models,
+        modelCount: models.length,
+        defaultModel: models[0] || null,
+      });
+    } catch (err: any) {
+      return res.status(200).json({
+        success: false,
+        error: err?.message || 'Could not connect to LM Studio at the specified endpoint.',
+        models: [],
+      });
+    }
+  });
+
+  // API Route: Send a test prompt to LM Studio and verify chat-completions
+  app.post('/api/ai/lmstudio/test', async (req, res) => {
+    try {
+      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+      let endpoint = req.body?.endpoint || defaultEndpoint;
+      if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
+        endpoint = endpoint.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
+      }
+
+      const model = req.body?.model;
+      const provider = new LMStudioScriptWriterProvider({ endpoint, model, timeoutMs: 60000 });
+
+      // Run sample DJ break test prompt
+      const result = await provider.writeBreaksOnly({
+        targetDate: '1985-07-13',
+        personality: 'mike',
+        timeOfDay: 'afternoon',
+        format: 'Top 40',
+        songPlayed: 'a-ha - Take on Me',
+        songNext: 'Michael Jackson - Billie Jean',
+        secondsAvailable: 12,
+        factItems: [
+          {
+            headline: 'Live Aid concert rocks Wembley Stadium and JFK Stadium Philadelphia',
+            publishedDate: '1985-07-13',
+            category: 'music',
+            summary: 'Global charity concert featuring top rock artists across two continents.',
+            source: 'Test',
+            url: 'https://example.com/liveaid',
+            provider: 'nyt',
+          },
+        ],
+      });
+
+      return res.json({
+        success: result.success,
+        modelUsed: result.modelUsed,
+        callDurationSec: result.callDurationSec,
+        sampleBreak: result.breaks?.[0]?.scriptText || null,
+        breaks: result.breaks,
+        error: result.error,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed test request to LM Studio.',
+      });
+    }
+  });
+
   // API Route: Get DJ Break generator session metrics
   app.get('/api/dj-break/stats', (req, res) => {
     try {
@@ -405,6 +493,16 @@ async function startServer() {
       return res.status(500).json({ success: false, error: err?.message });
     }
   });
+
+  // Helper to map and sanitize provider endpoints
+  function resolveProviderEndpoint(provider?: string, endpoint?: string) {
+    if (provider !== 'lmstudio') return undefined;
+    let ep = endpoint || process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+    if (ep.includes('localhost:1234') || ep.includes('127.0.0.1:1234')) {
+      ep = ep.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
+    }
+    return ep;
+  }
 
   // API Route: Step 1 of 2 - Generate 3 DJ Breaks scripts (fast return, status "CHECKING")
   app.post('/api/dj-break/step1-write', async (req, res) => {
@@ -419,6 +517,9 @@ async function startServer() {
         secondsAvailable,
         forceFresh,
         nationalFocus,
+        provider,
+        lmStudioEndpoint,
+        model,
       } = req.body;
 
       if (!targetDate || typeof targetDate !== 'string') {
@@ -426,7 +527,8 @@ async function startServer() {
       }
 
       const isNationalFocus = nationalFocus !== false;
-      console.log(`[API /api/dj-break/step1-write] Writing breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
+      const resolvedEndpoint = resolveProviderEndpoint(provider, lmStudioEndpoint);
+      console.log(`[API /api/dj-break/step1-write] Writing breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (provider=${provider || 'gemini'}, forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
 
       const result = await generateDJBreaksStep1Service({
         targetDate,
@@ -438,6 +540,9 @@ async function startServer() {
         secondsAvailable: Number(secondsAvailable) || 12,
         forceFresh: Boolean(forceFresh),
         nationalFocus: isNationalFocus,
+        provider: provider === 'lmstudio' ? 'lmstudio' : 'gemini',
+        lmStudioEndpoint: resolvedEndpoint,
+        model,
       });
 
       const stats = getDJBreakSessionStats();
@@ -480,6 +585,8 @@ async function startServer() {
         secondsAvailable,
         nationalFocus,
         providedFactItems,
+        provider,
+        lmStudioEndpoint,
       } = req.body;
 
       if (!Array.isArray(breaks) || breaks.length === 0) {
@@ -489,7 +596,8 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'targetDate is required.' });
       }
 
-      console.log(`[API /api/dj-break/step2-audit] Auditing ${breaks.length} breaks for ${targetDate}`);
+      const resolvedEndpoint = resolveProviderEndpoint(provider, lmStudioEndpoint);
+      console.log(`[API /api/dj-break/step2-audit] Auditing ${breaks.length} breaks for ${targetDate} (provider=${provider || 'gemini'})`);
 
       const result = await auditDJBreaksStep2Service({
         breaks,
@@ -503,6 +611,8 @@ async function startServer() {
         secondsAvailable: Number(secondsAvailable) || 12,
         nationalFocus: nationalFocus !== false,
         providedFactItems,
+        provider: provider === 'lmstudio' ? 'lmstudio' : 'gemini',
+        lmStudioEndpoint: resolvedEndpoint,
       });
 
       const stats = getDJBreakSessionStats();
@@ -539,6 +649,9 @@ async function startServer() {
         secondsAvailable,
         forceFresh,
         nationalFocus,
+        provider,
+        lmStudioEndpoint,
+        model,
       } = req.body;
 
       if (!targetDate || typeof targetDate !== 'string') {
@@ -546,7 +659,8 @@ async function startServer() {
       }
 
       const isNationalFocus = nationalFocus !== false;
-      console.log(`[API /api/dj-break/generate] Generating breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
+      const resolvedEndpoint = resolveProviderEndpoint(provider, lmStudioEndpoint);
+      console.log(`[API /api/dj-break/generate] Generating breaks for ${targetDate}, personality: ${personality}, ${secondsAvailable}s (provider=${provider || 'gemini'}, forceFresh=${Boolean(forceFresh)}, nationalFocus=${isNationalFocus})`);
 
       const result = await generateDJBreaksService({
         targetDate,
@@ -558,6 +672,9 @@ async function startServer() {
         secondsAvailable: Number(secondsAvailable) || 12,
         forceFresh: Boolean(forceFresh),
         nationalFocus: isNationalFocus,
+        provider: provider === 'lmstudio' ? 'lmstudio' : 'gemini',
+        lmStudioEndpoint: resolvedEndpoint,
+        model,
       });
 
       const stats = getDJBreakSessionStats();
