@@ -480,6 +480,7 @@ export default function App() {
     { id: 'bf_isabella', name: 'Isabella (British Female)' },
   ]);
   const [isKokoroAvailable, setIsKokoroAvailable] = useState<boolean | null>(null);
+  const [hasGeminiApiKey, setHasGeminiApiKey] = useState<boolean | null>(null);
   const [isGeneratingDJ, setIsGeneratingDJ] = useState<boolean>(false);
   const [djAudioData, setDjAudioData] = useState<string | null>(null);
   const [djAudioDuration, setDjAudioDuration] = useState<number>(0);
@@ -488,7 +489,16 @@ export default function App() {
   const [isPlayingDJPreview, setIsPlayingDJPreview] = useState<boolean>(false);
 
   // --- Radio Mix & Ducking Configuration ---
-  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(10); // 10% default
+  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_duck_volume');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 5 && parsed <= 60) return parsed;
+      }
+    }
+    return 20; // 20% default
+  });
   const [fadeDownMs, setFadeDownMs] = useState<number>(500); // 500 ms default
   const [fadeUpMs, setFadeUpMs] = useState<number>(750); // 750 ms default
   const [isDuckingActive, setIsDuckingActive] = useState<boolean>(false);
@@ -582,7 +592,7 @@ export default function App() {
       musicProvider: musicProviderRef.current,
       onLog: (msg) => logMessage(msg),
       initialUserVolume: 100,
-      initialDuckLevel: 10,
+      initialDuckLevel: duckVolumePercent,
     });
   }
 
@@ -616,6 +626,14 @@ export default function App() {
         }
       })
       .catch(() => setHasYouTubeApiKey(false));
+
+    // Query health status (Gemini API key presence)
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((data) => {
+        setHasGeminiApiKey(Boolean(data.hasApiKey));
+      })
+      .catch(() => setHasGeminiApiKey(false));
 
     // Check Kokoro service availability and load supported voices
     fetchKokoroStatus()
@@ -660,6 +678,12 @@ export default function App() {
       localStorage.setItem('retrofm_gemini_model', selectedModel);
     } catch {}
   }, [selectedModel]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_duck_volume', String(duckVolumePercent));
+    } catch {}
+  }, [duckVolumePercent]);
 
   // --- Load Song Library once at startup ---
   useEffect(() => {
@@ -3010,6 +3034,48 @@ export default function App() {
     );
   };
 
+  // Helper to render TTS capability badge with configured model name or FAIL
+  const renderTTSBadge = () => {
+    let modelName = selectedModel || 'gemini-2.5-flash-preview-tts';
+    let isAvailable = true;
+
+    if (voiceEngine === 'KOKORO') {
+      modelName = 'Kokoro-82M-bf16';
+      if (isKokoroAvailable === false) {
+        isAvailable = false;
+      }
+    } else if (voiceEngine === 'GEMINI') {
+      modelName = selectedModel || 'gemini-2.5-flash-preview-tts';
+      if (hasGeminiApiKey === false) {
+        isAvailable = false;
+      }
+    } else if (voiceEngine === 'BROWSER') {
+      modelName = 'Web Speech API';
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        isAvailable = false;
+      }
+    }
+
+    if (testResults.geminiTTS === false) {
+      isAvailable = false;
+    }
+
+    if (!isAvailable) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800">
+          <XCircle className="w-3.5 h-3.5" /> FAIL
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+        <CheckCircle2 className="w-3.5 h-3.5" /> {modelName}
+      </span>
+    );
+  };
+
+
   return (
     <div className="min-h-screen bg-[#0d0f14] text-zinc-200 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -4873,8 +4939,8 @@ export default function App() {
             </div>
 
             <div className="p-3 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-              <span className="text-zinc-300">Gemini Flash TTS:</span>
-              {renderBadge(testResults.geminiTTS)}
+              <span className="text-zinc-300">TTS:</span>
+              {renderTTSBadge()}
             </div>
 
             <div className="p-3 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">

@@ -547,6 +547,7 @@ function marks(){$('stn').innerHTML=ST[S.dec].map(s=>'<circle cx="'+fx(s[1]).toF
 const DEMO=false;
 // song info on the display: title and artist alternate with 1.2s fade and 3s hold
 // songDisplayMode: 'song_info' (1) -> 'elapsed_time' (2) -> 'hidden' (3)
+// By default, Artist Name and Song Title is the default display mode on entering the green display.
 let songDisplayMode = 'song_info';
 try {
   const savedMode = localStorage.getItem('rfm-song-display-mode');
@@ -822,13 +823,60 @@ function problem(v){v=v.trim();if(!v)return'';
    const p=q?'':problem(v);hint.textContent=p||(v.length>5?'Try July 4, 1978 \u00B7 1960 to today':'e.g. July 4, 1978');hint.className=p?'err':''}
   brd.dataset.s=step;caret()}
 function cyc(d){if(!D)return;gi=(gi+d+gl.length)%gl.length;flap(fG,gl[gi][0])}
-function goLive(){const y=D.getFullYear(),dec=Math.floor(y/10)*10,g=gl[gi];
- pan.classList.replace('entry','live');
- $('hDate').textContent=MON[D.getMonth()]+' '+D.getDate()+', '+y;const hg=$('hGen');if(hg)hg.textContent=g[0].toUpperCase();
- S.tun=(g[1]-MIN)/SPAN;setDec(dec);
- const dateStr=y+'-'+String(D.getMonth()+1).padStart(2,'0')+'-'+String(D.getDate()).padStart(2,'0');
- emit('select',{date:dateStr,year:y,decade:dec,genre:g[0],frequency:g[1]});
- sendBoomBoxAction('SELECT_DATE_GENRE',{date:dateStr,year:y,decade:dec,genre:g[0],frequency:g[1]});}
+let committedSelection = null;
+
+function goLive(){
+  const y=D.getFullYear(),dec=Math.floor(y/10)*10,g=gl[gi];
+  pan.classList.replace('entry','live');
+  $('hDate').textContent=MON[D.getMonth()]+' '+D.getDate()+', '+y;
+  const hg=$('hGen');if(hg)hg.textContent=g[0].toUpperCase();
+  S.tun=(g[1]-MIN)/SPAN;setDec(dec);
+  const dateStr=y+'-'+String(D.getMonth()+1).padStart(2,'0')+'-'+String(D.getDate()).padStart(2,'0');
+
+  // Remember committed selection for Escape key cancellation
+  committedSelection = {
+    date: new Date(D.getTime()),
+    inputValue: dIn.value,
+    genreIndex: gi,
+    decade: dec,
+    genre: g[0],
+    frequency: g[1],
+    dateStr: dateStr,
+    hDateText: $('hDate').textContent,
+    hGenText: g[0].toUpperCase(),
+    tun: S.tun
+  };
+
+  // Requirement 1: When the green display is active, Artist Name and Song Title must be the default display
+  songDisplayMode = 'song_info';
+  renderSong();
+
+  emit('select',{date:dateStr,year:y,decade:dec,genre:g[0],frequency:g[1]});
+  sendBoomBoxAction('SELECT_DATE_GENRE',{date:dateStr,year:y,decade:dec,genre:g[0],frequency:g[1]});
+}
+
+function cancelToLive(){
+  if (!committedSelection) return false;
+  // Restore committed date & genre
+  D = new Date(committedSelection.date.getTime());
+  dIn.value = committedSelection.inputValue || (MON[D.getMonth()]+' '+D.getDate()+', '+D.getFullYear());
+  const dec = committedSelection.decade;
+  gl = ST[dec] || [];
+  gi = committedSelection.genreIndex >= 0 && committedSelection.genreIndex < gl.length ? committedSelection.genreIndex : 0;
+  S.tun = committedSelection.tun;
+  setDec(dec);
+  if ($('hDate')) $('hDate').textContent = committedSelection.hDateText;
+  const hg = $('hGen');
+  if (hg) hg.textContent = committedSelection.hGenText;
+
+  // Return to live display
+  pan.classList.replace('entry', 'live');
+  step = 'date';
+  tune();
+  renderSong();
+  return true;
+}
+
 dIn.oninput=e=>{step='date';let v=dIn.value.replace(/[^A-Za-z0-9 ,\/\-]/g,'').replace(/^\s+/,'').replace(/\s{2,}/g,' ').replace(/,\s*,/g,', ');
  if(e.inputType&&e.inputType.startsWith('insert')){
   v=v.replace(/^([A-Za-z]+)(?=\d)/,'$1 ');
@@ -841,7 +889,17 @@ document.addEventListener('keydown',e=>{if(!pan.classList.contains('entry')||e.c
  if(e.key==='Tab'){e.preventDefault();if(step==='genre'){step='date';refresh();dIn.focus()}else if(D){step='genre';refresh()}else{hint.textContent='Enter a date from 1960 to today';hint.className='err'}}
  else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();if(step==='genre')cyc(e.key==='ArrowUp'?-1:1)}
  else if(e.key==='Enter'){e.preventDefault();if(!D){hint.textContent='Enter a date from 1960 to today';hint.className='err'}else if(step==='date'){step='genre';refresh()}else goLive()}
- else if(e.key==='Escape'){if(step==='genre'){step='date';refresh()}else if(dIn.value){dIn.value='';refresh(true)}}
+ else if(e.key==='Escape'){
+   e.preventDefault();
+   // If we have a committed selection from an active live session, Escape cancels draft edits and returns to live
+   if(committedSelection){
+     cancelToLive();
+   }else if(step==='genre'){
+     step='date';refresh();
+   }else if(dIn.value){
+     dIn.value='';refresh(true);
+   }
+ }
  else if((e.key.length===1||e.key==='Backspace'||e.key==='Delete')&&document.activeElement!==dIn){step='date';dIn.focus()}});
 const endCaret=()=>{const n=dIn.value.length;try{dIn.setSelectionRange(n,n)}catch(e){}};
 dIn.onfocus=()=>{brd.classList.add('foc');endCaret()};dIn.onblur=()=>brd.classList.remove('foc');
@@ -851,7 +909,13 @@ fG.onclick=()=>{if(D){if(step==='genre')cyc(1);else{step='genre';refresh()}}else
 dIn.onclick=()=>{if(step==='genre'){step='date';refresh()}};
 $('bDate').onclick=()=>{step='date';refresh();dIn.focus()};
 $('bGen').onclick=()=>{if(D){step='genre';refresh()}dIn.focus()};
-const back=s=>{pan.classList.replace('live','entry');step=s;emit('update',{});refresh();dIn.focus()};
+const back=s=>{
+  pan.classList.replace('live','entry');
+  step=s;
+  emit('update',{});
+  refresh();
+  dIn.focus();
+};
 $('hDate').onclick=()=>back('date');if($('hGen'))$('hGen').onclick=()=>back('genre');
 tune();refresh();dIn.focus();
 
@@ -1071,6 +1135,34 @@ function applyRadioState(state) {
         tune();
       }
       hasInitializedDial = true;
+    }
+  }
+
+  // Authoritative date & genre tracking for committedSelection
+  if (state.date && typeof state.date === 'string') {
+    const parsedD = parseDate(state.date);
+    if (parsedD) {
+      const y = parsedD.getFullYear();
+      const dec = typeof state.decade === 'number' ? state.decade : Math.floor(y / 10) * 10;
+      const gName = state.genre || (gl[gi] ? gl[gi][0] : '');
+      const stations = ST[dec] || [];
+      const gIdx = stations.findIndex(s => s[0] === gName);
+      const matchedSt = gIdx >= 0 ? stations[gIdx] : null;
+
+      if (!committedSelection) {
+        committedSelection = {
+          date: parsedD,
+          inputValue: MON[parsedD.getMonth()] + ' ' + parsedD.getDate() + ', ' + y,
+          genreIndex: gIdx >= 0 ? gIdx : 0,
+          decade: dec,
+          genre: gName,
+          frequency: matchedSt ? matchedSt[1] : 88.1,
+          dateStr: state.date,
+          hDateText: MON[parsedD.getMonth()] + ' ' + parsedD.getDate() + ', ' + y,
+          hGenText: gName.toUpperCase(),
+          tun: matchedSt ? (matchedSt[1] - MIN) / SPAN : S.tun
+        };
+      }
     }
   }
 

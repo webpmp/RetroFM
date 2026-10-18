@@ -11,7 +11,7 @@ export interface VolumeControllerOptions {
   musicProvider: MusicProvider;
   onLog: (msg: string) => void;
   initialUserVolume?: number; // 0 - 100, default 100
-  initialDuckLevel?: number;  // 0 - 100, default 10
+  initialDuckLevel?: number;  // 0 - 100, default 20
 }
 
 export type VolumeChangeListener = (
@@ -27,7 +27,7 @@ export type VolumeChangeListener = (
  * 
  * Rules:
  * 1. Tracks userVolume (normal level, set only by master slider or user action),
- *    duckLevel (default 10%), and state: idle | ducking | ducked | restoring.
+ *    duckLevel (default 20%), and state: idle | ducking | ducked | restoring.
  * 2. Baseline rule: Captures normal volume ONLY when state is idle.
  *    Never treats a mid-ramp value as baseline. Always restores to userVolume.
  * 3. Cancel stale ramps: Assigns unique rampId to each ramp. Stale timers/ramps are discarded.
@@ -42,7 +42,7 @@ export class VolumeController {
   private onLog: (msg: string) => void;
 
   private userVolume: number = 100;     // 0 to 100 (normal level, set ONLY by master slider or user action)
-  private duckLevel: number = 10;       // 0 to 100 (visible setting, default 10)
+  private duckLevel: number = 20;       // 0 to 100 (visible setting, default 20)
   private state: VolumeState = 'idle';
   private effectiveVolume: number = 100; // 0 to 100 (current animated output)
 
@@ -63,7 +63,7 @@ export class VolumeController {
     this.musicProvider = options.musicProvider;
     this.onLog = options.onLog;
     this.userVolume = typeof options.initialUserVolume === 'number' ? options.initialUserVolume : 100;
-    this.duckLevel = typeof options.initialDuckLevel === 'number' ? options.initialDuckLevel : 10;
+    this.duckLevel = typeof options.initialDuckLevel === 'number' ? options.initialDuckLevel : 20;
     this.effectiveVolume = this.userVolume;
     this.lastExpectedFraction = this.userVolume / 100;
   }
