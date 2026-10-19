@@ -54,6 +54,7 @@ export class VolumeController {
   private watchdogUntil: number = 0;
   private lastExpectedFraction: number = 1.0;
   private watchdogTimer: any = null;
+  private sequenceSafetyTimer: any = null;
 
   // Active UI animation frame/timer
   private uiAnimId: number | null = null;
@@ -111,6 +112,14 @@ export class VolumeController {
    * Called when a song starts, playback initializes, navigation finishes, or tab connects.
    */
   public async syncInitialVolume(reason = 'Playback initialization'): Promise<boolean> {
+    if (this.isSequenceActive()) {
+      console.log(
+        `[RetroFM Volume] [${new Date().toISOString()}] Action: SYNC_INITIAL_VOLUME (deferred) | Sequence active (${this.state}) | Reason: ${reason}`
+      );
+      this.onLog(`[VolumeController] Action: SYNC_INITIAL_VOLUME deferred (sequence active: ${this.state})`);
+      return true;
+    }
+
     const rampId = ++this.rampIdCounter;
     this.activeRampId = rampId;
 
@@ -143,14 +152,13 @@ export class VolumeController {
     const oldVol = this.userVolume;
     this.userVolume = clamped;
 
-    const rampId = ++this.rampIdCounter;
-    this.activeRampId = rampId;
-
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: SET_USER_VOLUME | ${oldVol}% -> ${clamped}% | state: ${this.state} | duckLevel: ${this.duckLevel}% | rampId: ${rampId} | reason: ${reason}`
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: SET_USER_VOLUME | ${oldVol}% -> ${clamped}% | state: ${this.state} | duckLevel: ${this.duckLevel}% | reason: ${reason}`
     );
 
     if (this.state === 'idle') {
+      const rampId = ++this.rampIdCounter;
+      this.activeRampId = rampId;
       this.effectiveVolume = clamped;
       this.lastExpectedFraction = clamped / 100;
       this.cancelWatchdog();
@@ -204,21 +212,23 @@ export class VolumeController {
       return false;
     }
 
+    const visState = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
     this.isSequenceRunning = true;
     const rampId = ++this.rampIdCounter;
     this.activeRampId = rampId;
     this.cancelWatchdog();
+    this.armSequenceSafetyTimer(fadeDownMs + 4000, `Duck sequence (${reason})`);
 
     const normalVol = this.userVolume;
     const targetDuck = this.duckLevel;
     this.state = 'ducking';
 
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_START | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | duration: ${fadeDownMs}ms | rampId: ${rampId} | reason: ${reason}`
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_START | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | duration: ${fadeDownMs}ms | rampId: ${rampId} | reason: ${reason} | visibilityState: ${visState}`
     );
 
     this.onLog(
-      `[VolumeController] Action: DUCK | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | Duration: ${fadeDownMs}ms | RampId: ${rampId} | Reason: ${reason}`
+      `[VolumeController] Action: DUCK | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | Duration: ${fadeDownMs}ms | RampId: ${rampId} | Reason: ${reason} | visibilityState: ${visState}`
     );
 
     this.notify();
@@ -238,9 +248,13 @@ export class VolumeController {
     // If ramp was cancelled during fade down, abort
     if (this.activeRampId !== rampId) {
       console.warn(
-        `[RetroFM Volume] [${new Date().toISOString()}] Stale duck ramp ${rampId} cancelled (active: ${this.activeRampId})`
+        `[RetroFM Volume] [${new Date().toISOString()}] Stale duck ramp ${rampId} cancelled (active: ${this.activeRampId}) | visibilityState: ${visState}`
       );
       this.onLog(`[VolumeController] Stale duck ramp ${rampId} cancelled.`);
+      this.clearSequenceSafetyTimer();
+      this.state = 'idle';
+      this.isSequenceRunning = false;
+      this.notify();
       return false;
     }
 
@@ -249,7 +263,7 @@ export class VolumeController {
     this.lastExpectedFraction = targetDuck / 100;
 
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId}`
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
     );
 
     this.notify();
@@ -265,16 +279,18 @@ export class VolumeController {
     const rampId = ++this.rampIdCounter;
     this.activeRampId = rampId;
     this.state = 'restoring';
+    this.armSequenceSafetyTimer(fadeUpMs + 5000, `Restore sequence (${reason})`);
 
+    const visState = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
     const startVol = this.effectiveVolume;
     const targetRestore = this.userVolume; // ALWAYS userVolume
 
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_START | From: ${startVol}% -> userVolume: ${targetRestore}% | duration: ${fadeUpMs}ms | rampId: ${rampId} | reason: ${reason}`
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_START | From: ${startVol}% -> userVolume: ${targetRestore}% | duration: ${fadeUpMs}ms | rampId: ${rampId} | reason: ${reason} | visibilityState: ${visState}`
     );
 
     this.onLog(
-      `[VolumeController] Action: RESTORE | From: ${startVol}% -> userVolume: ${targetRestore}% | Duration: ${fadeUpMs}ms | RampId: ${rampId} | Reason: ${reason}`
+      `[VolumeController] Action: RESTORE | From: ${startVol}% -> userVolume: ${targetRestore}% | Duration: ${fadeUpMs}ms | RampId: ${rampId} | Reason: ${reason} | visibilityState: ${visState}`
     );
 
     this.notify();
@@ -294,19 +310,24 @@ export class VolumeController {
     // If ramp was cancelled during fade up, abort
     if (this.activeRampId !== rampId) {
       console.warn(
-        `[RetroFM Volume] [${new Date().toISOString()}] Stale restore ramp ${rampId} cancelled (active: ${this.activeRampId})`
+        `[RetroFM Volume] [${new Date().toISOString()}] Stale restore ramp ${rampId} cancelled (active: ${this.activeRampId}) | visibilityState: ${visState}`
       );
       this.onLog(`[VolumeController] Stale restore ramp ${rampId} cancelled.`);
+      this.clearSequenceSafetyTimer();
+      this.state = 'idle';
+      this.isSequenceRunning = false;
+      this.notify();
       return false;
     }
 
+    this.clearSequenceSafetyTimer();
     this.state = 'idle';
     this.isSequenceRunning = false;
     this.effectiveVolume = targetRestore;
     this.lastExpectedFraction = targetRestore / 100;
 
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_COMPLETED | effectiveVolume: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId}`
+      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_COMPLETED | effectiveVolume: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
     );
 
     this.notify();
@@ -324,6 +345,7 @@ export class VolumeController {
     const rampId = ++this.rampIdCounter;
     this.activeRampId = rampId;
 
+    this.clearSequenceSafetyTimer();
     this.cancelActiveAnimation();
 
     this.isSequenceRunning = false;
@@ -411,6 +433,27 @@ export class VolumeController {
     this.watchdogTimer?.unref?.();
   }
 
+  private clearSequenceSafetyTimer(): void {
+    if (this.sequenceSafetyTimer) {
+      clearTimeout(this.sequenceSafetyTimer);
+      this.sequenceSafetyTimer = null;
+    }
+  }
+
+  private armSequenceSafetyTimer(durationMs: number, reason: string): void {
+    this.clearSequenceSafetyTimer();
+    const timeoutMs = Math.max(3000, durationMs + 2500);
+    this.sequenceSafetyTimer = setTimeout(() => {
+      if (this.state !== 'idle') {
+        console.warn(
+          `[RetroFM Volume] [${new Date().toISOString()}] Sequence safety watchdog triggered! Force resetting state from ${this.state} to idle (reason: ${reason}).`
+        );
+        this.cancel(`Sequence safety watchdog triggered for: ${reason}`);
+      }
+    }, timeoutMs);
+    this.sequenceSafetyTimer?.unref?.();
+  }
+
   private cancelWatchdog(): void {
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
@@ -432,19 +475,21 @@ export class VolumeController {
 
   /**
    * Smoothly animates effectiveVolume for UI feedback only (no network/postMessage calls).
+   * Completely immune to tab visibility throttling: if tab is hidden, completes immediately or via clock timer.
    */
   private animateUiVolume(from: number, to: number, durationMs: number, rampId: number): Promise<void> {
     return new Promise<void>((resolve) => {
       this.cancelActiveAnimation();
 
-      if (durationMs <= 0) {
+      const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      if (durationMs <= 0 || isHidden) {
         this.effectiveVolume = to;
         this.notify();
         return resolve();
       }
 
       const schedule = (cb: () => void) => {
-        if (typeof requestAnimationFrame !== 'undefined') {
+        if (typeof requestAnimationFrame !== 'undefined' && document.visibilityState !== 'hidden') {
           return requestAnimationFrame(cb);
         }
         return setTimeout(cb, 16) as any;
@@ -457,6 +502,14 @@ export class VolumeController {
           console.warn(
             `[RetroFM Volume] UI animation cancelled for stale rampId ${rampId} (active: ${this.activeRampId})`
           );
+          return resolve();
+        }
+
+        // If tab was switched to background mid-animation, immediately finish cleanly
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          this.effectiveVolume = to;
+          this.notify();
+          this.uiAnimId = null;
           return resolve();
         }
 

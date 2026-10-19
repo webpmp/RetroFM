@@ -14,6 +14,7 @@ export class YouTubeMusicProvider implements MusicProvider {
   private revealListeners: Set<() => void> = new Set();
   private needsUserClickListeners: Set<() => void> = new Set();
   private ytTabActivatedListeners: Set<() => void> = new Set();
+  private boomBoxDjSpeechFinishedListeners: Set<(payload: any) => void> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -63,6 +64,11 @@ export class YouTubeMusicProvider implements MusicProvider {
           if (event.data.type === 'YT_TAB_ACTIVATED') {
             for (const listener of this.ytTabActivatedListeners) {
               try { listener(); } catch (e) {}
+            }
+          }
+          if (event.data.type === 'BOOMBOX_DJ_SPEECH_FINISHED') {
+            for (const listener of this.boomBoxDjSpeechFinishedListeners) {
+              try { listener(event.data.payload); } catch (e) {}
             }
           }
         }
@@ -266,6 +272,28 @@ export class YouTubeMusicProvider implements MusicProvider {
     return () => {
       this.ytTabActivatedListeners.delete(callback);
     };
+  }
+
+  public onBoomBoxDjSpeechFinished(callback: (payload: any) => void): () => void {
+    this.boomBoxDjSpeechFinishedListeners.add(callback);
+    return () => {
+      this.boomBoxDjSpeechFinishedListeners.delete(callback);
+    };
+  }
+
+  public async playBoomBoxDjSpeech(payload: {
+    audioSrc?: string | null;
+    durationSec?: number;
+    text?: string;
+    isBrowser?: boolean;
+    effectsSettings?: any;
+  }): Promise<{ success: boolean; started?: boolean; error?: string; reason?: string }> {
+    try {
+      const res = await this.sendExtensionMessage('PLAY_BOOMBOX_DJ_SPEECH', payload, 4000);
+      return res || { success: false };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public async openBoomBox(): Promise<{ success: boolean; tabId?: number; reused?: boolean; error?: string }> {

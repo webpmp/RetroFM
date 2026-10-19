@@ -160,6 +160,273 @@ class StaticNoiseController {
 }
 const staticController = new StaticNoiseController();
 
+let boomBoxDjAudio = null;
+let boomBoxDjEffects = null;
+let boomBoxDjSafetyTimer = null;
+
+function ensureBoomBoxDjAudio() {
+  if (!boomBoxDjAudio) {
+    boomBoxDjAudio = document.createElement('audio');
+    boomBoxDjAudio.id = 'boombox-dj-speech-audio';
+    boomBoxDjAudio.style.display = 'none';
+    boomBoxDjAudio.preload = 'auto';
+    document.body.appendChild(boomBoxDjAudio);
+  }
+  return boomBoxDjAudio;
+}
+
+function generateSaturationCurve(drive, samples = 2048) {
+  const k = Math.max(1, drive || 15);
+  const curve = new Float32Array(samples);
+  const normFactor = Math.tanh(k * 0.7);
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / (samples - 1) - 1;
+    curve[i] = Math.tanh(k * 0.7 * x) / normFactor;
+  }
+  return curve;
+}
+
+function generateNeutralCurve(samples = 256) {
+  const curve = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    curve[i] = (i * 2) / (samples - 1) - 1;
+  }
+  return curve;
+}
+
+function generateImpulseResponse(ctx, duration = 2.5, decay = 1.2) {
+  const sampleRate = ctx.sampleRate || 44100;
+  const length = Math.floor(sampleRate * duration);
+  const buffer = ctx.createBuffer(2, length, sampleRate);
+  const left = buffer.getChannelData(0);
+  const right = buffer.getChannelData(1);
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const envelope = Math.exp(-t / decay);
+    left[i] = (Math.random() * 2 - 1) * envelope;
+    right[i] = (Math.random() * 2 - 1) * envelope;
+  }
+  return buffer;
+}
+
+class BoomBoxDjVoiceEffects {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.sourceNode = null;
+    this.inputGain = ctx.createGain();
+
+    this.amHighpass = ctx.createBiquadFilter();
+    this.amHighpass.type = 'highpass';
+    this.amHighpass.frequency.value = 20;
+
+    this.amLowpass = ctx.createBiquadFilter();
+    this.amLowpass.type = 'lowpass';
+    this.amLowpass.frequency.value = 20000;
+
+    this.fmSparkle = ctx.createBiquadFilter();
+    this.fmSparkle.type = 'peaking';
+    this.fmSparkle.frequency.value = 10000;
+    this.fmSparkle.Q.value = 1.0;
+    this.fmSparkle.gain.value = 0;
+
+    this.waveshaper = ctx.createWaveShaper();
+    this.waveshaper.curve = generateNeutralCurve();
+
+    this.compressor = ctx.createDynamicsCompressor();
+    this.compressor.threshold.value = 0;
+    this.compressor.ratio.value = 1;
+
+    this.makeupGain = ctx.createGain();
+    this.makeupGain.gain.value = 1.0;
+
+    this.dryGain = ctx.createGain();
+    this.dryGain.gain.value = 1.0;
+
+    this.convolver = ctx.createConvolver();
+    try {
+      this.convolver.buffer = generateImpulseResponse(ctx);
+    } catch (e) {}
+
+    this.reverbWetGain = ctx.createGain();
+    this.reverbWetGain.gain.value = 0.0;
+
+    this.masterOutput = ctx.createGain();
+    this.masterOutput.gain.value = 1.0;
+
+    // Connect Dry Chain
+    this.inputGain.connect(this.amHighpass);
+    this.amHighpass.connect(this.amLowpass);
+    this.amLowpass.connect(this.fmSparkle);
+    this.fmSparkle.connect(this.waveshaper);
+    this.waveshaper.connect(this.compressor);
+    this.compressor.connect(this.makeupGain);
+    this.makeupGain.connect(this.dryGain);
+    this.dryGain.connect(this.masterOutput);
+
+    // Connect Reverb Wet Chain
+    this.inputGain.connect(this.convolver);
+    this.convolver.connect(this.reverbWetGain);
+    this.reverbWetGain.connect(this.masterOutput);
+
+    // Master to Destination
+    this.masterOutput.connect(ctx.destination);
+  }
+
+  attach(audio) {
+    if (!this.sourceNode) {
+      try {
+        this.sourceNode = this.ctx.createMediaElementSource(audio);
+        this.sourceNode.connect(this.inputGain);
+      } catch (e) {
+        console.warn('[BoomBox DJ] MediaElementSource attach warning:', e);
+      }
+    }
+  }
+
+  applySettings(s) {
+    if (!s || typeof s !== 'object') return;
+    try {
+      const now = this.ctx.currentTime;
+      // 1. Reverb
+      const targetWet = s.reverbEnabled ? (typeof s.reverbWetMix === 'number' ? s.reverbWetMix : 0.3) : 0;
+      this.reverbWetGain.gain.setValueAtTime(targetWet, now);
+
+      // 2. AM Radio
+      this.amHighpass.frequency.setValueAtTime(s.amRadioEnabled ? 250 : 20, now);
+      const nyquist = (this.ctx.sampleRate || 44100) / 2;
+      this.amLowpass.frequency.setValueAtTime(s.amRadioEnabled ? 3000 : Math.min(20000, nyquist - 50), now);
+
+      // 3. FM Sparkle
+      this.fmSparkle.gain.setValueAtTime(s.fmSparkleEnabled ? (typeof s.fmSparkleBoost === 'number' ? s.fmSparkleBoost : 6) : 0, now);
+
+      // 4. Saturation
+      if (s.saturationEnabled) {
+        this.waveshaper.curve = generateSaturationCurve(s.saturationDrive || 15);
+      } else {
+        this.waveshaper.curve = generateNeutralCurve();
+      }
+
+      // 5. Compressor
+      if (s.compressionEnabled) {
+        this.compressor.threshold.setValueAtTime(typeof s.compressionThreshold === 'number' ? s.compressionThreshold : -24, now);
+        this.compressor.ratio.setValueAtTime(typeof s.compressionRatio === 'number' ? s.compressionRatio : 3, now);
+        this.compressor.attack.setValueAtTime(typeof s.compressionAttack === 'number' ? s.compressionAttack : 0.010, now);
+        this.compressor.release.setValueAtTime(typeof s.compressionRelease === 'number' ? s.compressionRelease : 0.150, now);
+        this.compressor.knee.setValueAtTime(typeof s.compressionKnee === 'number' ? s.compressionKnee : 12, now);
+        const makeup = Math.pow(10, (typeof s.compressionMakeupGain === 'number' ? s.compressionMakeupGain : 3) / 20);
+        this.makeupGain.gain.setValueAtTime(makeup, now);
+      } else {
+        this.compressor.threshold.setValueAtTime(0, now);
+        this.compressor.ratio.setValueAtTime(1, now);
+        this.makeupGain.gain.setValueAtTime(1.0, now);
+      }
+    } catch (e) {
+      console.warn('[BoomBox DJ] Error applying settings:', e);
+    }
+  }
+}
+
+function playBoomBoxDjSpeech(payload) {
+  if (boomBoxDjSafetyTimer) {
+    clearTimeout(boomBoxDjSafetyTimer);
+    boomBoxDjSafetyTimer = null;
+  }
+
+  const durationSec = typeof payload?.durationSec === 'number' && payload.durationSec > 0 ? payload.durationSec : 4;
+  const text = payload?.text || '';
+  const isBrowser = Boolean(payload?.isBrowser);
+
+  let finished = false;
+  const notifyFinished = (success, error) => {
+    if (finished) return;
+    finished = true;
+    if (boomBoxDjSafetyTimer) {
+      clearTimeout(boomBoxDjSafetyTimer);
+      boomBoxDjSafetyTimer = null;
+    }
+    trace('BOOMBOX_DJ_SPEECH_FINISHED', { success, error, text });
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({
+        type: 'BOOMBOX_DJ_SPEECH_FINISHED',
+        payload: { success, error, text, durationSec }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    }
+  };
+
+  boomBoxDjSafetyTimer = setTimeout(() => {
+    notifyFinished(true, 'safety_timeout');
+  }, Math.max(12000, (durationSec + 4) * 1000));
+
+  if (isBrowser) {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.05;
+        u.onend = () => notifyFinished(true);
+        u.onerror = (e) => notifyFinished(false, e?.error || 'speech_synthesis_error');
+        window.speechSynthesis.speak(u);
+        trace('BOOMBOX_DJ_SPEECH_PLAYING', { engine: 'browser', text });
+        return;
+      } catch (err) {
+        notifyFinished(false, err?.message || 'browser_speech_failed');
+        return;
+      }
+    } else {
+      notifyFinished(false, 'speech_synthesis_not_supported');
+      return;
+    }
+  }
+
+  const audioSrc = payload?.audioSrc;
+  if (!audioSrc) {
+    notifyFinished(false, 'no_audio_src');
+    return;
+  }
+
+  const audio = ensureBoomBoxDjAudio();
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+  } catch (e) {}
+
+  // Route through Web Audio DJ Voice Effects
+  try {
+    const ctx = staticController.ensureContext();
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      if (!boomBoxDjEffects) {
+        boomBoxDjEffects = new BoomBoxDjVoiceEffects(ctx);
+      }
+      boomBoxDjEffects.attach(audio);
+      if (payload?.effectsSettings) {
+        boomBoxDjEffects.applySettings(payload.effectsSettings);
+      }
+    }
+  } catch (err) {
+    console.warn('[BoomBox DJ] Effects routing warning:', err);
+  }
+
+  audio.onended = () => {
+    notifyFinished(true);
+  };
+  audio.onerror = (e) => {
+    notifyFinished(false, 'audio_element_error');
+  };
+
+  audio.src = audioSrc;
+  audio.play().then(() => {
+    trace('BOOMBOX_DJ_SPEECH_PLAYING', { durationSec, text });
+  }).catch((err) => {
+    console.warn('[BoomBox DJ] Play error:', err);
+    notifyFinished(false, err?.message || 'play_rejected');
+  });
+}
+
 const SEG_ALPHA_MAP = {
   'A': ['a','b','c','e','f','g'],
   'B': ['c','d','e','f','g'],
@@ -1341,6 +1608,9 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
         setSong({ title: message.payload.title });
       }
       sendResponse({ received: true });
+    } else if (message && message.type === 'PLAY_DJ_SPEECH') {
+      playBoomBoxDjSpeech(message.payload);
+      sendResponse({ success: true, started: true });
     }
   });
 }

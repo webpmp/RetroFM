@@ -59,6 +59,30 @@ export function hasGenre(s: LibrarySong, genre: string): boolean {
 }
 
 /**
+ * Release date eligibility cutoff:
+ * Returns true if and only if the song was released on or before the broadcast date.
+ * - Precision 'day' (or YYYY-MM-DD): rel <= broadcastDate
+ * - Precision 'month' (or YYYY-MM): rel.slice(0, 7) <= broadcastDate.slice(0, 7)
+ * - Precision 'year' (or YYYY): rel.slice(0, 4) <= broadcastDate.slice(0, 4)
+ * If release date is missing or invalid, returns false.
+ */
+export function isReleasedOnOrBefore(s: LibrarySong | { release_date: string | null; release_date_precision?: string | null }, broadcastDate: string): boolean {
+  const rel = s.release_date;
+  if (!rel) return false;
+  const prec = (s.release_date_precision || "").trim().toLowerCase() ||
+    (rel.length === 10 ? "day" : rel.length === 7 ? "month" : "year");
+
+  if (prec === "day" || rel.length === 10) {
+    return rel <= broadcastDate;
+  }
+  if (prec === "month" || rel.length === 7) {
+    return rel.slice(0, 7) <= broadcastDate.slice(0, 7);
+  }
+  // Precision 'year' or 4-digit
+  return rel.slice(0, 4) <= broadcastDate.slice(0, 4);
+}
+
+/**
  * Strict historical cutoff:
  * Returns true if and only if the song was released strictly before the broadcast date.
  * - Precision 'day' (or YYYY-MM-DD): rel < broadcastDate

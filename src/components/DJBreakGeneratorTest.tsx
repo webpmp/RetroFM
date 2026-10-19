@@ -37,6 +37,14 @@ import {
   DJBreakSessionStats,
 } from '../services/djBreak/types.js';
 import { FactItem } from '../services/news/types.js';
+import {
+  buildBreak,
+  newDjState,
+  Song as ObsSong,
+  DjState,
+  TALK_PRESETS,
+} from '../services/djBreak/djBreakObservations.js';
+import { LibrarySong } from '../services/songSelector.js';
 
 export const HISTORICAL_PRESET_DATES = [
   { date: '1969-07-21', label: '1969-07-21 (Apollo 11 Moon Landing)' },
@@ -46,6 +54,43 @@ export const HISTORICAL_PRESET_DATES = [
   { date: '1996-07-04', label: '1996-07-04 (Independence Day / Mid-90s)' },
 ];
 
+function toObsSong(s: LibrarySong | null | undefined): ObsSong | null {
+  if (!s) return null;
+  return {
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    release_date: s.release_date ?? null,
+    release_date_precision: s.release_date_precision ?? null,
+    primary_genre: s.primary_genre ?? null,
+    genres: s.genres ?? null,
+    peak_position: s.peak_position ?? null,
+    peak_date: s.peak_date ?? null,
+    last_chart_date: s.last_chart_date ?? null,
+    weeks_on_chart: s.weeks_on_chart ?? null,
+  };
+}
+
+function parseSongString(str: string, fallbackDate: string): ObsSong | null {
+  if (!str || !str.trim()) return null;
+  const parts = str.split(' - ');
+  const artist = parts.length > 1 ? parts[0].trim() : 'Unknown';
+  const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : str.trim();
+  return {
+    id: `custom-${artist}-${title}`.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    title,
+    artist,
+    release_date: fallbackDate,
+    release_date_precision: 'day',
+    primary_genre: null,
+    genres: null,
+    peak_position: null,
+    peak_date: null,
+    last_chart_date: null,
+    weeks_on_chart: null
+  };
+}
+
 interface DJBreakGeneratorTestProps {
   onLogEvent?: (msg: string) => void;
   onSpeakScript?: (scriptText: string) => void;
@@ -54,6 +99,14 @@ interface DJBreakGeneratorTestProps {
   initialDate?: string;
   initialSongPlayed?: string;
   initialSongNext?: string;
+  djMode?: 'ai' | 'observations' | 'off';
+  onDjModeChange?: (mode: 'ai' | 'observations' | 'off') => void;
+  djTalkFrequency?: 'every' | 'often' | 'sometimes' | 'rarely';
+  onDjTalkFrequencyChange?: (frequency: 'every' | 'often' | 'sometimes' | 'rarely') => void;
+  onTestDjLine?: () => void;
+  librarySongPlayed?: LibrarySong | null;
+  librarySongNext?: LibrarySong | null;
+  onObservationBreakGenerated?: (breakData: { text: string; slot: 'before' | 'after'; kind: string | null }) => void;
 }
 
 export function DJBreakGeneratorTest({
@@ -64,6 +117,14 @@ export function DJBreakGeneratorTest({
   initialDate,
   initialSongPlayed,
   initialSongNext,
+  djMode: propDjMode,
+  onDjModeChange,
+  djTalkFrequency: propDjTalkFrequency,
+  onDjTalkFrequencyChange,
+  onTestDjLine,
+  librarySongPlayed,
+  librarySongNext,
+  onObservationBreakGenerated,
 }: DJBreakGeneratorTestProps) {
   // Input parameters
   const [selectedDate, setSelectedDate] = useState<string>('1985-07-13');
@@ -75,6 +136,59 @@ export function DJBreakGeneratorTest({
   const [secondsAvailable, setSecondsAvailable] = useState<number>(12);
   const [forceFresh, setForceFresh] = useState<boolean>(false);
   const [nationalFocus, setNationalFocus] = useState<boolean>(true); // ON by default: exclude NYC-local coverage
+
+  // DJ Mode: 'ai' | 'observations' | 'off'
+  const [djMode, setDjMode] = useState<'ai' | 'observations' | 'off'>(() => {
+    if (propDjMode) return propDjMode;
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('retrofm_dj_mode') as 'ai' | 'observations' | 'off') || 'ai';
+    }
+    return 'ai';
+  });
+
+  useEffect(() => {
+    if (propDjMode && propDjMode !== djMode) {
+      setDjMode(propDjMode);
+    }
+  }, [propDjMode]);
+
+  const handleModeChange = (mode: 'ai' | 'observations' | 'off') => {
+    setDjMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_mode', mode);
+    }
+    onDjModeChange?.(mode);
+    onLogEvent?.(`[DJ Mode] Switched to ${mode === 'ai' ? 'AI-written (current)' : mode === 'observations' ? 'Observations (template)' : 'Off'}`);
+  };
+
+  // DJ Talk Frequency: 'every' | 'often' | 'sometimes' | 'rarely'
+  const [djTalkFrequency, setDjTalkFrequency] = useState<'every' | 'often' | 'sometimes' | 'rarely'>(() => {
+    if (propDjTalkFrequency) return propDjTalkFrequency;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
+      if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        return stored;
+      }
+    }
+    return 'every';
+  });
+
+  useEffect(() => {
+    if (propDjTalkFrequency && propDjTalkFrequency !== djTalkFrequency) {
+      setDjTalkFrequency(propDjTalkFrequency);
+    }
+  }, [propDjTalkFrequency]);
+
+  const handleTalkFrequencyChange = (freq: 'every' | 'often' | 'sometimes' | 'rarely') => {
+    setDjTalkFrequency(freq);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_frequency', freq);
+    }
+    onDjTalkFrequencyChange?.(freq);
+    onLogEvent?.(`[DJ Talk Frequency] Switched to ${freq}`);
+  };
+
+  const localDjStateRef = useRef<DjState>(newDjState());
 
   // AI Provider & Local Model (LM Studio) State
   const [aiProvider, setAiProvider] = useState<'gemini' | 'lmstudio'>(() => {
@@ -309,6 +423,91 @@ export function DJBreakGeneratorTest({
     setIsModelBusy(false);
     setQuotaExceeded(false);
     setRetryStatusText(null);
+
+    if (djMode === 'off') {
+      onLogEvent?.('[DJ Break] DJ Mode is Off. Enable AI-written or Observations mode to generate breaks.');
+      setErrorMsg('DJ commentary is turned OFF. Set DJ mode to "AI-written" or "Observations" to generate breaks.');
+      return;
+    }
+
+    if (djMode === 'observations') {
+      setIsGenerating(true);
+      setCurrentStep(1);
+      setStepElapsedSeconds(0);
+      try {
+        const prev = librarySongPlayed ? toObsSong(librarySongPlayed) : parseSongString(songPlayed, target);
+        const next = librarySongNext ? toObsSong(librarySongNext) : parseSongString(songNext, target);
+        const breakRes = buildBreak(prev, next, target, localDjStateRef.current, Math.random, TALK_PRESETS[djTalkFrequency]);
+        localDjStateRef.current = breakRes.state;
+
+        if (!breakRes.text) {
+          console.log('[DJ] silent break');
+        } else {
+          console.log(`[DJ] mode=observations slot=${breakRes.slot} kind=${breakRes.kind ?? 'none'} text="${breakRes.text}"`);
+        }
+        onObservationBreakGenerated?.({
+          text: breakRes.text,
+          slot: breakRes.slot,
+          kind: breakRes.kind,
+        });
+
+        if (!breakRes.text) {
+          onLogEvent?.('[DJ Break Observations] Observation break generated empty text (no commentary).');
+          setResult({
+            success: true,
+            targetDate: target,
+            personality,
+            timeOfDay,
+            format,
+            songPlayed,
+            songNext,
+            secondsAvailable,
+            breaks: [],
+          });
+          return;
+        }
+
+        const words = breakRes.text.split(/\s+/).filter(Boolean);
+        const genBreak: GeneratedDJBreak = {
+          id: `obs_break_${Date.now()}`,
+          breakNumber: 1,
+          scriptText: breakRes.text,
+          wordCount: words.length,
+          estimatedSeconds: Math.max(3, Math.round(words.length / 2.5)),
+          targetSeconds: secondsAvailable,
+          citedItems: breakRes.kind ? [{
+            headline: `Observation fact (${breakRes.kind}, slot: ${breakRes.slot})`,
+            publishedDate: target,
+            category: 'music',
+          }] : [],
+          anachronismCheck: {
+            status: 'PASS',
+            notes: 'Verified historical observation (template-based, no AI).',
+            flaggedPhrases: [],
+          },
+        };
+
+        setResult({
+          success: true,
+          targetDate: target,
+          personality,
+          timeOfDay,
+          format,
+          songPlayed,
+          songNext,
+          secondsAvailable,
+          breaks: [genBreak],
+          modelUsed: 'template-observations (no AI)',
+        });
+        onLogEvent?.(`[DJ Break Observations] Generated break (${breakRes.slot}, kind: ${breakRes.kind ?? 'none'}): "${breakRes.text}"`);
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to generate observation break');
+      } finally {
+        setIsGenerating(false);
+        setCurrentStep(null);
+      }
+      return;
+    }
 
     // Start Step 1
     setIsGenerating(true);
@@ -707,19 +906,103 @@ export function DJBreakGeneratorTest({
         </div>
       </div>
 
-      {/* AI Model Provider Selector Section */}
+      {/* DJ Mode & Provider Selector Section */}
       <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {/* DJ Mode Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
           <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-amber-400" />
+            <Radio className="w-4 h-4 text-amber-400" />
             <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
-              AI Text Generation Provider:
+              DJ Mode:
             </span>
           </div>
 
           <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
             <button
               type="button"
+              onClick={() => handleModeChange('ai')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'ai'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              AI-written (current)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('observations')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'observations'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Observations (template)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('off')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'off'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+
+        {/* DJ Talk Frequency (Only shown when DJ Mode is Observations (template)) */}
+        {djMode === 'observations' && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+            <div className="flex items-center gap-2">
+              <Mic2 className="w-4 h-4 text-amber-400" />
+              <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+                DJ talk frequency:
+              </span>
+            </div>
+
+            <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+              {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
+                <button
+                  key={freq}
+                  type="button"
+                  onClick={() => handleTalkFrequencyChange(freq)}
+                  className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                    djTalkFrequency === freq
+                      ? 'bg-amber-500 text-black shadow'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {freq}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI Provider Toggle: Gemini vs LM Studio (Only applies in AI-written mode) */}
+        <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-opacity ${
+          djMode === 'ai' ? 'opacity-100' : 'opacity-40 pointer-events-none'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              AI Script Generation Provider:
+            </span>
+            {djMode !== 'ai' && (
+              <span className="text-[10px] text-zinc-500 font-mono normal-case">
+                (Only applies in AI-written mode)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            <button
+              type="button"
+              disabled={djMode !== 'ai'}
               onClick={() => setAiProvider('gemini')}
               className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
                 aiProvider === 'gemini'
@@ -731,6 +1014,7 @@ export function DJBreakGeneratorTest({
             </button>
             <button
               type="button"
+              disabled={djMode !== 'ai'}
               onClick={() => {
                 setAiProvider('lmstudio');
                 if (lmStudioStatus.connected === null) {
@@ -753,6 +1037,23 @@ export function DJBreakGeneratorTest({
             </button>
           </div>
         </div>
+
+        {/* Quick Test DJ Line Button */}
+        {onTestDjLine && (
+          <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
+            <span className="text-[11px] text-zinc-400">
+              Immediate test of observation break with current and next song:
+            </span>
+            <button
+              type="button"
+              onClick={onTestDjLine}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Mic2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Test DJ line</span>
+            </button>
+          </div>
+        )}
 
         {/* LM Studio Specific Settings */}
         {aiProvider === 'lmstudio' && (

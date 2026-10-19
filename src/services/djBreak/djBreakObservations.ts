@@ -31,9 +31,21 @@ export interface Song {
 export interface DjState {
   seed: number;          // random per listening session; decides which songs get "before" or "after" comments
   recentKinds: string[]; // last few observation kinds, to avoid repeats
+  silentRun?: number;    // breaks in a row where the DJ stayed quiet
 }
 
-export const newDjState = (seed: number = Math.floor(Math.random() * 1e9)): DjState => ({ seed, recentKinds: [] });
+export const newDjState = (seed: number = Math.floor(Math.random() * 1e9)): DjState =>
+  ({ seed, recentKinds: [], silentRun: 0 });
+
+/** How often the DJ talks. talkChance = chance of speaking at a given song change; the DJ never stays quiet for
+ *  more than maxSilentBreaks song changes in a row. The very first break of a session always speaks. */
+export interface TalkOptions { talkChance: number; maxSilentBreaks: number }
+export const TALK_PRESETS: Record<"every" | "often" | "sometimes" | "rarely", TalkOptions> = {
+  every:     { talkChance: 1.0,  maxSilentBreaks: 0 },  // every song change (about 1 in 4 is a plain announcement)
+  often:     { talkChance: 0.67, maxSilentBreaks: 2 },  // roughly 2 of every 3 song changes
+  sometimes: { talkChance: 0.35, maxSilentBreaks: 4 },  // roughly every 3rd song change
+  rarely:    { talkChance: 0.2,  maxSilentBreaks: 6 },  // roughly every 5th song change
+};
 
 /**
  * Each song gets a fixed mode for the session: "before" (comment as it is introduced) or "after" (comment once it
@@ -69,26 +81,36 @@ function numberWord(n: number): string {
 
 interface Observation { kind: string; text: string }
 
-/** Every observation that is already true on `date`. Empty if none apply. */
-export function observations(s: Song, date: string, rng: Rng = Math.random): Observation[] {
+/**
+ * Every observation that is already true on `date`. `slot` picks the wording: "before" lines sit right after the
+ * announcement of the song about to play ("Here's X with Y. It climbed to..."); "after" lines come after
+ * "That was X with Y." and look back at it.
+ */
+export function observations(s: Song, date: string, rng: Rng = Math.random,
+                             slot: "before" | "after" = "before"): Observation[] {
   const out: Observation[] = [];
+  const before = slot === "before";
 
   // Chart facts are only used once the event they describe has happened.
   if (s.peak_position && s.peak_date && date >= s.peak_date) {
+    const n = s.peak_position === 1 ? "one" : numberWord(s.peak_position);
     out.push({
       kind: "peak",
       text: s.peak_position === 1
-        ? pick(["It went all the way to number one on the Billboard Hot 100.",
-                "That one hit number one on the Billboard Hot 100."], rng)
-        : pick([`It climbed to number ${numberWord(s.peak_position)} on the Billboard Hot 100.`,
-                `That one reached number ${numberWord(s.peak_position)} on the Billboard Hot 100.`], rng),
+        ? pick(before
+            ? ["It went all the way to number one on the Billboard Hot 100.", "This one hit number one on the Billboard Hot 100."]
+            : ["That one went all the way to number one on the Billboard Hot 100.", "It hit number one on the Billboard Hot 100."], rng)
+        : pick(before
+            ? [`It climbed to number ${n} on the Billboard Hot 100.`, `This one reached number ${n} on the Billboard Hot 100.`]
+            : [`That one climbed to number ${n} on the Billboard Hot 100.`, `It reached number ${n} on the Billboard Hot 100.`], rng),
     });
   }
   if (s.weeks_on_chart && s.weeks_on_chart >= 12 && s.last_chart_date && date >= s.last_chart_date) {
     out.push({
       kind: "long_run",
-      text: pick([`It spent ${s.weeks_on_chart} weeks on the Billboard Hot 100.`,
-                  `That record stayed on the Hot 100 for ${s.weeks_on_chart} weeks.`], rng),
+      text: pick(before
+        ? [`It spent ${s.weeks_on_chart} weeks on the Billboard Hot 100.`, `This one stayed on the Hot 100 for ${s.weeks_on_chart} weeks.`]
+        : [`That record spent ${s.weeks_on_chart} weeks on the Billboard Hot 100.`, `It stayed on the Hot 100 for ${s.weeks_on_chart} weeks.`], rng),
     });
   }
 
@@ -100,7 +122,9 @@ export function observations(s: Song, date: string, rng: Rng = Math.random): Obs
       ? `${MONTHS[Number(m) - 1]} ${y}` : y;
     out.push({
       kind: "release",
-      text: pick([`It came out in ${when}.`, `That one dates from ${when}.`], rng),
+      text: pick(before
+        ? [`It came out in ${when}.`, `This one dates from ${when}.`]
+        : [`That one came out in ${when}.`, `It dates from ${when}.`], rng),
     });
   }
 
@@ -108,8 +132,9 @@ export function observations(s: Song, date: string, rng: Rng = Math.random): Obs
   if (s.primary_genre) {
     out.push({
       kind: "genre",
-      text: pick([`A good one for ${s.primary_genre} fans.`, `Pure ${s.primary_genre}.`,
-                  `Some ${s.primary_genre} for you.`], rng),
+      text: pick(before
+        ? [`A good one for ${s.primary_genre} fans.`, `Pure ${s.primary_genre}.`, `Some ${s.primary_genre} for you.`]
+        : [`Pure ${s.primary_genre}.`, `That was a good one for ${s.primary_genre} fans.`, `Some ${s.primary_genre} for you.`], rng),
     });
   }
   return out;
@@ -127,7 +152,13 @@ const fill = (tpl: string, s: Song) => tpl.replace("{artist}", spoken(s.artist))
  * mode is "before". If neither fits, the DJ just announces the next song (or the one that ended).
  */
 export function buildBreak(prev: Song | null, next: Song | null, date: string, state: DjState,
-                           rng: Rng = Math.random): { text: string; state: DjState; slot: "before" | "after"; kind: string | null } {
+                           rng: Rng = Math.random, talk: TalkOptions = TALK_PRESETS.every):
+  { text: string; state: DjState; slot: "before" | "after"; kind: string | null } {
+  // Stay quiet at some song changes (never the first one, and never too many in a row).
+  const silentRun = state.silentRun ?? 0;
+  if (prev && silentRun < talk.maxSilentBreaks && rng() >= talk.talkChance) {
+    return { text: "", state: { ...state, silentRun: silentRun + 1 }, slot: next ? "before" : "after", kind: null };
+  }
   const eligible: ("after" | "before")[] = [];
   if (prev && songMode(prev.id, state.seed) === "after") eligible.push("after");
   if (next && songMode(next.id, state.seed) === "before") eligible.push("before");
@@ -137,7 +168,7 @@ export function buildBreak(prev: Song | null, next: Song | null, date: string, s
   const order = [...eligible].sort(() => rng() - 0.5);
   for (const candidate of order) {
     const song = candidate === "after" ? prev! : next!;
-    const all = observations(song, date, rng);
+    const all = observations(song, date, rng, candidate);
     if (!all.length) continue;
     const fresh = all.filter((o) => !state.recentKinds.includes(o.kind));
     obs = pick(fresh.length ? fresh : all, rng);
@@ -149,7 +180,7 @@ export function buildBreak(prev: Song | null, next: Song | null, date: string, s
   const announce = fill(pick(slot === "after" ? AFTER : BEFORE, rng), song);
   return {
     text: obs ? `${announce} ${obs.text}` : announce,
-    state: { ...state, recentKinds: obs ? [...state.recentKinds, obs.kind].slice(-3) : state.recentKinds },
+    state: { ...state, silentRun: 0, recentKinds: obs ? [...state.recentKinds, obs.kind].slice(-3) : state.recentKinds },
     slot,
     kind: obs ? obs.kind : null,
   };

@@ -4,6 +4,7 @@ export interface TTSRequest {
   voice?: string;
   style?: string;
   model?: string;
+  speed?: number;
 }
 
 export interface TTSResponse {
@@ -29,6 +30,12 @@ export interface KokoroServiceStatus {
 }
 
 export async function generateTTS(request: TTSRequest): Promise<TTSResponse> {
+  const provider = request.engine || 'GEMINI';
+  const voice = request.voice || 'default';
+  const speed = request.speed !== undefined ? request.speed : 1.0;
+  const chars = (request.text || '').length;
+
+  console.log(`[TTS] provider=${provider} voice=${voice} speed=${speed} chars=${chars} start text="${(request.text || '').substring(0, 30).replace(/\n/g, ' ')}..."`);
   try {
     const res = await fetch('/api/tts/generate', {
       method: 'POST',
@@ -36,9 +43,24 @@ export async function generateTTS(request: TTSRequest): Promise<TTSResponse> {
       body: JSON.stringify(request),
     });
 
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error(`[TTS] provider=${provider} voice=${voice} chars=${chars} error status=${res.status} statusText="${res.statusText}" err="${errText}"`);
+      return {
+        success: false,
+        error: `HTTP ${res.status}: ${errText || res.statusText}`,
+      };
+    }
+
     const data = await res.json();
+    if (data.success) {
+      console.log(`[TTS] provider=${provider} voice=${voice} chars=${chars} finish status=${res.status} duration=${data.durationSeconds || 'N/A'}s audioChars=${data.audioBase64?.length || 0}`);
+    } else {
+      console.error(`[TTS] provider=${provider} voice=${voice} chars=${chars} error status=${res.status} err="${data.error || 'Unknown error'}"`);
+    }
     return data;
   } catch (err: any) {
+    console.error(`[TTS] provider=${provider} voice=${voice} chars=${chars} error status=0 err="${err?.message || 'Network error'}"`);
     return {
       success: false,
       error: err?.message || 'Network error communicating with speech API',

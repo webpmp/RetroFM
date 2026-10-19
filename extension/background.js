@@ -692,6 +692,17 @@ function handleIncomingRequest(request, sender, sendResponse) {
         (async () => {
           let boomBoxId = sender?.tab?.id || activeBoomBoxTabId || await resolveBoomBoxTab();
           let ytTabId = activeConnectedTabId || await resolveYouTubeTab();
+          let appTabId = activeRetroFmTabId || await getStoredRegisteredAppTabId();
+
+          // Notify RetroFM app to initialize DJ audio and voice effects
+          if (appTabId) {
+            try {
+              chrome.tabs.sendMessage(appTabId, {
+                type: 'BOOMBOX_ACTION',
+                payload: { action: 'STARTUP_AUDIO_INIT' }
+              }).catch(() => {});
+            } catch (e) {}
+          }
 
           if (ytTabId) {
             try {
@@ -805,6 +816,56 @@ function handleIncomingRequest(request, sender, sendResponse) {
           sendResponse({ success: false, error: err.message });
         }
         return;
+      }
+
+      // Feature: PLAY_BOOMBOX_DJ_SPEECH - routes DJ speech playback to focused Boom Box tab
+      if (type === 'PLAY_BOOMBOX_DJ_SPEECH') {
+        (async () => {
+          const bbTabId = await resolveBoomBoxTab();
+          recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_ARRIVED', {
+            targetTab: bbTabId ? `tab:${bbTabId}` : 'none',
+            hasAudioSrc: Boolean(payload?.audioSrc),
+            durationSec: payload?.durationSec,
+            isBrowser: Boolean(payload?.isBrowser)
+          });
+          if (!bbTabId) {
+            sendResponse({ success: false, reason: 'no_boombox' });
+            return;
+          }
+          try {
+            const res = await chrome.tabs.sendMessage(bbTabId, {
+              type: 'PLAY_DJ_SPEECH',
+              payload
+            });
+            recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_FORWARDED_SUCCESS', { targetTab: bbTabId, res });
+            sendResponse({ success: !!res?.success, data: res });
+          } catch (err) {
+            recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_FORWARDED_ERROR', { error: err.message });
+            sendResponse({ success: false, error: err.message });
+          }
+        })();
+        return true;
+      }
+
+      // Feature: BOOMBOX_DJ_SPEECH_FINISHED - relays speech finished event from Boom Box back to RetroFM app
+      if (type === 'BOOMBOX_DJ_SPEECH_FINISHED') {
+        (async () => {
+          const retroTabId = await resolveRetroFmTab();
+          recordTrace('background', 'BOOMBOX_DJ_SPEECH_FINISHED_ARRIVED', {
+            targetTab: retroTabId ? `tab:${retroTabId}` : 'none',
+            payload
+          });
+          if (retroTabId) {
+            try {
+              await chrome.tabs.sendMessage(retroTabId, {
+                type: 'BOOMBOX_DJ_SPEECH_FINISHED',
+                payload
+              });
+            } catch (e) {}
+          }
+          sendResponse({ success: true });
+        })();
+        return true;
       }
 
       // Feature: BROADCAST_RADIO_STATE - caches and relays live radio state from app to Boom Box

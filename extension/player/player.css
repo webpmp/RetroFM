@@ -118,11 +118,11 @@ html,body{overflow:hidden}
 .rfm-modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:99999;background:#000000;transition:opacity .3s ease}
 .rfm-modal-overlay.hidden{display:none}
 .rfm-modal-box{background:#000000;border:2px solid #000000;border-radius:10px;padding:24px 32px;box-shadow:none;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px;transition:border-color 0.8s ease,box-shadow 0.8s ease}
-.rfm-modal-box.ready{border-color:#4fbf7a;box-shadow:0 12px 36px rgba(0,0,0,0.85),0 0 16px rgba(79,191,122,0.25)}
+.rfm-modal-box.ready{border-color:#d22a1c;box-shadow:0 12px 36px rgba(0,0,0,0.85),0 0 16px rgba(210,42,28,0.35)}
 .rfm-modal-logo{max-height:72px;max-width:240px;width:auto;height:auto;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.6))}
 .rfm-start-btn{background:#000000;color:#000000;font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.08em;padding:12px 26px;border:none;border-radius:6px;cursor:default;box-shadow:none;transition:background 0.8s ease,color 0.8s ease,box-shadow 0.8s ease,transform .15s ease}
-.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;cursor:pointer;box-shadow:0 4px 14px rgba(141,255,176,0.35)}
-.rfm-start-btn.ready:hover:not(:disabled){background:#a9ffd5;transform:translateY(-1px);box-shadow:0 6px 18px rgba(141,255,176,0.5)}
+.rfm-start-btn.ready{background:#d22a1c;color:#ffffff;cursor:pointer;box-shadow:0 4px 14px rgba(210,42,28,0.4)}
+.rfm-start-btn.ready:hover:not(:disabled){background:#e03425;color:#ffffff;transform:translateY(-1px);box-shadow:0 6px 18px rgba(210,42,28,0.55)}
 .rfm-start-btn.ready:active:not(:disabled){transform:translateY(0)}
 .rfm-start-btn:disabled{cursor:default;transform:none}
 

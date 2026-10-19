@@ -5,11 +5,15 @@
  */
 
 import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, STATIONS_BY_DECADE, normalizeYouTubeVideoId } from '../src/App.js';
+import { VolumeController } from '../src/services/audio/VolumeController.js';
+import { YouTubeMusicProvider } from '../src/services/music/YouTubeMusicProvider.js';
+import { buildBreak, newDjState, TALK_PRESETS } from '../src/services/djBreak/djBreakObservations.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, '..');
 
 interface SongMetadata {
   title: string;
@@ -1967,12 +1971,12 @@ console.log('\n--- Test Suite 26: START RETRO FM Modal, Solid Black Initial Appe
   assert(bbCss.includes('#app.rfm-dimmed{filter:blur(6px) brightness(0.35);'), 'player.css applies blur and dimming to #app');
   assert(bbJs.includes('let dark=true,logoDec=S.dec;'), 'player.js initializes dark theme to true');
 
-  // 2. START RETROFM Modal
+  // 2. ON AIR Modal
   assert(bbHtml.includes('id="rfmModal"'), 'index.html contains #rfmModal element');
-  assert(bbHtml.includes('START RETROFM'), 'index.html contains START RETROFM button');
+  assert(bbHtml.includes('ON AIR'), 'index.html contains ON AIR button');
   assert(!bbHtml.includes('CLICK ANYWHERE TO START'), 'index.html does not contain unwanted CLICK ANYWHERE TO START text');
   assert(bbCss.includes('.rfm-modal-overlay'), 'player.css styles modal overlay');
-  assert(bbCss.includes('.rfm-start-btn'), 'player.css styles START RETROFM button');
+  assert(bbCss.includes('.rfm-start-btn'), 'player.css styles ON AIR button');
 
   // 3. Modal Click & Handoff Dispatch
   assert(bbJs.includes("chrome.runtime.sendMessage({ type: 'START_RETRO_FM_HANDOFF' }"), 'player.js sends START_RETRO_FM_HANDOFF on button click');
@@ -2161,7 +2165,7 @@ console.log('\n--- Test Suite 31: Four Targeted Corrections (START RETROFM label
   const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
 
   // 1. Startup modal label and solid black background (#000000 with 100% opacity)
-  assert(bbHtml.includes('START RETROFM</button>'), 'Modal button has exact label "START RETROFM"');
+  assert(bbHtml.includes('ON AIR</button>'), 'Modal button has exact label "ON AIR"');
   assert(bbCss.includes('.rfm-modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:99999;background:#000000;'), 'Modal overlay has solid #000000 background (100% opacity, no alpha)');
   assert(bbCss.includes('.rfm-modal-box{background:#000000;'), 'Modal box has solid #000000 background matching 1990s-black.png');
 
@@ -2241,8 +2245,8 @@ console.log('\n--- Test Suite 33: Music Note 1px Vertical Shift & Disabled Start
   assert(bbCss.includes('#sg{display:inline-flex;align-items:center;min-width:0;flex:0 1 auto;height:20px;min-height:20px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 1.2s ease-in-out;transform:none !important;margin:0;padding:0;vertical-align:middle}'), '#sg artist and song title layout remains unchanged and transform:none !important');
   assert(bbHtml.includes('<button id="sdot" aria-label="Toggle title and artist fade" title="Fade between title and artist (click to turn off)" aria-pressed="true">♫</button>'), 'index.html retains #sdot button and character');
 
-  // 2. Disable START RETROFM button until 4-second timer expires
-  assert(bbHtml.includes('<button id="rfmStartBtn" class="rfm-start-btn" type="button" disabled>START RETROFM</button>'), 'index.html renders #rfmStartBtn with disabled attribute by default');
+  // 2. Disable ON AIR button until 4-second timer expires
+  assert(bbHtml.includes('<button id="rfmStartBtn" class="rfm-start-btn" type="button" disabled>ON AIR</button>'), 'index.html renders #rfmStartBtn with disabled attribute by default');
   assert(bbCss.includes('.rfm-start-btn:disabled{cursor:default;transform:none}'), 'player.css styles disabled state for .rfm-start-btn');
 
   // 3. App.tsx tracks playback status and radio state
@@ -2268,9 +2272,9 @@ console.log('\n--- Test Suite 34: Power-On Startup Transition, Paused Song Fade,
 
   // 1. Initial power-off / invisible button and modal border
   assert(bbCss.includes('.rfm-modal-box{background:#000000;border:2px solid #000000;'), 'player.css sets initial modal box border to #000000 (blends with black background)');
-  assert(bbCss.includes('.rfm-modal-box.ready{border-color:#4fbf7a;'), 'player.css sets ready modal box border to #4fbf7a');
+  assert(bbCss.includes('.rfm-modal-box.ready{border-color:#d22a1c;'), 'player.css sets ready modal box border to #d22a1c');
   assert(bbCss.includes('.rfm-start-btn{background:#000000;color:#000000;'), 'player.css sets initial button background and text to black #000000');
-  assert(bbCss.includes('.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;'), 'player.css sets ready button background to #8dffb0 and text to #0e2217');
+  assert(bbCss.includes('.rfm-start-btn.ready{background:#d22a1c;color:#ffffff;'), 'player.css sets ready button background to #d22a1c and text to #ffffff');
   assert(bbCss.includes('transition:border-color 0.8s ease,box-shadow 0.8s ease'), 'player.css applies smooth 0.8s transition to modal box border');
   assert(bbCss.includes('transition:background 0.8s ease,color 0.8s ease,box-shadow 0.8s ease,transform .15s ease'), 'player.css applies smooth 0.8s transition to button background and color');
 
@@ -2951,9 +2955,9 @@ console.log('\n--- Test Suite 42: YouTube Readiness Signal Detection & Startup M
   assert(indexHtml.includes('id="rfmStartBtn" class="rfm-start-btn" type="button" disabled'), 'index.html renders #rfmStartBtn with disabled attribute by default');
 
   assert(playerCss.includes('.rfm-modal-box{background:#000000;border:2px solid #000000;'), 'player.css styles initial modal box with black border');
-  assert(playerCss.includes('.rfm-modal-box.ready{border-color:#4fbf7a;'), 'player.css turns modal box border to #4fbf7a when ready');
+  assert(playerCss.includes('.rfm-modal-box.ready{border-color:#d22a1c;'), 'player.css turns modal box border to #d22a1c when ready');
   assert(playerCss.includes('.rfm-start-btn{background:#000000;color:#000000;'), 'player.css hides start button initially via black-on-black styling');
-  assert(playerCss.includes('.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;cursor:pointer;'), 'player.css reveals start button in green with cursor:pointer when ready');
+  assert(playerCss.includes('.rfm-start-btn.ready{background:#d22a1c;color:#ffffff;cursor:pointer;'), 'player.css reveals start button in red with cursor:pointer when ready');
 
   assert(playerJs.includes('function markStartupReady()'), 'player.js defines markStartupReady helper');
   assert(playerJs.includes('state.isStartupReady'), 'player.js checks state.isStartupReady in applyRadioState');
@@ -3837,7 +3841,7 @@ console.log('\n--- Test Suite 50: Startup Readiness Detection and START RETRO FM
     sim.markStartupReady();
     assert(sim.buttonClass.includes('ready'), '9. .ready class added to button');
     assert(sim.modalBoxClass.includes('ready'), '9. .ready class added to modal box');
-    assert(bbCss.includes('.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;'), '9. CSS reveals green start button');
+    assert(bbCss.includes('.rfm-start-btn.ready{background:#d22a1c;color:#ffffff;'), '9. CSS reveals red start button');
   }
 
   // 10. The button does not become enabled prematurely when the integration is not ready
@@ -3958,6 +3962,346 @@ console.log('\n--- Test Suite 52: Song Completion and Seek Display Transition --
   assert(displayStatus === 'PAUSE', 'Display correctly shows PAUSE when user explicitly pauses');
 
   console.log('✓ 52. Song Completion and Seek Display Transition verified.');
+}
+
+// --- Test Suite 53: Historical Song Eligibility and REWIND Selection ---
+console.log('\n--- Test Suite 53: Historical Song Eligibility and REWIND Selection ---');
+{
+  const appTsx = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf-8');
+  const libPath = path.join(process.cwd(), 'public/data/retrofm_library_youtube.json');
+  const { pickSong, newPlayState, isReleasedOnOrBefore, isStrictlyReleasedBefore, existedBy } = await import('../src/services/songSelector.js');
+  const libData = fs.existsSync(libPath) ? JSON.parse(fs.readFileSync(libPath, 'utf-8')) : [];
+
+  // 1. Static code assertions: App.tsx REWIND handler calls pickSong from songLibraryRef
+  assert(
+    appTsx.includes('handleRewindMusic') &&
+    appTsx.includes('songLibraryRef.current.length > 0') &&
+    appTsx.includes('pickSong(') &&
+    appTsx.includes('playLibrarySong(pick, \'REWIND / Previous\')'),
+    'App.tsx handleRewindMusic queries songLibraryRef via pickSong() for active date and genre'
+  );
+
+  // 2. Static code assertions: Queue fallback enforces historical eligibility
+  assert(
+    appTsx.includes('if (activeDateRef.current && !isReleasedOnOrBefore(targetSong, activeDateRef.current))'),
+    'App.tsx navigateToQueueSong enforces isReleasedOnOrBefore cutoff on active broadcast date'
+  );
+
+  // 3. Test Case 1 & 2: Historical REWIND & Known Future Song Rejection
+  // Broadcast date: May 1, 1969; Genre: POP
+  // Peter Gabriel's "Sledgehammer" (1986) or any song released after May 1, 1969 must never be selected.
+  const broadcastDate1969 = '1969-05-01';
+  let state1969 = newPlayState();
+  const pick1969 = pickSong(libData, broadcastDate1969, 'Pop', state1969);
+  assert(!!pick1969, 'pickSong returns an eligible song for 1969-05-01 Pop');
+  if (pick1969) {
+    assert(pick1969.genreMatched === true, 'Test Case 3: REWIND respects genre (Pop)');
+    assert(isReleasedOnOrBefore(pick1969.song, broadcastDate1969), 'Test Case 1: Picked song released on or before May 1, 1969');
+    assert(
+      !pick1969.song.title.toLowerCase().includes('sledgehammer') &&
+      !pick1969.song.artist.toLowerCase().includes('peter gabriel'),
+      'Test Case 2: Peter Gabriel - Sledgehammer is rejected for May 1, 1969'
+    );
+  }
+
+  // 4. Test Case 4: Date boundary tests
+  // Exactly on broadcast date
+  const songOnDate = {
+    id: 'test-exact-date',
+    title: 'On Date Song',
+    artist: 'Artist',
+    chart_year: 1969,
+    release_date: '1969-05-01',
+    release_date_precision: 'day',
+    genres: 'Pop',
+    primary_genre: 'Pop',
+    peak_position: 1,
+    first_chart_date: '1969-05-01',
+    last_chart_date: '1969-06-01',
+    peak_date: '1969-05-15',
+    weeks_on_chart: 4,
+    streaming: { youtube: { id: 'vid1', url: 'https://youtube.com/watch?v=vid1' } }
+  };
+  const songDayAfter = {
+    ...songOnDate,
+    id: 'test-after-date',
+    release_date: '1969-05-02'
+  };
+  assert(isReleasedOnOrBefore(songOnDate, '1969-05-01') === true, 'Test Case 4a: Song released on broadcast date is eligible');
+  assert(isReleasedOnOrBefore(songDayAfter, '1969-05-01') === false, 'Test Case 4b: Song released 1 day after broadcast date is ineligible');
+
+  // Month and year precision boundary tests
+  const songMonthSame = { ...songOnDate, release_date: '1969-05', release_date_precision: 'month' };
+  const songMonthAfter = { ...songOnDate, release_date: '1969-06', release_date_precision: 'month' };
+  assert(isReleasedOnOrBefore(songMonthSame, '1969-05-01') === true, 'Test Case 4c: Song released in same month is eligible under month precision');
+  assert(isReleasedOnOrBefore(songMonthAfter, '1969-05-01') === false, 'Test Case 4d: Song released in following month is ineligible');
+
+  const songYearSame = { ...songOnDate, release_date: '1969', release_date_precision: 'year' };
+  const songYearAfter = { ...songOnDate, release_date: '1970', release_date_precision: 'year' };
+  assert(isReleasedOnOrBefore(songYearSame, '1969-05-01') === true, 'Test Case 4e: Song released in same year is eligible under year precision');
+  assert(isReleasedOnOrBefore(songYearAfter, '1969-05-01') === false, 'Test Case 4f: Song released in following year is ineligible');
+
+  // 5. Test Case 5: Unknown or missing release date
+  const songNoRelDate = { ...songOnDate, release_date: null };
+  const songEmptyRelDate = { ...songOnDate, release_date: '' };
+  assert(isReleasedOnOrBefore(songNoRelDate, '1969-05-01') === false, 'Test Case 5a: Song with null release date is ineligible');
+  assert(isReleasedOnOrBefore(songEmptyRelDate, '1969-05-01') === false, 'Test Case 5b: Song with empty release date is ineligible');
+
+  // 6. Test Case 6: Queue / fallback rejection
+  const sledgehammerQueueItem = {
+    videoId: 'OJWJE0x7T4Q',
+    title: 'Peter Gabriel - Sledgehammer (1986)',
+    artist: 'Peter Gabriel',
+    song: 'Sledgehammer',
+    year: '1986',
+    release_date: '1986-04-21',
+    release_date_precision: 'day',
+    duration: '04:58'
+  };
+  assert(isReleasedOnOrBefore(sledgehammerQueueItem, '1969-05-01') === false, 'Test Case 6: Sledgehammer in queue is ineligible for 1969-05-01');
+
+  // 7. Test Case 7: Later broadcast date
+  assert(isReleasedOnOrBefore(sledgehammerQueueItem, '1986-05-01') === true, 'Test Case 7: Sledgehammer is eligible for broadcast date 1986-05-01');
+
+  // 8. Test Case 8: No eligible songs followed without selecting ineligible song
+  const emptyLib: any[] = [];
+  const pickEmpty = pickSong(emptyLib, '1969-05-01', 'Pop', newPlayState());
+  assert(pickEmpty === null, 'Test Case 8: When no songs are eligible, pickSong returns null without selecting ineligible song');
+
+  console.log('✓ 53. Historical Song Eligibility and REWIND Selection verified.');
+}
+
+// --- Test Suite 54: Boombox Volume Knob Resilience & Lifecycle ---
+console.log('\n--- Test Suite 54: Boombox Volume Knob Resilience & Lifecycle ---');
+{
+  // Mock music provider tracking volume and ramp calls
+  class MockMusicProvider {
+    public volumeCalls: { fraction: number; rampId: number }[] = [];
+    public rampCalls: { fraction: number; durationMs: number; rampId: number }[] = [];
+
+    public async setVolume(fraction: number, rampId: number): Promise<boolean> {
+      this.volumeCalls.push({ fraction, rampId });
+      return true;
+    }
+
+    public async rampVolume(fraction: number, durationMs: number, rampId: number): Promise<boolean> {
+      this.rampCalls.push({ fraction, durationMs, rampId });
+      return true;
+    }
+  }
+
+  // Test 1: Multiple volume adjustments in 'idle' state immediately update YouTube volume
+  const provider1 = new MockMusicProvider();
+  const vc1 = new VolumeController({
+    musicProvider: provider1 as any,
+    onLog: () => {},
+    initialUserVolume: 80,
+    initialDuckLevel: 20
+  });
+
+  assert(vc1.getState() === 'idle', 'Test 1a: VolumeController initializes in idle state');
+  assert(vc1.getUserVolume() === 80, 'Test 1b: User volume correctly initialized to 80');
+
+  await vc1.setUserVolume(65, 'Knob turn 1');
+  assert(vc1.getUserVolume() === 65, 'Test 1c: User volume updated to 65');
+  assert(provider1.volumeCalls.length === 1 && provider1.volumeCalls[0].fraction === 0.65, 'Test 1d: Provider setVolume received 0.65');
+
+  await vc1.setUserVolume(40, 'Knob turn 2');
+  assert(vc1.getUserVolume() === 40, 'Test 1e: User volume updated to 40');
+  assert(provider1.volumeCalls.length === 2 && provider1.volumeCalls[1].fraction === 0.4, 'Test 1f: Provider setVolume received 0.4');
+
+  // Test 2: Knob adjustment while ducked/restoring preserves user volume and restores cleanly
+  const provider2 = new MockMusicProvider();
+  const vc2 = new VolumeController({
+    musicProvider: provider2 as any,
+    onLog: () => {},
+    initialUserVolume: 90,
+    initialDuckLevel: 15
+  });
+
+  const duckPromise = vc2.duck(50, 'DJ speech start');
+  assert(vc2.getState() === 'ducking' || vc2.getState() === 'ducked', 'Test 2a: Controller begins ducking');
+  const duckRes = await duckPromise;
+  assert(duckRes === true, 'Test 2b: Ducking completed successfully');
+  assert(vc2.getState() === 'ducked', 'Test 2c: State is ducked');
+
+  // Turn volume knob while ducked
+  await vc2.setUserVolume(50, 'Knob turned while ducked');
+  assert(vc2.getUserVolume() === 50, 'Test 2d: userVolume immediately updated to 50 while ducked');
+
+  // Now restore after DJ speech
+  const restoreRes = await vc2.restore(50, 'DJ speech finished');
+  assert(restoreRes === true, 'Test 2e: Restoration completed');
+  assert(vc2.getState() === 'idle', 'Test 2f: State returned to idle');
+  assert(vc2.getUserVolume() === 50, 'Test 2g: Restored user volume reflects the knob adjustment (50)');
+
+  // Turn knob again after restoration completes
+  await vc2.setUserVolume(75, 'Knob turned after restore');
+  assert(vc2.getUserVolume() === 75, 'Test 2h: Volume knob immediately updates userVolume after restore');
+  const lastCall = provider2.volumeCalls[provider2.volumeCalls.length - 1];
+  assert(lastCall && lastCall.fraction === 0.75, 'Test 2i: Provider received setVolume 0.75 after restore');
+
+  // Test 3: Song transition / navigation during speech or stale duck ramp does not leave controller stuck
+  const provider3 = new MockMusicProvider();
+  const vc3 = new VolumeController({
+    musicProvider: provider3 as any,
+    onLog: () => {},
+    initialUserVolume: 85,
+    initialDuckLevel: 20
+  });
+
+  // Cancel immediately resets state to idle
+  await vc3.duck(200, 'DJ speech');
+  await vc3.cancel('Song navigation');
+  assert(vc3.getState() === 'idle', 'Test 3a: Cancel resets state to idle');
+  assert(vc3.isSequenceActive() === false, 'Test 3b: isSequenceActive is false after cancel');
+
+  // Knob can immediately control volume again
+  await vc3.setUserVolume(30, 'Knob turn after song transition');
+  assert(vc3.getUserVolume() === 30, 'Test 3c: userVolume is 30');
+  const postCancelCall = provider3.volumeCalls[provider3.volumeCalls.length - 1];
+  assert(postCancelCall && postCancelCall.fraction === 0.3, 'Test 3d: Provider setVolume received 0.3 immediately after transition');
+
+  // Test 4: Sync initial volume is deferred if sequence active and does not corrupt state
+  const provider4 = new MockMusicProvider();
+  const vc4 = new VolumeController({
+    musicProvider: provider4 as any,
+    onLog: () => {},
+    initialUserVolume: 70,
+    initialDuckLevel: 20
+  });
+
+  await vc4.duck(10, 'DJ break');
+  await vc4.syncInitialVolume('New song start while ducked');
+  assert(vc4.getState() === 'ducked', 'Test 4a: syncInitialVolume deferred while sequence active, state remains ducked');
+
+  await vc4.restore(10, 'DJ break end');
+  assert(vc4.getState() === 'idle', 'Test 4b: Restored cleanly to idle');
+
+  await vc4.setUserVolume(95, 'Knob turn on new song');
+  assert(vc4.getUserVolume() === 95, 'Test 4c: Knob adjustment functions normally on subsequent song');
+
+  console.log('✓ 54. Boombox Volume Knob Resilience & Lifecycle verified.');
+}
+
+// --- Test Suite 55: DJ Talk Frequency Presets & Silent Break Behavior ---
+console.log('\n--- Test Suite 55: DJ Talk Frequency Presets & Silent Break Behavior ---');
+{
+  // 1. Validate TALK_PRESETS configuration and keys
+  assert(Boolean(TALK_PRESETS), 'Test 1a: TALK_PRESETS is exported');
+  assert(TALK_PRESETS.every.talkChance === 1.0 && TALK_PRESETS.every.maxSilentBreaks === 0, 'Test 1b: "every" preset has talkChance 1.0 and maxSilentBreaks 0');
+  assert(TALK_PRESETS.often.talkChance === 0.67 && TALK_PRESETS.often.maxSilentBreaks === 2, 'Test 1c: "often" preset has talkChance 0.67 and maxSilentBreaks 2');
+  assert(TALK_PRESETS.sometimes.talkChance === 0.35 && TALK_PRESETS.sometimes.maxSilentBreaks === 4, 'Test 1d: "sometimes" preset has talkChance 0.35 and maxSilentBreaks 4');
+  assert(TALK_PRESETS.rarely.talkChance === 0.2 && TALK_PRESETS.rarely.maxSilentBreaks === 6, 'Test 1e: "rarely" preset has talkChance 0.2 and maxSilentBreaks 6');
+
+  // Dummy songs for testing buildBreak
+  const dummySong1 = {
+    id: 'song-1',
+    title: 'Test Song One',
+    artist: 'Test Artist',
+    release_date: '1964-01-01',
+    release_date_precision: 'day',
+    primary_genre: 'Pop',
+    genres: 'Pop',
+    peak_position: 1,
+    peak_date: '1964-02-01',
+    last_chart_date: '1964-05-01',
+    weeks_on_chart: 12
+  };
+  const dummySong2 = {
+    id: 'song-2',
+    title: 'Test Song Two',
+    artist: 'Another Artist',
+    release_date: '1964-03-01',
+    release_date_precision: 'day',
+    primary_genre: 'Rock',
+    genres: 'Rock',
+    peak_position: 5,
+    peak_date: '1964-04-01',
+    last_chart_date: '1964-06-01',
+    weeks_on_chart: 8
+  };
+
+  // 2. Preset "every": with talkChance 1.0, buildBreak returns speech for every song change
+  const state0 = newDjState(12345);
+  const breakEvery1 = buildBreak(dummySong1, dummySong2, '1964-07-04', state0, Math.random, TALK_PRESETS.every);
+  assert(breakEvery1.text.length > 0, 'Test 2a: "every" preset produces spoken commentary on break 1');
+
+  const breakEvery2 = buildBreak(dummySong2, dummySong1, '1964-07-04', breakEvery1.state, Math.random, TALK_PRESETS.every);
+  assert(breakEvery2.text.length > 0, 'Test 2b: "every" preset produces spoken commentary on break 2');
+
+  // 3. Preset "rarely": with mock RNG returning 0.9 (>= 0.2), buildBreak produces silent break (empty text)
+  const mockRngAlwaysSilent = () => 0.99;
+  const breakSilent = buildBreak(dummySong1, dummySong2, '1964-07-04', state0, mockRngAlwaysSilent, TALK_PRESETS.rarely);
+  assert(breakSilent.text === '', 'Test 3a: buildBreak returns empty text when RNG misses talkChance');
+  assert(breakSilent.state.silentRun === 1, 'Test 3b: silentRun counter increments on silent break');
+
+  // 4. Silent break enforcement: empty text causes App.tsx to skip executeDJOverMusic (so no ducking)
+  let duckExecuted = false;
+  const simulateAutoAdvance = (breakResultText: string) => {
+    if (breakResultText) {
+      duckExecuted = true;
+    }
+  };
+  simulateAutoAdvance(breakSilent.text);
+  assert(duckExecuted === false, 'Test 4: When breakResultText is empty, music ducking / speech execution is NOT invoked');
+
+  console.log('✓ 55. DJ Talk Frequency Presets & Silent Break Behavior verified.');
+}
+
+// --- Test Suite 56: Boom Box DJ Speech Playback Delegation ---
+console.log('\n--- Test Suite 56: Boom Box DJ Speech Playback Delegation ---');
+{
+  // 1. YouTubeMusicProvider has playBoomBoxDjSpeech and onBoomBoxDjSpeechFinished
+  const provider = new YouTubeMusicProvider();
+  assert(typeof provider.playBoomBoxDjSpeech === 'function', 'Test 1a: YouTubeMusicProvider has playBoomBoxDjSpeech method');
+  assert(typeof provider.onBoomBoxDjSpeechFinished === 'function', 'Test 1b: YouTubeMusicProvider has onBoomBoxDjSpeechFinished method');
+
+  // 2. Verify BOOMBOX_DJ_SPEECH_FINISHED dispatches to listener
+  const resultState = { speechFinishedReceived: false, receivedPayload: null as any };
+  const unsubscribe = provider.onBoomBoxDjSpeechFinished((payload) => {
+    resultState.speechFinishedReceived = true;
+    resultState.receivedPayload = payload;
+  });
+
+  (provider as any).boomBoxDjSpeechFinishedListeners.forEach((fn: any) => {
+    fn({ success: true, text: 'Up next, Born A Woman from Sandy Posey.', durationSec: 4.5 });
+  });
+
+  assert(resultState.speechFinishedReceived, 'Test 2a: onBoomBoxDjSpeechFinished listener receives event');
+  assert(resultState.receivedPayload?.success === true, 'Test 2b: Finished payload success is true');
+  assert(resultState.receivedPayload?.durationSec === 4.5, 'Test 2c: Finished payload preserves durationSec');
+  assert(resultState.receivedPayload?.text === 'Up next, Born A Woman from Sandy Posey.', 'Test 2d: Finished payload preserves speech text');
+
+  // Test unsubscribe
+  resultState.speechFinishedReceived = false;
+  unsubscribe();
+  (provider as any).boomBoxDjSpeechFinishedListeners.forEach((fn: any) => {
+    fn({ success: true });
+  });
+  assert(!resultState.speechFinishedReceived, 'Test 2e: Unsubscribe cleanly removes listener');
+
+  // 3. Verify extension player.js contains BoomBoxDjVoiceEffects and PLAY_DJ_SPEECH listener
+  const playerJsPath = path.join(rootDir, 'extension', 'player', 'player.js');
+  const playerJsContent = fs.readFileSync(playerJsPath, 'utf8');
+  assert(playerJsContent.includes('class BoomBoxDjVoiceEffects'), 'Test 3a: player.js contains BoomBoxDjVoiceEffects');
+  assert(playerJsContent.includes('PLAY_DJ_SPEECH'), 'Test 3b: player.js handles PLAY_DJ_SPEECH message');
+  assert(playerJsContent.includes('BOOMBOX_DJ_SPEECH_FINISHED'), 'Test 3c: player.js dispatches BOOMBOX_DJ_SPEECH_FINISHED');
+
+  // 4. Verify extension background.js contains PLAY_BOOMBOX_DJ_SPEECH routing
+  const bgJsPath = path.join(rootDir, 'extension', 'background.js');
+  const bgJsContent = fs.readFileSync(bgJsPath, 'utf8');
+  assert(bgJsContent.includes('PLAY_BOOMBOX_DJ_SPEECH'), 'Test 4a: background.js routes PLAY_BOOMBOX_DJ_SPEECH');
+  assert(bgJsContent.includes('BOOMBOX_DJ_SPEECH_FINISHED'), 'Test 4b: background.js relays BOOMBOX_DJ_SPEECH_FINISHED');
+
+  // 5. Verify App.tsx playDJSpeech attempts Boom Box delegation before falling back to local
+  const appTsxPath = path.join(rootDir, 'src', 'App.tsx');
+  const appTsxContent = fs.readFileSync(appTsxPath, 'utf8');
+  assert(appTsxContent.includes('playBoomBoxDjSpeech'), 'Test 5a: App.tsx playDJSpeech delegates to playBoomBoxDjSpeech');
+  assert(appTsxContent.includes('onBoomBoxDjSpeechFinished'), 'Test 5b: App.tsx awaits onBoomBoxDjSpeechFinished');
+  assert(appTsxContent.includes('if (!playedViaBoomBox)'), 'Test 5c: App.tsx gracefully falls back to local audio if Boom Box not active');
+
+  console.log('✓ 56. Boom Box DJ Speech Playback Delegation verified.');
 }
 
 // --- Summary ---

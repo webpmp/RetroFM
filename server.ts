@@ -56,16 +56,16 @@ async function startServer() {
   // API Route: Generate TTS DJ speech (Gemini or Kokoro)
   app.post('/api/tts/generate', async (req, res) => {
     try {
-      const { text, engine, voice, style, model } = req.body;
+      const { text, engine, voice, style, model, speed } = req.body;
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ success: false, error: 'A script text is required.' });
       }
 
-      console.log(`[API /api/tts/generate] Received request (engine: ${engine || 'GEMINI'}) for text: "${text.substring(0, 40)}..."`);
+      console.log(`[API /api/tts/generate] Received request (engine: ${engine || 'GEMINI'}) for text: "${text.substring(0, 40)}..." (speed: ${speed ?? 1.0})`);
 
       const provider = (engine === 'KOKORO') ? kokoroTtsProvider : geminiTtsProvider;
-      const result = await provider.generate({ text, engine, voice, style, model });
+      const result = await provider.generate({ text, engine, voice, style, model, speed });
 
       return res.json({
         success: true,
