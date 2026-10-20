@@ -1,3 +1,5 @@
+![RetroFM Radio Player](rm-retrofm-player.png)
+
 # RetroFM
 
 RetroFM is an AI-powered historical radio simulator and broadcast mixer that recreates authentic, era-accurate radio broadcasts for any chosen historical date. By combining real historical news facts from the New York Times Archive API, music lookup and video playback via YouTube, automatic real-time audio ducking through a companion Chrome extension bridge, and customizable DJ personalities (Mike & Lisa) driven by Google Gemini Flash Text-to-Speech and native browser speech engines, RetroFM delivers an immersive, interactive recreation of listening to top-40 radio in decades past.

@@ -19,6 +19,8 @@ export interface DjVoiceEffectsSettings {
   compressionRelease: number; // 0.020 to 1.000 sec (default: 0.150 = 150ms)
   compressionKnee: number; // 0 to 30 dB (default: 12)
   compressionMakeupGain: number; // 0 to 12 dB (default: +3)
+  // Master DJ Voice Volume (0.0 to 1.0, default: 0.50)
+  voiceVolume: number;
 }
 
 export const DEFAULT_DJ_EFFECTS_SETTINGS: DjVoiceEffectsSettings = {
@@ -36,6 +38,7 @@ export const DEFAULT_DJ_EFFECTS_SETTINGS: DjVoiceEffectsSettings = {
   compressionRelease: 0.150,
   compressionKnee: 12,
   compressionMakeupGain: 3,
+  voiceVolume: 0.50,
 };
 
 const STORAGE_KEY = 'retrofm_dj_effects';
@@ -100,6 +103,11 @@ export function sanitizeDjEffectsSettings(input: any): DjVoiceEffectsSettings {
     compressionMakeupGain = DEFAULT_DJ_EFFECTS_SETTINGS.compressionMakeupGain;
   }
 
+  let voiceVolume = Number(input.voiceVolume);
+  if (isNaN(voiceVolume) || voiceVolume < 0 || voiceVolume > 1) {
+    voiceVolume = DEFAULT_DJ_EFFECTS_SETTINGS.voiceVolume;
+  }
+
   return {
     reverbEnabled,
     reverbWetMix,
@@ -115,6 +123,7 @@ export function sanitizeDjEffectsSettings(input: any): DjVoiceEffectsSettings {
     compressionRelease,
     compressionKnee,
     compressionMakeupGain,
+    voiceVolume,
   };
 }
 
@@ -437,9 +446,10 @@ export class DjVoiceEffectsService {
       const initialWet = this.settings.reverbEnabled ? this.settings.reverbWetMix : 0.0;
       this.reverbWetGain.gain.setValueAtTime(initialWet, ctx.currentTime);
 
-      // 7. Master Output Gain Stage
+      // 7. Master Output Gain Stage (applies user voice volume setting)
       this.masterOutput = ctx.createGain();
-      this.masterOutput.gain.setValueAtTime(1.0, ctx.currentTime);
+      const initialVoiceVol = typeof this.settings.voiceVolume === 'number' ? this.settings.voiceVolume : 0.50;
+      this.masterOutput.gain.setValueAtTime(initialVoiceVol, ctx.currentTime);
 
       // Connect Dry Processing Path:
       // inputGain -> amHighpass -> amLowpass -> fmSparkle -> waveshaper -> compressor -> makeupGain -> dryGain -> masterOutput
@@ -594,6 +604,13 @@ export class DjVoiceEffectsService {
         this.makeupGain.gain.cancelScheduledValues(now);
         this.makeupGain.gain.setTargetAtTime(1.0, now, timeConstantComp);
       }
+    }
+
+    // 6. Master DJ Voice Volume (smooth ~30ms transition)
+    if (this.masterOutput) {
+      const targetVol = typeof this.settings.voiceVolume === 'number' ? this.settings.voiceVolume : 0.50;
+      this.masterOutput.gain.cancelScheduledValues(now);
+      this.masterOutput.gain.setTargetAtTime(targetVol, now, 0.03);
     }
   }
 

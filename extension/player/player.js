@@ -320,6 +320,12 @@ class BoomBoxDjVoiceEffects {
         this.compressor.ratio.setValueAtTime(1, now);
         this.makeupGain.gain.setValueAtTime(1.0, now);
       }
+
+      // 6. Master DJ Voice Volume (0.0 to 1.0)
+      if (typeof s.voiceVolume === 'number') {
+        const clampedVol = Math.max(0, Math.min(1, s.voiceVolume));
+        this.masterOutput.gain.setValueAtTime(clampedVol, now);
+      }
     } catch (e) {
       console.warn('[BoomBox DJ] Error applying settings:', e);
     }
@@ -365,6 +371,9 @@ function playBoomBoxDjSpeech(payload) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.rate = 1.05;
+        if (typeof payload?.effectsSettings?.voiceVolume === 'number') {
+          u.volume = Math.max(0, Math.min(1, payload.effectsSettings.voiceVolume));
+        }
         u.onend = () => notifyFinished(true);
         u.onerror = (e) => notifyFinished(false, e?.error || 'speech_synthesis_error');
         window.speechSynthesis.speak(u);

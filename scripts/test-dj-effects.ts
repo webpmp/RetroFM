@@ -200,6 +200,7 @@ console.log('\n--- Test 1: Default Settings ---');
   assert(DEFAULT_DJ_EFFECTS_SETTINGS.compressionRelease === 0.150, 'Release defaults to 150 ms');
   assert(DEFAULT_DJ_EFFECTS_SETTINGS.compressionKnee === 12, 'Knee defaults to 12 dB');
   assert(DEFAULT_DJ_EFFECTS_SETTINGS.compressionMakeupGain === 3, 'Makeup gain defaults to +3 dB');
+  assert(DEFAULT_DJ_EFFECTS_SETTINGS.voiceVolume === 0.50, 'DJ voice volume defaults to 0.50 (50%)');
 }
 
 // --- Test 2: Sanitization & Out-of-Range Handling ---
@@ -220,6 +221,7 @@ console.log('\n--- Test 2: Sanitization and Resilience ---');
     compressionRelease: 5.0, // out of range [0.020, 1.000]
     compressionKnee: 50, // out of range [0, 30]
     compressionMakeupGain: 20, // out of range [0, 12]
+    voiceVolume: 2.5, // out of range [0, 1]
   };
   const sanitized = sanitizeDjEffectsSettings(invalidSettings);
   assert(sanitized.reverbEnabled === true, 'reverbEnabled coerced to boolean');
@@ -236,12 +238,14 @@ console.log('\n--- Test 2: Sanitization and Resilience ---');
   assert(sanitized.compressionRelease === 0.150, 'Out-of-range release resets to default (0.150s)');
   assert(sanitized.compressionKnee === 12, 'Out-of-range knee resets to default (12 dB)');
   assert(sanitized.compressionMakeupGain === 3, 'Out-of-range makeup gain resets to default (+3 dB)');
+  assert(sanitized.voiceVolume === 0.50, 'Out-of-range voice volume resets to default (0.50)');
 
   // Missing or null input
   const nullSettings = sanitizeDjEffectsSettings(null);
   assert(nullSettings.reverbEnabled === false, 'Null settings fall back to default');
   assert(nullSettings.compressionEnabled === false, 'Null settings provide default compression state');
   assert(nullSettings.saturationDrive === 15, 'Null settings provide default saturation drive');
+  assert(nullSettings.voiceVolume === 0.50, 'Null settings provide default voiceVolume 0.50');
 }
 
 // --- Test 3: Mathematical Curves Generation (Impulse Response, WaveShaper, Neutral) ---
@@ -420,10 +424,28 @@ console.log('\n--- Test 9: Audio Compression Node & Makeup Gain ---');
   assert(makeup.gain.target === 1.0, 'Disabling compression returns makeup gain target to 1.0 (0 dB)');
 }
 
-// --- Test 10: Persistence in localStorage ---
-console.log('\n--- Test 10: Settings Persistence ---');
+// --- Test 10: Persistence in localStorage & DJ Voice Volume Master Gain ---
+console.log('\n--- Test 10: DJ Voice Volume Gain & Settings Persistence ---');
 {
   const service = DjVoiceEffectsService.getInstance();
+  const masterOutput = (service as any).masterOutput as MockGainNode;
+
+  // Master output gain defaults to 0.50 (50%)
+  assert(service.getSettings().voiceVolume === 0.50, 'DJ voice volume initial setting is 0.50');
+  assert(masterOutput.gain.value === 0.50, 'MasterOutput GainNode initializes to 0.50');
+
+  // Updating DJ Voice Volume to 0% (silence)
+  service.updateSettings({ voiceVolume: 0.0 });
+  assert(masterOutput.gain.target === 0.0, 'Setting voiceVolume to 0% sets masterOutput target to 0.0');
+
+  // Updating DJ Voice Volume to 100% (unattenuated)
+  service.updateSettings({ voiceVolume: 1.0 });
+  assert(masterOutput.gain.target === 1.0, 'Setting voiceVolume to 100% sets masterOutput target to 1.0');
+
+  // Updating DJ Voice Volume to 75%
+  service.updateSettings({ voiceVolume: 0.75 });
+  assert(masterOutput.gain.target === 0.75, 'Setting voiceVolume to 75% sets masterOutput target to 0.75');
+
   service.updateSettings({
     reverbEnabled: true,
     reverbWetMix: 0.45,
@@ -439,6 +461,7 @@ console.log('\n--- Test 10: Settings Persistence ---');
     compressionRelease: 0.25,
     compressionKnee: 15,
     compressionMakeupGain: 4,
+    voiceVolume: 0.65,
   });
 
   const storedRaw = window.localStorage.getItem('retrofm_dj_effects');
@@ -451,6 +474,7 @@ console.log('\n--- Test 10: Settings Persistence ---');
   assert(parsed.compressionThreshold === -18, 'Persisted compressionThreshold is -18');
   assert(parsed.compressionRatio === 5, 'Persisted compressionRatio is 5');
   assert(parsed.compressionMakeupGain === 4, 'Persisted compressionMakeupGain is 4');
+  assert(parsed.voiceVolume === 0.65, 'Persisted voiceVolume is 0.65');
 
   // Verify cleanup doesn't throw and resets nodes
   service.cleanup();

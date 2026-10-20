@@ -627,6 +627,37 @@ export default function App() {
   const [isPlayingDJPreview, setIsPlayingDJPreview] = useState<boolean>(false);
   const [djEffects, setDjEffects] = useState<DjVoiceEffectsSettings>(() => djVoiceEffects.getSettings());
 
+  // DJ Voice Volume (0 to 100%, default 50%)
+  const [djVoiceVolumePercent, setDjVoiceVolumePercent] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_dj_voice_volume');
+      if (saved !== null) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return Math.round(parsed);
+      }
+    }
+    const eff = djVoiceEffects.getSettings().voiceVolume;
+    return typeof eff === 'number' ? Math.round(eff * 100) : 50;
+  });
+
+  const handleDjVoiceVolumeChange = (val: number) => {
+    const clamped = Math.min(100, Math.max(0, Math.round(val)));
+    setDjVoiceVolumePercent(clamped);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('retrofm_dj_voice_volume', String(clamped));
+      } catch {}
+    }
+    const updated = djVoiceEffects.updateSettings({ voiceVolume: clamped / 100 });
+    setDjEffects(updated);
+    if (persistentDjAudioRef.current) {
+      persistentDjAudioRef.current.volume = clamped / 100;
+    }
+    if (djAudioRef.current) {
+      djAudioRef.current.volume = clamped / 100;
+    }
+  };
+
   // --- Radio Mix & Ducking Configuration ---
   const [duckVolumePercent, setDuckVolumePercent] = useState<number>(() => {
     if (typeof window !== 'undefined') {
@@ -862,6 +893,12 @@ export default function App() {
       localStorage.setItem('retrofm_duck_volume', String(duckVolumePercent));
     } catch {}
   }, [duckVolumePercent]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_dj_voice_volume', String(djVoiceVolumePercent));
+    } catch {}
+  }, [djVoiceVolumePercent]);
 
   // --- Load Song Library once at startup ---
   useEffect(() => {
@@ -3580,6 +3617,7 @@ export default function App() {
           const u = new SpeechSynthesisUtterance(text);
           (window as any).__retroFmDJUtterance = u;
           u.rate = 1.05;
+          u.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
           u.onstart = () => {
             logMessage('▶ Playing Browser DJ voice.');
             setTestResults((prev) => ({
@@ -3627,6 +3665,7 @@ export default function App() {
           }
 
           audio.src = audioSrc;
+          audio.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
           djAudioRef.current = audio;
 
           // Route DJ voice through Web Audio DJ Voice Effects graph
@@ -3678,6 +3717,7 @@ export default function App() {
             let fallbackSucceeded = false;
             try {
               const fallbackAudio = new Audio(audioSrc);
+              fallbackAudio.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
               djAudioRef.current = fallbackAudio;
 
               fallbackAudio.onended = () => {
@@ -5181,6 +5221,22 @@ export default function App() {
                   max="100"
                   value={targetMusicVolume}
                   onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer"
+                />
+              </div>
+
+              {/* DJ Voice Volume Slider */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-400">DJ Voice Volume:</span>
+                  <span className="text-amber-400 font-bold">{djVoiceVolumePercent}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={djVoiceVolumePercent}
+                  onChange={(e) => handleDjVoiceVolumeChange(Number(e.target.value))}
                   className="w-full accent-amber-500 cursor-pointer"
                 />
               </div>
