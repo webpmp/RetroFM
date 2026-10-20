@@ -1003,18 +1003,24 @@ function cleanArtist(rawArtist, rawTitle) {
   return embeddedArtist;
 }
 
+let lastSongUpdateSeq = -1;
+
 function setSong(d){
   if(!S.locked) return;
+  if(d && typeof d.songSeq === 'number'){
+    if(d.songSeq < lastSongUpdateSeq) return;
+    lastSongUpdateSeq = d.songSeq;
+  }
   let nextSong = null;
   if(d&&d.title){
     const rawTitle=String(d.title).trim();
-    const rawArtist=d.artist?String(d.artist).trim():(song&&song.videoId&&d.videoId&&song.videoId===d.videoId?song.artist:'');
+    const rawArtist=d.artist?String(d.artist).trim():'';
+    const rawYear=d.year?String(d.year).trim():'';
     if(rawTitle&&rawTitle!=='undefined'&&rawTitle!=='null'){
       const artist = cleanArtist(rawArtist, rawTitle);
       const title = cleanTitle(rawTitle, artist);
-      const vid = d.videoId || (song ? song.videoId : null);
-      nextSong={title: title || rawTitle, artist, videoId: d.videoId || null};
-      if (!nextSong.videoId && vid) nextSong.videoId = vid;
+      const vid = d.videoId || null;
+      nextSong={title: title || rawTitle, artist, year: rawYear, videoId: d.videoId || null};
     }
   }
   if (!nextSong && !song) return;
@@ -1023,12 +1029,10 @@ function setSong(d){
     const isSameMetadata = nextSong.title.toLowerCase() === song.title.toLowerCase() &&
       (nextSong.artist.toLowerCase() === song.artist.toLowerCase() || (!nextSong.artist && song.artist));
     if (isSameVideo || isSameMetadata) {
-      if (!song.artist && nextSong.artist) {
-        song.artist = nextSong.artist;
-      }
-      if (!song.videoId && nextSong.videoId) {
-        song.videoId = nextSong.videoId;
-      }
+      song.title = nextSong.title;
+      song.artist = nextSong.artist;
+      song.year = nextSong.year;
+      if (nextSong.videoId) song.videoId = nextSong.videoId;
       return;
     }
   }

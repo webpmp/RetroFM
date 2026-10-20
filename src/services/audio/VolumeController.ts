@@ -262,6 +262,11 @@ export class VolumeController {
     this.effectiveVolume = targetDuck;
     this.lastExpectedFraction = targetDuck / 100;
 
+    // Disarm the downward fade safety timer now that duck ramp completed cleanly.
+    // Arm an extended 45-second watchdog to catch edge cases where DJ speech is abandoned.
+    this.clearSequenceSafetyTimer();
+    this.armSequenceSafetyTimer(45000, `Ducked hold safety timeout (${reason})`);
+
     console.log(
       `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
     );
@@ -420,11 +425,6 @@ export class VolumeController {
     this.cancelWatchdog();
     this.lastExpectedFraction = expectedFraction;
     this.watchdogUntil = Date.now() + 10000; // 10 seconds watchdog
-
-    console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Watchdog active for 10s. Monitoring for unexpected external YouTube volume changes.`
-    );
-    this.onLog(`[VolumeController] Watchdog active for 10s. Monitoring for unexpected external YouTube volume changes.`);
 
     this.watchdogTimer = setTimeout(() => {
       this.watchdogUntil = 0;

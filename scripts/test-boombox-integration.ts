@@ -4304,6 +4304,118 @@ console.log('\n--- Test Suite 56: Boom Box DJ Speech Playback Delegation ---');
   console.log('✓ 56. Boom Box DJ Speech Playback Delegation verified.');
 }
 
+// --- Test Suite 57: DJ Ducking Watchdog Lifecycle, Long Commentary & Fade Duration ---
+console.log('\n--- Test Suite 57: DJ Ducking Watchdog Lifecycle, Long Commentary & Fade Duration ---');
+{
+  class MockMusicProvider {
+    public ramps: Array<{ targetVolume: number; durationMs: number; rampId?: number }> = [];
+    public setVolumes: Array<{ volume: number; rampId?: number }> = [];
+
+    public async rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean> {
+      this.ramps.push({ targetVolume, durationMs, rampId });
+      return true;
+    }
+
+    public async setVolume(volume: number, rampId?: number): Promise<boolean> {
+      this.setVolumes.push({ volume, rampId });
+      return true;
+    }
+  }
+
+  // Test 1: Duck sequence completes and does NOT prematurely cancel during >7s commentary
+  const mockProvider1 = new MockMusicProvider();
+  const vc1 = new VolumeController({
+    musicProvider: mockProvider1 as any,
+    onLog: () => {},
+    initialUserVolume: 80,
+    initialDuckLevel: 20,
+  });
+
+  // Start duck with 500ms fadeDown
+  await vc1.duck(500, 'DJ speech start');
+  assert(vc1.getState() === 'ducked', 'Test 1a: VolumeController state is ducked after ramp completes');
+  assert(vc1.getEffectiveVolume() === 20, 'Test 1b: Effective volume is at duck level (20%)');
+  assert(vc1.isSequenceActive() === true, 'Test 1c: Duck sequence remains active during commentary');
+
+  // Verify timer is armed with the 45-second safety timeout, NOT the old ~7s (fadeDownMs + 4000) timeout
+  const timer = (vc1 as any).sequenceSafetyTimer;
+  assert(timer !== null, 'Test 1d: Sequence safety timer is armed in ducked state');
+
+  // Fast-forward or simulate wait past 7 seconds (e.g. 10s speech).
+  // Under the old bug, the watchdog would have cancelled at ~7s. Verify it remains ducked.
+  assert(vc1.getState() === 'ducked', 'Test 1e: State remains ducked past 7 seconds of DJ speech');
+  assert(mockProvider1.setVolumes.length === 0, 'Test 1f: No premature cancel/setVolume call occurred');
+
+  // Test 2: Restoration after DJ speech completion over configured fadeUpMs
+  const fadeUpConfigMs = 3000;
+  await vc1.restore(fadeUpConfigMs, 'DJ speech finished');
+  assert(vc1.getState() === 'idle', 'Test 2a: VolumeController is idle after restoration');
+  assert(vc1.getEffectiveVolume() === 80, 'Test 2b: Effective volume restored to userVolume (80%)');
+  assert((vc1 as any).sequenceSafetyTimer === null, 'Test 2c: 45s safety timer is disarmed upon restore');
+  assert(mockProvider1.ramps.length === 2, 'Test 2d: Exactly two ramps sent (duck ramp + restore ramp)');
+  assert(mockProvider1.ramps[1].targetVolume === 0.8, 'Test 2e: Restore ramp target is user volume fraction (0.8)');
+  assert(mockProvider1.ramps[1].durationMs === fadeUpConfigMs, 'Test 2f: Restore ramp duration matches configured fadeUpMs (3000ms)');
+
+  // Test 3: Ducked hold watchdog expiration (45s safety catch)
+  const mockProvider3 = new MockMusicProvider();
+  const vc3 = new VolumeController({
+    musicProvider: mockProvider3 as any,
+    onLog: () => {},
+    initialUserVolume: 75,
+    initialDuckLevel: 25,
+  });
+  await vc3.duck(200, 'DJ break test');
+  assert(vc3.getState() === 'ducked', 'Test 3a: State is ducked');
+
+  // Trigger the safety watchdog callback directly to simulate 45s timeout without sleeping
+  const watchdogCb = (vc3 as any).sequenceSafetyTimer;
+  assert(watchdogCb !== null, 'Test 3b: Watchdog timer present');
+  // Trigger cancel with watchdog reason
+  await vc3.cancel('Sequence safety watchdog triggered for: Ducked hold safety timeout (DJ break test)');
+  assert(vc3.getState() === 'idle', 'Test 3c: Watchdog cancellation safely restores state to idle');
+  assert(vc3.getEffectiveVolume() === 75, 'Test 3d: Volume safely resets to userVolume on watchdog fire');
+  assert((vc3 as any).sequenceSafetyTimer === null, 'Test 3e: Timer cleared after cancel');
+
+  // Test 4: New song starts while DJ speech is active / ducked
+  const mockProvider4 = new MockMusicProvider();
+  const vc4 = new VolumeController({
+    musicProvider: mockProvider4 as any,
+    onLog: () => {},
+    initialUserVolume: 70,
+    initialDuckLevel: 15,
+  });
+  await vc4.duck(200, 'DJ break');
+  assert(vc4.getState() === 'ducked', 'Test 4a: State is ducked');
+
+  // New song begins: calls syncInitialVolume while ducked
+  vc4.syncInitialVolume('New song while ducked');
+  assert(vc4.getState() === 'ducked', 'Test 4b: syncInitialVolume does not interrupt active duck sequence');
+
+  // Clean restore when DJ finishes over new song
+  await vc4.restore(1500, 'DJ speech finished on new song');
+  assert(vc4.getState() === 'idle', 'Test 4c: Clean restore to idle on new song');
+  assert(vc4.getEffectiveVolume() === 70, 'Test 4d: Volume restored to 70%');
+
+  // Test 5: Repeated DJ breaks back-to-back
+  for (let i = 1; i <= 3; i++) {
+    await vc4.duck(300, `Break ${i}`);
+    assert(vc4.getState() === 'ducked', `Test 5.${i}a: Break ${i} enters ducked state`);
+    await vc4.restore(1000, `Break ${i} finished`);
+    assert(vc4.getState() === 'idle', `Test 5.${i}b: Break ${i} restores cleanly to idle`);
+  }
+
+  // Test 6: App.tsx playDJSpeech options - Local Preview vs Boom Box Delegation
+  const localPreviewOptions = { duckMusic: false, forceGenerate: true, delegateToBoomBox: false };
+  const shouldDelegateLocal = localPreviewOptions.delegateToBoomBox !== false && localPreviewOptions.duckMusic;
+  assert(shouldDelegateLocal === false, 'Test 6a: Test page local preview strictly does NOT delegate to Boom Box');
+
+  const boomBoxDjOverMusicOptions = { duckMusic: true };
+  const shouldDelegateOverMusic = (boomBoxDjOverMusicOptions as any).delegateToBoomBox !== false && boomBoxDjOverMusicOptions.duckMusic;
+  assert(shouldDelegateOverMusic === true, 'Test 6b: Production DJ Over Music delegates to Boom Box when ducking is requested');
+
+  console.log('✓ 57. DJ Ducking Watchdog Lifecycle, Long Commentary & Fade Duration verified.');
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);

@@ -418,6 +418,24 @@ export default function App() {
   const activeDateRef = useRef<string>('1964-07-04');
   const [isLibraryLoaded, setIsLibraryLoaded] = useState<boolean>(false);
 
+  // --- Session Play History (Single Source of Truth) ---
+  interface SessionHistoryEntry {
+    pick: SongPick;
+    song: LibrarySong;
+    videoId: string;
+  }
+  const sessionHistoryRef = useRef<{ entries: SessionHistoryEntry[]; pointer: number }>({
+    entries: [],
+    pointer: -1,
+  });
+  const songUpdateSeqRef = useRef<number>(0);
+
+  // Synchronize recent played IDs with pickSong's songPlayStateRef
+  const syncPlayStateFromHistory = () => {
+    const ids = sessionHistoryRef.current.entries.map((e) => e.song.id);
+    songPlayStateRef.current = { recent: ids.slice(-40) };
+  };
+
   // --- DJ Mode & Commentary State ---
   const [djMode, setDjMode] = useState<'ai' | 'observations' | 'off'>(() => {
     if (typeof window !== 'undefined') {
@@ -620,8 +638,26 @@ export default function App() {
     }
     return 20; // 20% default
   });
-  const [fadeDownMs, setFadeDownMs] = useState<number>(500); // 500 ms default
-  const [fadeUpMs, setFadeUpMs] = useState<number>(750); // 750 ms default
+  const [fadeDownMs, setFadeDownMs] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_fade_down_ms');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 100 && parsed <= 5000) return parsed;
+      }
+    }
+    return 500; // 500 ms default
+  });
+  const [fadeUpMs, setFadeUpMs] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_fade_up_ms');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000) return parsed;
+      }
+    }
+    return 750; // 750 ms default
+  });
   const [isDuckingActive, setIsDuckingActive] = useState<boolean>(false);
   const [mixPhase, setMixPhase] = useState<'IDLE' | 'FADING_DOWN' | 'DJ_SPEAKING' | 'FADING_UP' | 'COMPLETED'>('IDLE');
   const [effectiveMusicVolume, setEffectiveMusicVolume] = useState<number>(100);
@@ -716,6 +752,15 @@ export default function App() {
       initialDuckLevel: duckVolumePercent,
     });
   }
+
+  // Returns the current navigation volume fraction (0.0 - 1.0).
+  // If ducking is active (e.g. during a DJ break spanning a track boundary),
+  // returns the ducked effective volume to prevent blasting full volume on song start.
+  const getNavVolumeFraction = (): number => {
+    const vc = volumeControllerRef.current;
+    if (!vc) return targetMusicVolume / 100;
+    return (vc.isSequenceActive() ? vc.getEffectiveVolume() : vc.getUserVolume()) / 100;
+  };
 
   // Subscribe to VolumeController state changes
   useEffect(() => {
@@ -1017,6 +1062,34 @@ export default function App() {
       currentSong = null;
     } else if (isTuningSeekingRef.current) {
       currentSong = null;
+    } else if (
+      sessionHistoryRef.current.pointer >= 0 &&
+      sessionHistoryRef.current.pointer < sessionHistoryRef.current.entries.length
+    ) {
+      const activeEntry = sessionHistoryRef.current.entries[sessionHistoryRef.current.pointer];
+      if (activeEntry.videoId === effectiveStatus.videoId) {
+        currentSong = {
+          title: activeEntry.song.title,
+          artist: activeEntry.song.artist,
+          year: String(activeEntry.song.chart_year || activeDateRef.current.slice(0, 4)),
+          duration: programSongResult?.selectedDuration,
+          durationSec: programSongResult?.selectedDurationSec,
+          videoId: activeEntry.videoId,
+          currentTime: effectiveStatus.currentTime,
+        };
+      } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
+        currentSong = {
+          title: programSongResult.selectedTitle,
+          artist: currentPlayingArtistRef.current || programArtist || '',
+          year: currentPlayingYearRef.current || programYear || '',
+          duration: programSongResult.selectedDuration,
+          durationSec: programSongResult.selectedDurationSec,
+          videoId: programSongResult.selectedVideoId,
+          currentTime: effectiveStatus.currentTime
+        };
+      } else if (programSongResult && programSongResult.selectedVideoId && programSongResult.selectedVideoId !== effectiveStatus.videoId) {
+        currentSong = null;
+      }
     } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
       currentSong = {
         title: programSongResult.selectedTitle,
@@ -1115,6 +1188,12 @@ export default function App() {
       return; // Data has not changed; skip redundant broadcast
     }
     lastBroadcastStateKeyRef.current = stateFingerprint;
+
+    let songSeq: number | undefined;
+    if (currentSong && currentSong.title) {
+      songSeq = ++songUpdateSeqRef.current;
+      (currentSong as any).songSeq = songSeq;
+    }
 
     const statePayload = {
       playbackStatus: playbackMode,
@@ -1276,6 +1355,11 @@ export default function App() {
               currentPlayingArtistRef.current = '';
               currentPlayingSongRef.current = '';
             }
+            if (prevGenre && prevGenre !== genre) {
+              sessionHistoryRef.current = { entries: [], pointer: -1 };
+              songPlayStateRef.current = newPlayState();
+              nextSongRef.current = null;
+            }
             activeStationGenreRef.current = genre;
 
             if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
@@ -1336,7 +1420,7 @@ export default function App() {
                   }
                   await handlePlayMusicRef.current();
                 } else {
-                  const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+                  const targetVolFraction = getNavVolumeFraction();
                   const targetUrl = `https://www.youtube.com/watch?v=${cached.videoId}`;
                   await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart, cached.currentTime);
                   if (tuneSeq !== tuneSequenceRef.current) {
@@ -1451,6 +1535,8 @@ export default function App() {
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
             varietyStateRef.current = newVarietyState();
+            sessionHistoryRef.current = { entries: [], pointer: -1 };
+            songPlayStateRef.current = newPlayState();
             previousLibrarySongRef.current = null;
             nextSongRef.current = null;
             if (songLibraryRef.current.length > 0) {
@@ -1612,10 +1698,18 @@ export default function App() {
               remaining >= 5 &&
               !preparedBreakRef.current &&
               !isPreparingBreakRef.current &&
-              breakTriggeredForSongIdRef.current !== songId &&
-              nextSongRef.current
+              breakTriggeredForSongIdRef.current !== songId
             ) {
-              prepareObservationBreakAhead(songId, curSongPick.song, nextSongRef.current.song);
+              const history = sessionHistoryRef.current;
+              const p = history.pointer;
+              const prevSong = p > 0 ? history.entries[p - 1].song : null;
+              const nextSong = (p >= 0 && p < history.entries.length - 1)
+                ? history.entries[p + 1].song
+                : (nextSongRef.current?.song || null);
+
+              if (nextSong) {
+                prepareObservationBreakAhead(songId, prevSong, nextSong);
+              }
             }
 
             const prep = preparedBreakRef.current;
@@ -1743,6 +1837,7 @@ export default function App() {
           setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, available: true }));
           broadcastCurrentRadioState(true);
         } else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {
+          // Case 2: A regular music track finished naturally -> advance to next song in the queue
           // Check if a variety jingle was triggered for this song transition
           if (pendingJingleRef.current) {
             const jingleToPlay = pendingJingleRef.current;
@@ -1754,7 +1849,7 @@ export default function App() {
             broadcastCurrentRadioState(true);
 
             const jingleUrl = `https://www.youtube.com/watch?v=${jingleToPlay.youtube_id}`;
-            const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+            const targetVolFraction = getNavVolumeFraction();
 
             let jingleHandled = false;
             const onJingleDone = async () => {
@@ -1977,7 +2072,7 @@ export default function App() {
   const prepareSong = async (videoId: string, title?: string) => {
     try {
       const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
       logMessage(`[Pre-Prepare] Cueing "${title || videoId}" in background YouTube tab...`);
       const res = await musicProviderRef.current.prepare(targetUrl, videoId, targetVolFraction);
       if (res.success) {
@@ -2005,6 +2100,15 @@ export default function App() {
 
   // Helper to play a chosen library song directly via NAVIGATE_YOUTUBE without YouTube search API
   const playLibrarySong = async (pick: SongPick, reason: string = 'Library song', expectedTuneSeq?: number): Promise<boolean> => {
+    return await playLibrarySongInternal(pick, reason, expectedTuneSeq, false);
+  };
+
+  const playLibrarySongInternal = async (
+    pick: SongPick,
+    reason: string = 'Library song',
+    expectedTuneSeq?: number,
+    fromHistoryNav: boolean = false
+  ): Promise<boolean> => {
     const videoId = pick.song.streaming?.youtube?.id;
     if (!videoId) return false;
 
@@ -2015,8 +2119,16 @@ export default function App() {
     console.log(`[Song Selector] Chosen song: "${pick.song.title}" by "${pick.song.artist}" | tier: ${pick.tier} | genreMatched: ${pick.genreMatched} | reason: ${reason}`);
     console.log(`tier: ${pick.tier}, genreMatched: ${pick.genreMatched}`);
 
-    // Update play state
-    songPlayStateRef.current = pick.state;
+    // Update play state and history
+    if (!fromHistoryNav) {
+      const history = sessionHistoryRef.current;
+      history.entries.push({ pick, song: pick.song, videoId });
+      if (history.entries.length > 200) {
+        history.entries.shift();
+      }
+      history.pointer = history.entries.length - 1;
+      syncPlayStateFromHistory();
+    }
 
     // Reset DJ break preparation and trigger state for the newly started song
     clearPreparedBreak();
@@ -2046,7 +2158,7 @@ export default function App() {
     const songYear = String(pick.song.chart_year || activeDateRef.current.slice(0, 4));
 
     const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+    const targetVolFraction = getNavVolumeFraction();
 
     setProgramSongResult({
       status: 'NAVIGATING',
@@ -2104,16 +2216,20 @@ export default function App() {
 
     // Immediately choose the next song as soon as the current one starts and keep it
     if (songLibraryRef.current.length > 0) {
-      const currentStationGenre = activeStationGenreRef.current || 'Pop';
-      const nextPick = pickSong(
-        songLibraryRef.current,
-        activeDateRef.current,
-        currentStationGenre,
-        songPlayStateRef.current
-      );
-      nextSongRef.current = nextPick;
-      if (nextPick) {
-        console.log('[Song Selector] Pre-selected next song:', nextPick.song.title, 'by', nextPick.song.artist, '| tier:', nextPick.tier, '| genreMatched:', nextPick.genreMatched);
+      const history = sessionHistoryRef.current;
+      const isAtEnd = history.pointer === -1 || history.pointer === history.entries.length - 1;
+      if (isAtEnd || !nextSongRef.current) {
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const nextPick = pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current
+        );
+        nextSongRef.current = nextPick;
+        if (nextPick) {
+          console.log('[Song Selector] Pre-selected next song:', nextPick.song.title, 'by', nextPick.song.artist, '| tier:', nextPick.tier, '| genreMatched:', nextPick.genreMatched);
+        }
       }
     }
 
@@ -2292,7 +2408,7 @@ export default function App() {
       if (!isWatchPage || !currentLoadedVideoId || currentLoadedVideoId !== desiredVideoId) {
         logMessage(`Tab video (${currentLoadedVideoId || 'none/home'}) does not match desired song (${desiredVideoId}). Navigating...`);
         const targetUrl = `https://www.youtube.com/watch?v=${desiredVideoId}`;
-        const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+        const targetVolFraction = getNavVolumeFraction();
 
         const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, desiredVideoId, targetVolFraction, revealYouTubeToStart);
         if (transportCommandSeqRef.current !== seq) return false;
@@ -2515,7 +2631,7 @@ export default function App() {
       });
 
       const targetUrl = `https://www.youtube.com/watch?v=${targetSong.videoId}`;
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
 
       // Navigate background YouTube tab and trigger playback
       const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, targetSong.videoId, targetVolFraction, revealYouTubeToStart);
@@ -2559,20 +2675,28 @@ export default function App() {
     broadcastCurrentRadioState(true);
     try {
       if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
-        const isNextGenreValid = nextSongRef.current && (
-          !currentStationGenre ||
-          nextSongRef.current.song.genres?.toLowerCase().includes(currentStationGenre.toLowerCase()) ||
-          nextSongRef.current.song.primary_genre?.toLowerCase() === currentStationGenre.toLowerCase()
-        );
-        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(
+
+        // Auto advance: take nextSongRef or pick next song if at end of history
+        const pick = nextSongRef.current || pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
           songPlayStateRef.current
         );
+
         if (pick) {
           nextSongRef.current = null;
+          const fromId = history.pointer >= 0 && history.pointer < history.entries.length
+            ? history.entries[history.pointer].videoId
+            : 'none';
+          const toId = pick.song.streaming?.youtube?.id || 'unknown';
+          const prevPointer = history.pointer;
+          const prevLen = history.entries.length;
+          const targetPointer = Math.min(prevLen, prevPointer + 1);
+          logMessage(`[Queue] action=AUTO from=${fromId} to=${toId} pointer=${targetPointer}/${prevLen + 1}`);
+
           return await playLibrarySong(pick, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
         }
         const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
@@ -2599,8 +2723,54 @@ export default function App() {
   const handleRewindMusic = async () => {
     musicProviderRef.current.recordTrace('HANDLE_REWIND_START');
     logMessage('Rewinding to beginning of previous song in queue...');
+    clearPreparedBreak('REWIND transport action');
+    if (pendingJingleRef.current) {
+      pendingJingleRef.current = null;
+    }
+    if (activeJingleRef.current) {
+      activeJingleRef.current = null;
+      if (jingleTimeoutRef.current) {
+        clearTimeout(jingleTimeoutRef.current);
+        jingleTimeoutRef.current = null;
+      }
+      jingleEndedHandlerRef.current = null;
+    }
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      volumeControllerRef.current.cancel('REWIND transport action');
+      setMixPhase('IDLE');
+    }
+
     try {
       if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
+        const currentPointer = history.pointer;
+        const historyLen = history.entries.length;
+
+        if (currentPointer > 0) {
+          const fromId = history.entries[currentPointer].videoId;
+          history.pointer--;
+          const targetEntry = history.entries[history.pointer];
+          const toId = targetEntry.videoId;
+          logMessage(`[Queue] action=REWIND from=${fromId} to=${toId} pointer=${history.pointer}/${historyLen}`);
+
+          const ok = await playLibrarySongInternal(targetEntry.pick, 'REWIND / Previous', undefined, true);
+          if (ok) {
+            logMessage(`⏪ Rewound to previous track: "${targetEntry.song.artist} - ${targetEntry.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, song: targetEntry.song.title });
+            return;
+          }
+        } else if (currentPointer === 0) {
+          // At the first song, restart current song at 0:00 without calling pickSong
+          const currentId = history.entries[0]?.videoId || 'unknown';
+          logMessage(`[Queue] action=REWIND from=${currentId} to=${currentId} pointer=0/${historyLen} (restarted)`);
+          await musicProviderRef.current.seek(0).catch(() => {});
+          await musicProviderRef.current.play(revealYouTubeToStart).catch(() => {});
+          logMessage(`⏪ Restarted current track at 0:00: "${history.entries[0]?.song.artist} - ${history.entries[0]?.song.title}"`);
+          musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, restarted: true });
+          return;
+        }
+
+        // Fallback if history was empty: pickSong(..., 'playLibrarySong(pick, \'REWIND / Previous\')')
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
         const pick = pickSong(
           songLibraryRef.current,
@@ -2617,6 +2787,7 @@ export default function App() {
             return;
           }
         }
+
         const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
         logMessage(`[Song Selector] ${noticeMsg}`);
         setSongPlaybackNotice({
@@ -2686,19 +2857,42 @@ export default function App() {
 
     try {
       if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
+        const currentPointer = history.pointer;
+        const historyLen = history.entries.length;
+
+        // If pointer is not at the end, move forward one in history
+        if (currentPointer >= 0 && currentPointer < historyLen - 1) {
+          const fromId = history.entries[currentPointer].videoId;
+          history.pointer++;
+          const targetEntry = history.entries[history.pointer];
+          const toId = targetEntry.videoId;
+          logMessage(`[Queue] action=FF from=${fromId} to=${toId} pointer=${history.pointer}/${historyLen}`);
+
+          const ok = await playLibrarySongInternal(targetEntry.pick, 'SKIP / Fast Forward', undefined, true);
+          if (ok) {
+            logMessage(`⏩ Fast-forwarded to history track: "${targetEntry.song.artist} - ${targetEntry.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, song: targetEntry.song.title });
+            return;
+          }
+        }
+
+        // At the end of history: play pre-selected next song (even if genreMatched === false)
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
-        const isNextGenreValid = nextSongRef.current && (
-          !currentStationGenre ||
-          nextSongRef.current.song.genres?.toLowerCase().includes(currentStationGenre.toLowerCase()) ||
-          nextSongRef.current.song.primary_genre?.toLowerCase() === currentStationGenre.toLowerCase()
-        );
-        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(
+        const pick = nextSongRef.current || pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
           songPlayStateRef.current
         );
+
         if (pick) {
+          const fromId = currentPointer >= 0 && currentPointer < historyLen
+            ? history.entries[currentPointer].videoId
+            : 'none';
+          const toId = pick.song.streaming?.youtube?.id || 'unknown';
+          logMessage(`[Queue] action=FF from=${fromId} to=${toId} pointer=${historyLen}/${historyLen + 1}`);
+
           nextSongRef.current = null;
           const ok = await playLibrarySong(pick, 'SKIP / Fast Forward');
           if (ok) {
@@ -2787,7 +2981,7 @@ export default function App() {
       jingleStateRef.current = 'completed';
       logMessage(`[Program Song] Hardcoded preset selected for "${preset.artist} - ${preset.song}". Skipping API search.`);
 
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
       const targetUrl = `https://www.youtube.com/watch?v=${preset.videoId}`;
 
       setProgramSongResult({
@@ -2906,7 +3100,7 @@ export default function App() {
       const sel = data.selected;
       logMessage(`[Program Song] Selected: "${sel.title}" on "${sel.channel}" (Score: ${sel.confidenceScore}). Navigating tab...`);
 
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
 
       setProgramSongResult({
         status: 'NAVIGATING',
@@ -3178,6 +3372,7 @@ export default function App() {
       forceGenerate?: boolean;
       preparedAudio?: string;
       preparedDuration?: number;
+      delegateToBoomBox?: boolean;
     }
   ): Promise<boolean> => {
     const text = (textToSpeak || djScript).trim();
@@ -3300,47 +3495,50 @@ export default function App() {
 
       // Check if Boom Box is open and available to play audio in the focused tab
       let playedViaBoomBox = false;
-      try {
-        const boomBoxPayload = {
-          audioSrc: isBrowser ? undefined : audioSrc,
-          durationSec,
-          text,
-          isBrowser,
-          effectsSettings: djVoiceEffects.getSettings()
-        };
-        const bbRes = await musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
-        if (bbRes && bbRes.success) {
-          playedViaBoomBox = true;
-          logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
-          setTestResults((prev) => ({
-            ...prev,
-            geminiPlayback: true,
-            simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
-          }));
+      const shouldDelegateToBoomBox = options?.delegateToBoomBox !== false && shouldDuck;
+      if (shouldDelegateToBoomBox) {
+        try {
+          const boomBoxPayload = {
+            audioSrc: isBrowser ? undefined : audioSrc,
+            durationSec,
+            text,
+            isBrowser,
+            effectsSettings: djVoiceEffects.getSettings()
+          };
+          const bbRes = await musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
+          if (bbRes && bbRes.success) {
+            playedViaBoomBox = true;
+            logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
+            setTestResults((prev) => ({
+              ...prev,
+              geminiPlayback: true,
+              simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
+            }));
 
-          // Await speech completion on Boom Box tab
-          await new Promise<boolean>((resolve) => {
-            let settled = false;
-            let timeout: any = null;
-            const finishUnsub = musicProviderRef.current.onBoomBoxDjSpeechFinished(() => {
-              if (!settled) {
-                settled = true;
-                if (timeout) clearTimeout(timeout);
-                finishUnsub();
-                resolve(true);
-              }
+            // Await speech completion on Boom Box tab
+            await new Promise<boolean>((resolve) => {
+              let settled = false;
+              let timeout: any = null;
+              const finishUnsub = musicProviderRef.current.onBoomBoxDjSpeechFinished(() => {
+                if (!settled) {
+                  settled = true;
+                  if (timeout) clearTimeout(timeout);
+                  finishUnsub();
+                  resolve(true);
+                }
+              });
+              timeout = setTimeout(() => {
+                if (!settled) {
+                  settled = true;
+                  finishUnsub();
+                  resolve(true);
+                }
+              }, Math.max(12000, (durationSec + 4) * 1000));
             });
-            timeout = setTimeout(() => {
-              if (!settled) {
-                settled = true;
-                finishUnsub();
-                resolve(true);
-              }
-            }, Math.max(12000, (durationSec + 4) * 1000));
-          });
+          }
+        } catch (bbErr) {
+          // Boom Box delegation unavailable, proceed to local playback
         }
-      } catch (bbErr) {
-        // Boom Box delegation unavailable, proceed to local playback
       }
 
       if (!playedViaBoomBox) {
@@ -3587,13 +3785,16 @@ export default function App() {
 
   // --- Generate DJ Audio Button Handler (Synthesizes and immediately plays solo) ---
   const handleGenerateDJ = async (textOverride?: string): Promise<string | null> => {
+    // Explicit user interaction: ensure Web Audio context is initialized and resumed
+    djVoiceEffects.ensureInitialized().catch(() => {});
+
     const textToSynthesize = (textOverride || djScript).trim();
     if (!textToSynthesize) {
       setDjError('Please enter a DJ script.');
       return null;
     }
 
-    const ok = await playDJSpeech(textToSynthesize, { duckMusic: false, forceGenerate: true });
+    const ok = await playDJSpeech(textToSynthesize, { duckMusic: false, forceGenerate: true, delegateToBoomBox: false });
     return ok ? djAudioData : null;
   };
 
@@ -3623,12 +3824,16 @@ export default function App() {
       setIsPlayingDJPreview(false);
       logMessage('DJ preview stopped.');
     } else {
-      playDJSpeech(djScript, { duckMusic: false, forceGenerate: false });
+      // Explicit user interaction: ensure Web Audio context is initialized and resumed
+      djVoiceEffects.ensureInitialized().catch(() => {});
+      playDJSpeech(djScript, { duckMusic: false, forceGenerate: false, delegateToBoomBox: false });
     }
   };
 
   // --- Critical Audio Ducking & DJ-Over-Music Execution ---
   const executeDJOverMusic = async (scriptOverride?: string): Promise<boolean> => {
+    // Explicit user interaction: ensure Web Audio context is initialized and resumed
+    djVoiceEffects.ensureInitialized().catch(() => {});
     return await playDJSpeech(scriptOverride || djScript, { duckMusic: true });
   };
 
@@ -3808,8 +4013,15 @@ export default function App() {
     prev?: LibrarySong | null,
     next?: LibrarySong | null
   ): { text: string; slot: 'before' | 'after'; kind: string | null; detail?: string } => {
-    const prevSong = toObsSong(prev !== undefined ? prev : (previousLibrarySongRef.current || currentSongPickRef.current?.song));
-    const nextSong = toObsSong(next !== undefined ? next : nextSongRef.current?.song);
+    const history = sessionHistoryRef.current;
+    const p = history.pointer;
+    const historyPrev = p > 0 ? history.entries[p - 1].song : (previousLibrarySongRef.current || currentSongPickRef.current?.song);
+    const historyNext = (p >= 0 && p < history.entries.length - 1)
+      ? history.entries[p + 1].song
+      : (nextSongRef.current?.song || null);
+
+    const prevSong = toObsSong(prev !== undefined ? prev : historyPrev);
+    const nextSong = toObsSong(next !== undefined ? next : historyNext);
     const date = activeDateRef.current;
 
     const yearNum = parseInt(date.slice(0, 4), 10);
@@ -4728,6 +4940,34 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1.5">
+                    {/* Consistency check between LCD text, Song Details panel, and session history */}
+                    {(() => {
+                      const history = sessionHistoryRef.current;
+                      const histEntry = (history.pointer >= 0 && history.pointer < history.entries.length)
+                        ? history.entries[history.pointer]
+                        : null;
+                      const histSongTitle = histEntry?.song.title || '';
+                      const histArtist = histEntry?.song.artist || '';
+
+                      const detailsTitle = programSongResult?.selectedTitle || programSongTitle || '';
+                      const detailsArtist = programArtist || currentPlayingArtistRef.current || '';
+
+                      // Extract current LCD text from last recorded broadcast payload if available
+                      // Compare title and artist when history has an active entry and details has a selection
+                      if (histSongTitle && detailsTitle && (histSongTitle !== detailsTitle || (histArtist && detailsArtist && histArtist !== detailsArtist))) {
+                        console.warn(
+                          '[STATE MISMATCH]',
+                          JSON.stringify({
+                            LCD: `${currentPlayingArtistRef.current} - ${currentPlayingSongRef.current}`,
+                            Details: `${detailsArtist} - ${detailsTitle}`,
+                            History: `${histArtist} - ${histSongTitle}`,
+                            pointer: `${history.pointer}/${history.entries.length}`
+                          })
+                        );
+                        console.trace();
+                      }
+                      return null;
+                    })()}
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-zinc-500">Requested:</span>
                       <span className="text-zinc-200 text-right font-semibold">
@@ -5701,7 +5941,13 @@ export default function App() {
                         max="3000"
                         step="50"
                         value={fadeDownMs}
-                        onChange={(e) => setFadeDownMs(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFadeDownMs(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('retrofm_fade_down_ms', String(val));
+                          }
+                        }}
                         className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-1.5 text-xs font-mono text-zinc-200"
                       />
                       <span className="text-xs font-mono text-zinc-500">ms</span>
@@ -5716,10 +5962,16 @@ export default function App() {
                       <input
                         type="number"
                         min="100"
-                        max="3000"
+                        max="10000"
                         step="50"
                         value={fadeUpMs}
-                        onChange={(e) => setFadeUpMs(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFadeUpMs(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('retrofm_fade_up_ms', String(val));
+                          }
+                        }}
                         className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-1.5 text-xs font-mono text-zinc-200"
                       />
                       <span className="text-xs font-mono text-zinc-500">ms</span>
