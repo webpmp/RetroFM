@@ -144,6 +144,14 @@ const AFTER = ["That was {artist} with {title}.", "{artist}, with {title}.", "Yo
 const BEFORE = ["Up next, {title} from {artist}.", "Here's {artist} with {title}.", "This is {title}, by {artist}.",
   "Coming up, {artist} with {title}."];
 
+/** The announcement of a song about to play, with a random wording ("Up next, X from Y."). */
+export function announceNext(song: Song, rng: Rng = Math.random): string {
+  return fill(pick(BEFORE, rng), song);
+}
+
+/** Artist and title as a DJ would say them. */
+export const artistTitle = (s: Song) => ({ artist: spoken(s.artist), title: spoken(s.title) });
+
 const fill = (tpl: string, s: Song) => tpl.replace("{artist}", spoken(s.artist)).replace("{title}", spoken(s.title));
 
 /**

@@ -44,6 +44,13 @@ import {
   DjState,
   TALK_PRESETS,
 } from '../services/djBreak/djBreakObservations.js';
+import {
+  buildVarietyBreak,
+  newVarietyState,
+  type VarietyState,
+  type Jingle,
+  type TopEntry,
+} from '../services/djBreak/djVariety.js';
 import { LibrarySong } from '../services/songSelector.js';
 
 export const HISTORICAL_PRESET_DATES = [
@@ -189,6 +196,29 @@ export function DJBreakGeneratorTest({
   };
 
   const localDjStateRef = useRef<DjState>(newDjState());
+  const localVarietyStateRef = useRef<VarietyState>(newVarietyState());
+  const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
+  const jinglesDataRef = useRef<Jingle[]>([]);
+
+  useEffect(() => {
+    fetch('/data/weekly_top.json')
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((data) => {
+        weeklyTopDataRef.current = data;
+      })
+      .catch(() => {
+        weeklyTopDataRef.current = undefined;
+      });
+
+    fetch('/data/jingles.json')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        jinglesDataRef.current = Array.isArray(data) ? data : [];
+      })
+      .catch(() => {
+        jinglesDataRef.current = [];
+      });
+  }, []);
 
   // AI Provider & Local Model (LM Studio) State
   const [aiProvider, setAiProvider] = useState<'gemini' | 'lmstudio'>(() => {
@@ -437,21 +467,52 @@ export function DJBreakGeneratorTest({
       try {
         const prev = librarySongPlayed ? toObsSong(librarySongPlayed) : parseSongString(songPlayed, target);
         const next = librarySongNext ? toObsSong(librarySongNext) : parseSongString(songNext, target);
-        const breakRes = buildBreak(prev, next, target, localDjStateRef.current, Math.random, TALK_PRESETS[djTalkFrequency]);
-        localDjStateRef.current = breakRes.state;
 
-        if (!breakRes.text) {
+        // Find topOfWeek
+        const allWeeks = weeklyTopDataRef.current;
+        let topOfWeek: TopEntry[] | null = null;
+        if (allWeeks) {
+          const validDates = Object.keys(allWeeks).filter((d) => d <= target).sort();
+          if (validDates.length > 0) {
+            topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+          }
+        }
+
+        const yearNum = parseInt(target.slice(0, 4), 10);
+        const decadeStr = (!isNaN(yearNum) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s');
+
+        const varietyRes = buildVarietyBreak(
+          {
+            prev,
+            next,
+            date: target,
+            now: new Date(),
+            decade: decadeStr,
+            genre: format || 'Pop',
+            frequency: '91.7',
+            topOfWeek,
+            jingles: jinglesDataRef.current,
+            news: null,
+          },
+          localVarietyStateRef.current,
+          Math.random,
+          TALK_PRESETS[djTalkFrequency]
+        );
+        localVarietyStateRef.current = varietyRes.state;
+
+        const detailFormatted = varietyRes.kind === 'observation' ? (varietyRes.detail ? `observation/${varietyRes.detail}` : 'observation') : varietyRes.kind;
+        if (!varietyRes.text && varietyRes.kind !== 'jingle') {
           console.log('[DJ] silent break');
         } else {
-          console.log(`[DJ] mode=observations slot=${breakRes.slot} kind=${breakRes.kind ?? 'none'} text="${breakRes.text}"`);
+          console.log(`[DJ] mode=observations kind=${varietyRes.kind} detail=${varietyRes.detail ?? 'none'} text="${varietyRes.text}"`);
         }
         onObservationBreakGenerated?.({
-          text: breakRes.text,
-          slot: breakRes.slot,
-          kind: breakRes.kind,
+          text: varietyRes.text,
+          slot: 'before',
+          kind: detailFormatted,
         });
 
-        if (!breakRes.text) {
+        if (!varietyRes.text && varietyRes.kind !== 'jingle') {
           onLogEvent?.('[DJ Break Observations] Observation break generated empty text (no commentary).');
           setResult({
             success: true,
@@ -467,22 +528,23 @@ export function DJBreakGeneratorTest({
           return;
         }
 
-        const words = breakRes.text.split(/\s+/).filter(Boolean);
+        const displayText = varietyRes.kind === 'jingle' ? `[Jingle: ${varietyRes.jingle?.title || varietyRes.jingle?.youtube_id}]` : varietyRes.text;
+        const words = displayText.split(/\s+/).filter(Boolean);
         const genBreak: GeneratedDJBreak = {
           id: `obs_break_${Date.now()}`,
           breakNumber: 1,
-          scriptText: breakRes.text,
+          scriptText: displayText,
           wordCount: words.length,
-          estimatedSeconds: Math.max(3, Math.round(words.length / 2.5)),
+          estimatedSeconds: varietyRes.kind === 'jingle' ? (varietyRes.jingle?.duration_sec || 5) : Math.max(3, Math.round(words.length / 2.5)),
           targetSeconds: secondsAvailable,
-          citedItems: breakRes.kind ? [{
-            headline: `Observation fact (${breakRes.kind}, slot: ${breakRes.slot})`,
+          citedItems: varietyRes.kind ? [{
+            headline: `Variety break (${detailFormatted})`,
             publishedDate: target,
             category: 'music',
           }] : [],
           anachronismCheck: {
             status: 'PASS',
-            notes: 'Verified historical observation (template-based, no AI).',
+            notes: 'Verified historical variety break (template-based, no AI).',
             flaggedPhrases: [],
           },
         };
@@ -497,9 +559,9 @@ export function DJBreakGeneratorTest({
           songNext,
           secondsAvailable,
           breaks: [genBreak],
-          modelUsed: 'template-observations (no AI)',
+          modelUsed: 'variety-system (no AI)',
         });
-        onLogEvent?.(`[DJ Break Observations] Generated break (${breakRes.slot}, kind: ${breakRes.kind ?? 'none'}): "${breakRes.text}"`);
+        onLogEvent?.(`[DJ Variety] Generated break (kind: ${detailFormatted}): "${displayText}"`);
       } catch (err: any) {
         setErrorMsg(err.message || 'Failed to generate observation break');
       } finally {

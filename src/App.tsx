@@ -52,6 +52,14 @@ import {
   DjState,
   TALK_PRESETS,
 } from './services/djBreak/djBreakObservations.js';
+import {
+  buildVarietyBreak,
+  newVarietyState,
+  type VarietyState,
+  type BreakResult as VarietyBreakResult,
+  type Jingle,
+  type TopEntry,
+} from './services/djBreak/djVariety.js';
 import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
 import manifest from '../extension/manifest.json';
 
@@ -418,6 +426,13 @@ export default function App() {
     return 'ai';
   });
   const djStateRef = useRef<DjState>(newDjState());
+  const varietyStateRef = useRef<VarietyState>(newVarietyState());
+  const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
+  const jinglesDataRef = useRef<Jingle[]>([]);
+  const pendingJingleRef = useRef<Jingle | null>(null);
+  const activeJingleRef = useRef<Jingle | null>(null);
+  const jingleEndedHandlerRef = useRef<(() => void) | null>(null);
+  const jingleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousLibrarySongRef = useRef<LibrarySong | null>(null);
   const currentSongPickRef = useRef<SongPick | null>(null);
   const [currentSongPick, setCurrentSongPick] = useState<SongPick | null>(null);
@@ -425,6 +440,7 @@ export default function App() {
     text: string;
     slot: 'before' | 'after';
     kind: string | null;
+    detail?: string;
   } | null>(null);
 
   // Ahead-of-time DJ Break preparation & triggering refs
@@ -435,7 +451,10 @@ export default function App() {
     text: string;
     slot: 'before' | 'after';
     kind: string | null;
-    pendingState: DjState;
+    detail?: string;
+    pendingVarietyState?: VarietyState;
+    varietyResult?: VarietyBreakResult;
+    pendingState?: DjState;
     triggerTimeRemaining: number;
     duckTriggerTimeRemaining: number;
   } | null>(null);
@@ -811,6 +830,31 @@ export default function App() {
       .catch((err) => {
         logMessage(`[Song Selector Error] Failed to load song library: ${err?.message || err}`);
       });
+
+    // 1. Load public/data/weekly_top.json and public/data/jingles.json (optional)
+    fetch('/data/weekly_top.json')
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((data) => {
+        weeklyTopDataRef.current = data;
+        if (data) {
+          logMessage(`[DJ Variety] Loaded weekly_top.json (${Object.keys(data).length} chart weeks).`);
+        }
+      })
+      .catch(() => {
+        weeklyTopDataRef.current = undefined;
+      });
+
+    fetch('/data/jingles.json')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        jinglesDataRef.current = Array.isArray(data) ? data : [];
+        if (Array.isArray(data) && data.length > 0) {
+          logMessage(`[DJ Variety] Loaded jingles.json (${data.length} jingles).`);
+        }
+      })
+      .catch(() => {
+        jinglesDataRef.current = [];
+      });
   }, []);
 
   // --- Extension Heartbeat / Detection Loop ---
@@ -959,7 +1003,17 @@ export default function App() {
     const hasFirstSongStarted = hasFirstSongStartedPlayingRef.current;
     const isJingleActive = jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing';
 
-    if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
+    if (activeJingleRef.current) {
+      currentSong = {
+        title: 'RETRO FM jingle',
+        artist: '',
+        year: '',
+        duration: activeJingleRef.current.duration_sec ? `${Math.floor(activeJingleRef.current.duration_sec / 60).toString().padStart(2, '0')}:${Math.floor(activeJingleRef.current.duration_sec % 60).toString().padStart(2, '0')}` : undefined,
+        durationSec: activeJingleRef.current.duration_sec,
+        videoId: activeJingleRef.current.youtube_id,
+        currentTime: effectiveStatus.currentTime,
+      };
+    } else if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
       currentSong = null;
     } else if (isTuningSeekingRef.current) {
       currentSong = null;
@@ -1396,6 +1450,7 @@ export default function App() {
 
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
+            varietyStateRef.current = newVarietyState();
             previousLibrarySongRef.current = null;
             nextSongRef.current = null;
             if (songLibraryRef.current.length > 0) {
@@ -1583,14 +1638,35 @@ export default function App() {
                 breakTriggeredForSongIdRef.current = songId;
                 const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
 
-                if (prep.text) {
+                if (prep.kind === 'jingle' && prep.varietyResult?.jingle) {
+                  // Jingle break: commit variety state and play jingle in YouTube tab
+                  if (prep.pendingVarietyState) {
+                    varietyStateRef.current = prep.pendingVarietyState;
+                  }
+                  setLastDjBreak({
+                    text: '',
+                    slot: 'before',
+                    kind: 'jingle',
+                    detail: prep.detail,
+                  });
+                  console.log(`[DJ] jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+                  logMessage(`[DJ] Jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s`);
+                  pendingJingleRef.current = prep.varietyResult.jingle;
+                  // We do not speak over a jingle; jingle will be played in YouTube tab when song ends naturally
+                } else if (prep.text) {
                   if (prep.audioData) {
                     // Audio is ready: commit state and speak!
-                    djStateRef.current = prep.pendingState;
+                    if (prep.pendingVarietyState) {
+                      varietyStateRef.current = prep.pendingVarietyState;
+                    }
+                    if (prep.pendingState) {
+                      djStateRef.current = prep.pendingState;
+                    }
                     setLastDjBreak({
                       text: prep.text,
                       slot: prep.slot,
                       kind: prep.kind,
+                      detail: prep.detail,
                     });
                     console.log(`[DJ] speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
                     logMessage(`[DJ] Speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
@@ -1613,13 +1689,19 @@ export default function App() {
                     }
                   }
                 } else {
-                  // Silent break returned from template
+                  // Silent break returned from template / variety
                   console.log(`[DJ] silent break (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
-                  djStateRef.current = prep.pendingState;
+                  if (prep.pendingVarietyState) {
+                    varietyStateRef.current = prep.pendingVarietyState;
+                  }
+                  if (prep.pendingState) {
+                    djStateRef.current = prep.pendingState;
+                  }
                   setLastDjBreak({
                     text: '',
                     slot: prep.slot,
                     kind: prep.kind,
+                    detail: prep.detail,
                   });
                 }
                 preparedBreakRef.current = null;
@@ -1638,6 +1720,22 @@ export default function App() {
       // Natural Completion: When state is 0 (ended), advance automatically
       if (rawState === 0 && !isAdvancingRef.current) {
         const finishedVideoId = payload.videoId || playbackStatus.videoId;
+        // Check if an active jingle just finished playing
+        if (activeJingleRef.current) {
+          logMessage(`[DJ Variety] Jingle finished naturally: "${activeJingleRef.current.title || activeJingleRef.current.id}". Advancing to next song...`);
+          activeJingleRef.current = null;
+          if (jingleTimeoutRef.current) {
+            clearTimeout(jingleTimeoutRef.current);
+            jingleTimeoutRef.current = null;
+          }
+          if (jingleEndedHandlerRef.current) {
+            const cb = jingleEndedHandlerRef.current;
+            jingleEndedHandlerRef.current = null;
+            cb();
+            return;
+          }
+        }
+
         // Case 1: Station Jingle finished naturally -> mark completed, do not advance queue (waits for PLAY)
         if (jingleStateRef.current === 'playing' || finishedVideoId === RETROFM_JINGLE_CONFIG.videoId) {
           jingleStateRef.current = 'completed';
@@ -1645,6 +1743,73 @@ export default function App() {
           setPlaybackStatus((prev) => ({ ...prev, isPlaying: false, available: true }));
           broadcastCurrentRadioState(true);
         } else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {
+          // Check if a variety jingle was triggered for this song transition
+          if (pendingJingleRef.current) {
+            const jingleToPlay = pendingJingleRef.current;
+            pendingJingleRef.current = null;
+            activeJingleRef.current = jingleToPlay;
+            logMessage(`[DJ Variety] Playing jingle "${jingleToPlay.title || jingleToPlay.id}" (${jingleToPlay.youtube_id}) between songs...`);
+
+            // Set LCD display to show "RETRO FM jingle"
+            broadcastCurrentRadioState(true);
+
+            const jingleUrl = `https://www.youtube.com/watch?v=${jingleToPlay.youtube_id}`;
+            const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+
+            let jingleHandled = false;
+            const onJingleDone = async () => {
+              if (jingleHandled) return;
+              jingleHandled = true;
+              if (jingleTimeoutRef.current) {
+                clearTimeout(jingleTimeoutRef.current);
+                jingleTimeoutRef.current = null;
+              }
+              activeJingleRef.current = null;
+              jingleEndedHandlerRef.current = null;
+              logMessage('[DJ Variety] Jingle ended. Starting next song...');
+              advanceToNextSongRef.current(false).catch((err) => {
+                logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
+              });
+            };
+            jingleEndedHandlerRef.current = onJingleDone;
+
+            // Fallback timeout to duration_sec if video ended state doesn't arrive or load fails
+            const fallbackSec = Math.max(3, jingleToPlay.duration_sec || 5);
+            jingleTimeoutRef.current = setTimeout(() => {
+              if (!jingleHandled) {
+                logMessage(`[DJ Variety] Jingle duration/fallback timeout reached (${fallbackSec}s). Advancing to next song.`);
+                onJingleDone();
+              }
+            }, (fallbackSec + 3) * 1000);
+
+            // Safety check: if jingle fails to load within 4 seconds, skip it and play the next song
+            const loadFailTimeout = setTimeout(() => {
+              if (activeJingleRef.current && playbackStatusRef.current?.videoId !== jingleToPlay.youtube_id && !playbackStatusRef.current?.isPlaying) {
+                logMessage('[DJ Variety] Jingle failed to load within 4s. Skipping to next song...');
+                onJingleDone();
+              }
+            }, 4000);
+
+            musicProviderRef.current.navigateDetailed(jingleUrl, jingleToPlay.youtube_id, targetVolFraction, revealYouTubeToStart)
+              .then((res) => {
+                clearTimeout(loadFailTimeout);
+                if (!res.success) {
+                  logMessage('[DJ Variety] Jingle navigation failed. Skipping to next song...');
+                  onJingleDone();
+                } else {
+                  if (volumeControllerRef.current) {
+                    volumeControllerRef.current.syncInitialVolume(`Jingle start: "${jingleToPlay.title || jingleToPlay.id}"`);
+                  }
+                }
+              })
+              .catch((err) => {
+                clearTimeout(loadFailTimeout);
+                logMessage(`[DJ Variety] Jingle error: ${err?.message || err}. Skipping to next song...`);
+                onJingleDone();
+              });
+            return;
+          }
+
           // Case 2: A regular music track finished naturally -> advance to next song in the queue
           if (activeStationGenreRef.current) {
             delete stationPlaybackCacheRef.current[activeStationGenreRef.current];
@@ -2484,6 +2649,19 @@ export default function App() {
 
     // Cleanly cancel DJ speech if currently speaking
     clearPreparedBreak('SKIP transport action');
+    if (pendingJingleRef.current) {
+      logMessage(`[SKIP] Cancelled queued jingle "${pendingJingleRef.current.title || pendingJingleRef.current.id}".`);
+      pendingJingleRef.current = null;
+    }
+    if (activeJingleRef.current) {
+      logMessage(`[SKIP] Skipping active jingle "${activeJingleRef.current.title || activeJingleRef.current.id}" directly to next song.`);
+      activeJingleRef.current = null;
+      if (jingleTimeoutRef.current) {
+        clearTimeout(jingleTimeoutRef.current);
+        jingleTimeoutRef.current = null;
+      }
+      jingleEndedHandlerRef.current = null;
+    }
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try {
         window.speechSynthesis.cancel();
@@ -3480,28 +3658,93 @@ export default function App() {
       const prev = toObsSong(prevSongObj);
       const next = toObsSong(nextSongObj);
       const date = activeDateRef.current;
-      const res = buildBreak(prev, next, date, djStateRef.current, Math.random, TALK_PRESETS[djTalkFrequency]);
+
+      // 2. Build context for buildVarietyBreak
+      const yearNum = parseInt(date.slice(0, 4), 10);
+      const decadeStr = (!isNaN(yearNum) && yearNum >= 1950) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s';
+      const tunedGenre = activeStationGenreRef.current;
+
+      const dynamicStations = calculateDynamicStationsForDate(
+        songLibraryRef.current,
+        date,
+        !isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960
+      );
+      const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960] || []);
+      const activeStation = (tunedGenre ? allStations.find(s => s.genre === tunedGenre) : null)
+        || allStations[0];
+      const frequencyStr = activeStation ? String(activeStation.frequency) : '91.7';
+
+      // Latest chart date on or before the selected date
+      const allWeeks = weeklyTopDataRef.current;
+      let topOfWeek: TopEntry[] | null = null;
+      if (allWeeks) {
+        const validDates = Object.keys(allWeeks).filter((d) => d <= date).sort();
+        if (validDates.length > 0) {
+          topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+        }
+      }
+
+      // News item from pre-audited pipeline if ready ahead of time
+      let newsItem: { text: string } | null = null;
+
+      const res = buildVarietyBreak(
+        {
+          prev,
+          next,
+          date,
+          now: new Date(),
+          decade: decadeStr,
+          genre: tunedGenre,
+          frequency: frequencyStr,
+          topOfWeek,
+          jingles: jinglesDataRef.current,
+          news: newsItem,
+        },
+        varietyStateRef.current,
+        Math.random,
+        TALK_PRESETS[djTalkFrequency]
+      );
 
       const triggerTimeRemaining = 1.0 + Math.random() * 1.0; // Between 1.0s and 2.0s
       const duckTriggerTimeRemaining = triggerTimeRemaining + 0.5; // Lead duck 500ms before speech
 
-      if (!res.text) {
+      if (res.kind === 'silent' || (!res.text && res.kind !== 'jingle')) {
         console.log('[DJ] silent break');
         preparedBreakRef.current = {
           id: currentSongId,
           audioData: null,
           durationSec: 0,
           text: '',
-          slot: res.slot,
+          slot: 'before',
           kind: res.kind,
-          pendingState: res.state,
+          detail: res.detail,
+          pendingVarietyState: res.state,
+          varietyResult: res,
           triggerTimeRemaining,
           duckTriggerTimeRemaining,
         };
         return;
       }
 
-      console.log(`[DJ] preparing break (${res.slot}, kind: ${res.kind ?? 'none'}): "${res.text}"`);
+      if (res.kind === 'jingle') {
+        console.log(`[DJ] preparing jingle break: ${res.jingle?.id} (${res.jingle?.youtube_id})`);
+        preparedBreakRef.current = {
+          id: currentSongId,
+          audioData: null,
+          durationSec: res.jingle?.duration_sec || 5,
+          text: '',
+          slot: 'before',
+          kind: 'jingle',
+          detail: res.jingle?.title || res.jingle?.id,
+          pendingVarietyState: res.state,
+          varietyResult: res,
+          triggerTimeRemaining,
+          duckTriggerTimeRemaining,
+        };
+        return;
+      }
+
+      console.log(`[DJ] preparing break (kind: ${res.kind}, detail: ${res.detail ?? 'none'}): "${res.text}"`);
 
       // Synthesize audio ahead of time
       let audioBase64: string | null = null;
@@ -3540,9 +3783,11 @@ export default function App() {
         audioData: audioBase64,
         durationSec,
         text: res.text,
-        slot: res.slot,
+        slot: 'before',
         kind: res.kind,
-        pendingState: res.state,
+        detail: res.detail,
+        pendingVarietyState: res.state,
+        varietyResult: res,
         triggerTimeRemaining,
         duckTriggerTimeRemaining,
       };
@@ -3562,27 +3807,68 @@ export default function App() {
   const generateObservationBreak = (
     prev?: LibrarySong | null,
     next?: LibrarySong | null
-  ): { text: string; slot: 'before' | 'after'; kind: string | null } => {
+  ): { text: string; slot: 'before' | 'after'; kind: string | null; detail?: string } => {
     const prevSong = toObsSong(prev !== undefined ? prev : (previousLibrarySongRef.current || currentSongPickRef.current?.song));
     const nextSong = toObsSong(next !== undefined ? next : nextSongRef.current?.song);
     const date = activeDateRef.current;
-    const res = buildBreak(prevSong, nextSong, date, djStateRef.current, Math.random, TALK_PRESETS[djTalkFrequency]);
-    djStateRef.current = res.state;
+
+    const yearNum = parseInt(date.slice(0, 4), 10);
+    const decadeStr = (!isNaN(yearNum) && yearNum >= 1950) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s';
+    const tunedGenre = activeStationGenreRef.current;
+
+    const dynamicStations = calculateDynamicStationsForDate(
+      songLibraryRef.current,
+      date,
+      !isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960
+    );
+    const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960] || []);
+    const activeStation = (tunedGenre ? allStations.find(s => s.genre === tunedGenre) : null)
+      || allStations[0];
+    const frequencyStr = activeStation ? String(activeStation.frequency) : '91.7';
+
+    const allWeeks = weeklyTopDataRef.current;
+    let topOfWeek: TopEntry[] | null = null;
+    if (allWeeks) {
+      const validDates = Object.keys(allWeeks).filter((d) => d <= date).sort();
+      if (validDates.length > 0) {
+        topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+      }
+    }
+
+    const res = buildVarietyBreak(
+      {
+        prev: prevSong,
+        next: nextSong,
+        date,
+        now: new Date(),
+        decade: decadeStr,
+        genre: tunedGenre,
+        frequency: frequencyStr,
+        topOfWeek,
+        jingles: jinglesDataRef.current,
+        news: null,
+      },
+      varietyStateRef.current,
+      Math.random,
+      TALK_PRESETS[djTalkFrequency]
+    );
+    varietyStateRef.current = res.state;
 
     const kindFormatted = res.kind ? res.kind : 'none';
     if (!res.text) {
       console.log('[DJ] silent break');
     } else {
-      console.log(`[DJ] mode=observations slot=${res.slot} kind=${kindFormatted} text="${res.text}"`);
+      console.log(`[DJ] mode=observations kind=${kindFormatted} detail=${res.detail ?? 'none'} text="${res.text}"`);
     }
 
     setLastDjBreak({
       text: res.text,
-      slot: res.slot,
+      slot: 'before',
       kind: res.kind,
+      detail: res.detail,
     });
 
-    return { text: res.text, slot: res.slot, kind: res.kind };
+    return { text: res.text, slot: 'before', kind: res.kind, detail: res.detail };
   };
 
   const handleTestDjLine = async () => {
@@ -4543,12 +4829,20 @@ export default function App() {
                           <span>Last DJ Line:</span>
                         </span>
                         <span className="text-zinc-400 text-[10px]">
-                          slot: <strong className="text-amber-400">{lastDjBreak ? lastDjBreak.slot : 'none'}</strong> | kind:{' '}
-                          <strong className="text-amber-400">{lastDjBreak ? (lastDjBreak.kind ?? 'null (announcement)') : 'none'}</strong>
+                          kind:{' '}
+                          <strong className="text-amber-400">
+                            {lastDjBreak
+                              ? (lastDjBreak.kind
+                                  ? (lastDjBreak.detail ? `${lastDjBreak.kind}/${lastDjBreak.detail}` : lastDjBreak.kind)
+                                  : 'null (announcement)')
+                              : 'none'}
+                          </strong>
                         </span>
                       </div>
                       <div className="p-2 bg-black/50 border border-zinc-800 rounded text-zinc-300 text-[11px] italic leading-relaxed">
-                        {lastDjBreak?.text ? `"${lastDjBreak.text}"` : '(No DJ break generated yet)'}
+                        {lastDjBreak?.text
+                          ? `"${lastDjBreak.text}"`
+                          : (lastDjBreak?.kind === 'jingle' ? '[Played RETRO FM jingle]' : '(No DJ break generated yet)')}
                       </div>
                       <div className="flex justify-end pt-0.5">
                         <button
