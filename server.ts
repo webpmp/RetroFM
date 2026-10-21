@@ -24,6 +24,8 @@ import {
   getDJBreakSessionStats,
 } from './src/services/djBreak/djBreakService.js';
 import { LMStudioScriptWriterProvider } from './src/services/djBreak/LMStudioScriptWriterProvider.js';
+import { globalNewsQueueManager } from './src/services/news/newsQueueManager.js';
+import { readAuditedNewsCache } from './src/services/news/newsQueueCache.js';
 
 dotenv.config();
 
@@ -394,6 +396,54 @@ async function startServer() {
         success: false,
         error: err?.message || 'Failed generating historical fact packet',
       });
+    }
+  });
+
+  // API Route: Trigger background prefetch for news
+  app.post('/api/news/prefetch', async (req, res) => {
+    try {
+      const { date, provider, endpoint, model } = req.body;
+      if (!date || typeof date !== 'string') {
+        return res.status(400).json({ success: false, error: 'date string (YYYY-MM-DD) is required.' });
+      }
+
+      const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
+      globalNewsQueueManager.prefetchNews(date, {
+        provider: provider === 'lmstudio' ? 'lmstudio' : 'gemini',
+        endpoint: resolvedEndpoint,
+        model,
+      });
+
+      return res.json({ success: true, message: `Prefetch initiated for ${date}` });
+    } catch (err: any) {
+      console.error('[API /api/news/prefetch] Error:', err);
+      return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // API Route: Poll status of news prefetch
+  app.get('/api/news/prefetch/status', (req, res) => {
+    try {
+      const date = String(req.query.date || '');
+      const status = globalNewsQueueManager.getStatus();
+      const cached = date ? readAuditedNewsCache(date) : [];
+      return res.json({
+        success: true,
+        ...status,
+        readyLines: cached.map((c, idx) => ({ id: `line_${idx}`, text: c.line })),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // API Route: Cancel active prefetch
+  app.post('/api/news/prefetch/cancel', (_req, res) => {
+    try {
+      globalNewsQueueManager.cancel();
+      return res.json({ success: true, message: 'Prefetch cancelled.' });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message });
     }
   });
 

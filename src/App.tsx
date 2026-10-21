@@ -60,6 +60,7 @@ import {
   type Jingle,
   type TopEntry,
 } from './services/djBreak/djVariety.js';
+import { clientNewsQueue, ClientNewsStatus } from './services/news/clientNewsQueue.js';
 import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
 import manifest from '../extension/manifest.json';
 
@@ -475,10 +476,20 @@ export default function App() {
     pendingState?: DjState;
     triggerTimeRemaining: number;
     duckTriggerTimeRemaining: number;
+    newsText?: string | null;
   } | null>(null);
+  const [newsDebugStatus, setNewsDebugStatus] = useState<ClientNewsStatus>(() => clientNewsQueue.getStatus());
   const isPreparingBreakRef = useRef<boolean>(false);
   const breakTriggeredForSongIdRef = useRef<string | null>(null);
   const breakDuckingStartedRef = useRef<boolean>(false);
+
+  // Subscribe to news queue status updates
+  useEffect(() => {
+    const unsub = clientNewsQueue.subscribe((status) => {
+      setNewsDebugStatus(status);
+    });
+    return () => unsub();
+  }, []);
 
   const handleDjModeChange = (mode: 'ai' | 'observations' | 'off') => {
     setDjMode(mode);
@@ -1569,6 +1580,16 @@ export default function App() {
             const targetDate = action.date || activeDateRef.current;
             const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
 
+            // Trigger non-blocking background news prefetch on confirmed date/genre (Enter)
+            const aiProvider = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio' || 'gemini';
+            const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || undefined;
+            const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || undefined;
+            clientNewsQueue.prefetchNews(targetDate, {
+              provider: aiProvider,
+              endpoint: lmEndpoint,
+              model: lmModel,
+            });
+
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
             varietyStateRef.current = newVarietyState();
@@ -1792,6 +1813,9 @@ export default function App() {
                     }
                     if (prep.pendingState) {
                       djStateRef.current = prep.pendingState;
+                    }
+                    if (prep.kind === 'news' && prep.newsText) {
+                      clientNewsQueue.markLineUsed(prep.newsText);
                     }
                     setLastDjBreak({
                       text: prep.text,
@@ -3883,6 +3907,10 @@ export default function App() {
       if (reason) {
         logMessage(`[DJ] Discarded prepared break: ${reason}`);
       }
+      // If a news break was prepared but never played, return the line to the queue
+      if (preparedBreakRef.current.newsText) {
+        clientNewsQueue.returnLineToQueue(preparedBreakRef.current.newsText);
+      }
       preparedBreakRef.current = null;
     }
     isPreparingBreakRef.current = false;
@@ -3930,7 +3958,8 @@ export default function App() {
       }
 
       // News item from pre-audited pipeline if ready ahead of time
-      let newsItem: { text: string } | null = null;
+      const nextNewsItem = clientNewsQueue.getNextNewsLine();
+      const newsItem: { text: string } | null = nextNewsItem ? { text: nextNewsItem.text } : null;
 
       const res = buildVarietyBreak(
         {
@@ -4035,6 +4064,7 @@ export default function App() {
         varietyResult: res,
         triggerTimeRemaining,
         duckTriggerTimeRemaining,
+        newsText: res.kind === 'news' && nextNewsItem ? nextNewsItem.text : null,
       };
 
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
@@ -4087,6 +4117,7 @@ export default function App() {
       }
     }
 
+    const nextNewsItem = clientNewsQueue.getNextNewsLine();
     const res = buildVarietyBreak(
       {
         prev: prevSong,
@@ -4098,13 +4129,16 @@ export default function App() {
         frequency: frequencyStr,
         topOfWeek,
         jingles: jinglesDataRef.current,
-        news: null,
+        news: nextNewsItem ? { text: nextNewsItem.text } : null,
       },
       varietyStateRef.current,
       Math.random,
       TALK_PRESETS[djTalkFrequency]
     );
     varietyStateRef.current = res.state;
+    if (res.kind === 'news' && nextNewsItem) {
+      clientNewsQueue.markLineUsed(nextNewsItem.text);
+    }
 
     const kindFormatted = res.kind ? res.kind : 'none';
     if (!res.text) {
@@ -5080,6 +5114,12 @@ export default function App() {
                         <span className="text-amber-300 font-bold font-mono">{activeDateRef.current}</span>
                       </div>
                       <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">News Status:</span>
+                        <span className="text-amber-400 font-mono text-[10px] truncate max-w-[240px]" title={newsDebugStatus.uiText}>
+                          {newsDebugStatus.uiText}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center gap-2">
                         <span className="text-zinc-500">Tier / Genre Match:</span>
                         <span className="text-zinc-300 font-mono">
                           {currentSongPick
@@ -5124,6 +5164,12 @@ export default function App() {
                           ? `"${lastDjBreak.text}"`
                           : (lastDjBreak?.kind === 'jingle' ? '[Played RETRO FM jingle]' : '(No DJ break generated yet)')}
                       </div>
+                      {lastDjBreak?.kind === 'news' && (
+                        <div className="text-[10px] text-zinc-400 font-medium flex items-center justify-end gap-1">
+                          <span>News:</span>
+                          <span className="text-zinc-300 font-semibold">The New York Times</span>
+                        </div>
+                      )}
                       <div className="flex justify-end pt-0.5">
                         <button
                           type="button"
