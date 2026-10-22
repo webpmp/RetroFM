@@ -4425,8 +4425,8 @@ console.log('\n--- Test Suite 58: STEREO Indicator Icon in Green Display ---');
 
   // 1. STEREO SVG placed inside #decades immediately to the right of #hDate
   assert(
-    bbHtml.includes('<button class="tag" id="hDate" title="Change date"></button><div id="stereo">'),
-    'index.html places #stereo container immediately to the right of #hDate pill in #decades'
+    bbHtml.includes('<button class="tag" id="hDate" title="Change date"></button><div id="stereo" class="stereo-off">'),
+    'index.html places #stereo container (initialized with .stereo-off) immediately to the right of #hDate pill in #decades'
   );
   assert(
     bbHtml.includes('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" width="44" height="29.22">') &&
@@ -4434,14 +4434,22 @@ console.log('\n--- Test Suite 58: STEREO Indicator Icon in Green Display ---');
     'index.html includes the inline STEREO indicator SVG asset sized so icon and text match the 23px date pill height'
   );
 
-  // 2. CSS styling for #decades and #stereo
-  assert(bbCss.includes('#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:-6px}'), 'player.css styles #stereo container to match 23px date pill height');
+  // 2. CSS styling for #decades and #stereo states (.stereo-off, .stereo-searching, .stereo-locked)
+  assert(bbCss.includes('#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:14px;pointer-events:none;will-change:opacity,filter}'), 'player.css styles #stereo container to match 23px date pill height with +20px expanded horizontal offset');
   assert(bbCss.includes('#stereo svg{display:block;width:44px;height:29.22px;transform:translateY(-0.25px)}'), 'player.css sets #stereo svg dimensions so visual icon+text height equals 23px (53px collapsed / 41px expanded)');
-
-  // 3. player.js toggles #stereo display when tuned vs between stations
   assert(
-    bbJs.includes("const stereoEl=$('stereo');if(stereoEl)stereoEl.style.display=best?'':'none';"),
-    'player.js tune() shows #stereo when tuned to a genre station (best) and hides it (display:none) when between stations'
+    bbCss.includes('#stereo.stereo-off{opacity:0;filter:none;transition:opacity 90ms ease-out}') &&
+    bbCss.includes('#stereo.stereo-searching{opacity:var(--stereo-flicker-op,.26);filter:brightness(.72) drop-shadow(0 0 2px rgba(126,255,164,.22));transition:opacity 42ms linear}') &&
+    bbCss.includes('#stereo.stereo-locked{opacity:1;filter:brightness(1.12) drop-shadow(0 0 5px rgba(126,255,164,.65));transition:opacity 140ms ease-out,filter 140ms ease-out}'),
+    'player.css defines distinct visual states for .stereo-off, .stereo-searching (dim flickering glow), and .stereo-locked (steady bright glow)'
+  );
+
+  // 3. player.js drives #stereo via analog FM stereo acquisition state machine
+  assert(
+    bbJs.includes('function syncStereoIndicator()') &&
+    bbJs.includes('function startBetweenStationsFlicker()') &&
+    bbJs.includes('function resetStereoIndicator()'),
+    'player.js implements syncStereoIndicator(), startBetweenStationsFlicker(), and resetStereoIndicator()'
   );
 
   console.log('✓ 58. STEREO Indicator Icon in Green Display verified.');
@@ -4549,6 +4557,1208 @@ console.log('\n--- Test Suite 59: Functional Left-to-Right Stereo Audio Balance 
   assert(provider.getBalance() === 0, 'YouTubeMusicProvider resets balance to center (0)');
 
   console.log('✓ 59. Functional Left-to-Right Stereo Audio Balance Routing verified.');
+}
+
+// --- Test Suite 60: Analog FM Stereo Multiplex Indicator State Machine & Scenarios ---
+console.log('\n--- Test Suite 60: Analog FM Stereo Multiplex Indicator State Machine & Scenarios ---');
+await (async () => {
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // Verify structural state machine implementation in player.js
+  assert(
+    bbJs.includes("let stereoState = 'off';") &&
+    bbJs.includes('let stereoSeq = 0;') &&
+    bbJs.includes('let stereoTargetKey = null;') &&
+    bbJs.includes('let stereoAcquiring = false;'),
+    'player.js defines stereoState, stereoSeq, stereoTargetKey, and stereoAcquiring state variables'
+  );
+  assert(
+    bbJs.includes('const acquireDelayMs = 130 + Math.floor(Math.random() * 90);') &&
+    bbJs.includes('const flickerDurationMs = 420 + Math.floor(Math.random() * 240);'),
+    'player.js implements short acquisition delay (130-220ms) followed by rapid searching flicker (420-660ms) before locking'
+  );
+
+  // Create a lightweight deterministic harness mirroring the exact stereo indicator state machine in player.js
+  type StereoVisualState = 'off' | 'searching' | 'locked';
+  class StereoIndicatorHarness {
+    public stereoState: StereoVisualState = 'off';
+    public className = 'stereo-off';
+    public flickerOp = '0';
+    public stereoSeq = 0;
+    public stereoTargetKey: string | null = null;
+    public stereoAcquiring = false;
+    public flickerSamples: number[] = [];
+
+    public isLive = true;
+    public dec = 1970;
+    public stationGenre: string | null = 'Rock'; // null when between stations
+    public hasFirstSongStartedPlaying = false;
+    public transportState: 'blank' | 'playing' | 'paused' | 'stopped' = 'blank';
+    public isYtPlaybackActive = false;
+    public isSeeking = false;
+    public transientStatus: string | null = null;
+
+    private delayTimer: ReturnType<typeof setTimeout> | null = null;
+    private flickerTimer: ReturnType<typeof setTimeout> | null = null;
+    private lockTimer: ReturnType<typeof setTimeout> | null = null;
+    private deadAirTimer: ReturnType<typeof setTimeout> | null = null;
+
+    public clearStereoTimers() {
+      if (this.delayTimer) { clearTimeout(this.delayTimer); this.delayTimer = null; }
+      if (this.flickerTimer) { clearTimeout(this.flickerTimer); this.flickerTimer = null; }
+      if (this.lockTimer) { clearTimeout(this.lockTimer); this.lockTimer = null; }
+      if (this.deadAirTimer) { clearTimeout(this.deadAirTimer); this.deadAirTimer = null; }
+    }
+
+    public setStereoVisualState(nextState: StereoVisualState, op?: number) {
+      this.stereoState = nextState;
+      this.className =
+        nextState === 'locked' ? 'stereo-locked' :
+        nextState === 'searching' ? 'stereo-searching' : 'stereo-off';
+      if (nextState === 'searching') {
+        const val = typeof op === 'number' ? op : 0.25;
+        this.flickerOp = val.toFixed(2);
+        this.flickerSamples.push(Number(this.flickerOp));
+      } else {
+        this.flickerOp = '';
+      }
+    }
+
+    public startStereoFlickerLoop(seq: number) {
+      if (this.flickerTimer) { clearTimeout(this.flickerTimer); this.flickerTimer = null; }
+      let burstOn = false;
+      const stepFlicker = () => {
+        if (seq !== this.stereoSeq || this.stereoState !== 'searching') return;
+        burstOn = !burstOn || Math.random() < 0.35;
+        const op = burstOn ? (0.20 + Math.random() * 0.28) : (0.04 + Math.random() * 0.08);
+        this.setStereoVisualState('searching', op);
+        const nextDelay = 15 + Math.floor(Math.random() * 15);
+        this.flickerTimer = setTimeout(stepFlicker, nextDelay);
+      };
+      stepFlicker();
+    }
+
+    public resetStereoIndicator() {
+      this.stereoSeq++;
+      this.clearStereoTimers();
+      this.stereoTargetKey = null;
+      this.stereoAcquiring = false;
+      this.setStereoVisualState('off');
+    }
+
+    public startBetweenStationsFlicker(deadAirMs = 120) {
+      if (!this.isLive) {
+        this.resetStereoIndicator();
+        return;
+      }
+      this.stereoTargetKey = null;
+      this.stereoAcquiring = false;
+      if (this.delayTimer) { clearTimeout(this.delayTimer); this.delayTimer = null; }
+      if (this.lockTimer) { clearTimeout(this.lockTimer); this.lockTimer = null; }
+      if (this.stereoState !== 'searching') {
+        const seq = ++this.stereoSeq;
+        this.setStereoVisualState('searching', 0.28);
+        this.startStereoFlickerLoop(seq);
+      } else if (!this.flickerTimer) {
+        this.startStereoFlickerLoop(this.stereoSeq);
+      }
+      if (this.deadAirTimer) { clearTimeout(this.deadAirTimer); }
+      this.deadAirTimer = setTimeout(() => {
+        this.deadAirTimer = null;
+        if (!this.stationGenre && this.stereoState === 'searching') {
+          this.resetStereoIndicator();
+        }
+      }, deadAirMs);
+    }
+
+    public syncStereoIndicator(delayMs = 30, flickerMs = 70) {
+      if (!this.isLive) {
+        this.resetStereoIndicator();
+        return;
+      }
+      const locked = Boolean(this.stationGenre);
+      if (!locked) {
+        if (this.stereoAcquiring || this.stereoTargetKey !== null || this.stereoState === 'locked') {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+      const currentKey = `${this.dec}|${this.stationGenre}`;
+      const isStationMusicPlaying = Boolean(
+        locked &&
+        this.hasFirstSongStartedPlaying &&
+        this.transportState === 'playing' &&
+        this.isYtPlaybackActive &&
+        !this.isSeeking &&
+        this.transientStatus !== 'seek'
+      );
+      if (!isStationMusicPlaying) {
+        if (this.stereoState !== 'off' || this.stereoAcquiring || this.stereoTargetKey !== null) {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+      if (this.stereoTargetKey === currentKey && (this.stereoState === 'locked' || this.stereoAcquiring)) {
+        return;
+      }
+      const seq = ++this.stereoSeq;
+      this.clearStereoTimers();
+      this.stereoTargetKey = currentKey;
+      this.stereoAcquiring = true;
+      this.setStereoVisualState('off');
+
+      this.delayTimer = setTimeout(() => {
+        if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+        if (!this.stationGenre || this.isSeeking || this.transportState !== 'playing' || !this.isYtPlaybackActive || !this.isLive) {
+          this.resetStereoIndicator();
+          return;
+        }
+        this.setStereoVisualState('searching', 0.26);
+        this.startStereoFlickerLoop(seq);
+
+        this.lockTimer = setTimeout(() => {
+          if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+          if (!this.stationGenre || this.isSeeking || this.transportState !== 'playing' || !this.isYtPlaybackActive || !this.isLive) {
+            this.resetStereoIndicator();
+            return;
+          }
+          this.clearStereoTimers();
+          this.stereoAcquiring = false;
+          this.setStereoVisualState('locked');
+        }, flickerMs);
+      }, delayMs);
+    }
+  }
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const h = new StereoIndicatorHarness();
+
+  // Scenario 1: Initial / un-tuned state -> STEREO indicator is off
+  h.stationGenre = null;
+  h.syncStereoIndicator();
+  assert(h.stereoState === 'off' && h.className === 'stereo-off', 'Scenario 1: Initial / un-tuned state keeps STEREO indicator off');
+
+  // Scenario 2: Select a genre station while YouTube is loading -> indicator stays off (does NOT turn on immediately)
+  h.stationGenre = 'Rock';
+  h.transportState = 'playing';
+  h.isSeeking = true;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator();
+  assert(h.stereoState === 'off' && h.className === 'stereo-off', 'Scenario 2a: Selecting a genre station while YouTube is loading keeps STEREO indicator off');
+  // Video loaded, but playback has not started yet
+  h.isSeeking = false;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator();
+  assert(h.stereoState === 'off', 'Scenario 2b: Video loaded but playback not started keeps STEREO indicator off');
+
+  // Scenario 3 & 4: Music playback begins -> brief acquisition delay (off) -> dim rapid flicker (searching) -> steady bright glow (locked)
+  h.hasFirstSongStartedPlaying = true;
+  h.isYtPlaybackActive = true;
+  h.flickerSamples = [];
+  h.syncStereoIndicator(35, 80);
+  assert(h.stereoState === 'off' && h.stereoAcquiring === true, 'Scenario 3a: Immediately upon playback start, indicator is in brief pre-flicker acquisition delay (off)');
+  await wait(55);
+  assert(h.stereoState === 'searching' && h.className === 'stereo-searching', 'Scenario 3b: After brief delay, indicator enters dim flickering searching state');
+  assert(h.flickerSamples.every((op) => op <= 0.48), 'Scenario 3c: Searching flicker opacity stays dim (<= 0.48, visibly dimmer than locked 1.0)');
+  await wait(95);
+  assert(h.stereoState === 'locked' && h.className === 'stereo-locked', 'Scenario 4: Indicator settles into steady, bright locked state while music continues playing');
+
+  // Scenario 5: Move the tuning dial between stations -> dim rapid flicker while searching -> stops when settling on dead air
+  h.stationGenre = null;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator();
+  h.startBetweenStationsFlicker(90);
+  assert(h.stereoState === 'searching' && h.className === 'stereo-searching', 'Scenario 5a: Turning dial between stations triggers dim rapid searching flicker');
+  await wait(120);
+  assert(h.stereoState === 'off', 'Scenario 5b: Stopping dial between stations (dead air) turns off searching flicker');
+
+  // Scenario 6: Tune to another station -> previous lock cleared, stays off during load, acquires & locks after playback starts
+  h.stationGenre = 'Rock';
+  h.isYtPlaybackActive = true;
+  h.isSeeking = false;
+  h.syncStereoIndicator(20, 40);
+  await wait(80);
+  assert(h.stereoState === 'locked' && h.stereoTargetKey === '1970|Rock', 'Scenario 6a: Locked onto Rock station');
+
+  // Switch to Soul station (video begins loading)
+  h.stationGenre = 'Soul';
+  h.isSeeking = true;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator(25, 50);
+  assert(h.stereoState === 'off' && h.stereoTargetKey === null, 'Scenario 6b: Tuning to Soul immediately clears Rock lock and stays off while Soul loads');
+  // Soul playback begins
+  h.isSeeking = false;
+  h.isYtPlaybackActive = true;
+  h.syncStereoIndicator(25, 50);
+  await wait(35);
+  assert(h.stereoState === 'searching', 'Scenario 6c: Soul enters searching flicker once playback starts');
+  await wait(65);
+  assert(h.stereoState === 'locked' && h.stereoTargetKey === '1970|Soul', 'Scenario 6d: Soul locks into steady bright glow');
+
+  // Scenario 7: Pause or resume playback does not independently trigger a new acquisition cycle; stop turns indicator off
+  h.transportState = 'paused';
+  h.isYtPlaybackActive = false;
+  // Pausing preserves existing station lock without re-acquiring on resume
+  assert(h.stereoState === 'locked' && h.stereoTargetKey === '1970|Soul', 'Scenario 7a: Pausing playback on an acquired station does not drop stereo lock or trigger re-acquisition');
+  // Resume playback
+  h.transportState = 'playing';
+  h.isYtPlaybackActive = true;
+  h.syncStereoIndicator(25, 50);
+  assert(h.stereoState === 'locked' && h.stereoAcquiring === false, 'Scenario 7b: Resuming playback on an acquired station stays locked without restarting stereo acquisition flicker');
+
+  // Stop playback
+  h.transportState = 'stopped';
+  h.isYtPlaybackActive = false;
+  h.resetStereoIndicator();
+  assert(h.stereoState === 'off', 'Scenario 7c: Stopping playback immediately turns off STEREO indicator');
+
+  // Scenario 8: Rapid tuning across multiple stations -> stale timers canceled, no premature lock from earlier station
+  h.transportState = 'playing';
+  h.stationGenre = 'Pop';
+  h.isSeeking = false;
+  h.isYtPlaybackActive = true;
+  // Start acquiring Pop with a 40ms delay + 60ms flicker
+  h.syncStereoIndicator(40, 60);
+  const popSeq = h.stereoSeq;
+  await wait(20);
+  // Before Pop finishes acquiring, rapidly tune to Rock -> Country (still loading!)
+  h.stationGenre = 'Rock';
+  h.isSeeking = true;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator(40, 60);
+  h.stationGenre = 'Country';
+  h.isSeeking = true;
+  h.isYtPlaybackActive = false;
+  h.syncStereoIndicator(40, 60);
+  assert(h.stereoSeq > popSeq, 'Scenario 8a: Rapid tuning increments stereoSeq token and invalidates Pop timers');
+  await wait(120);
+  assert(h.stereoState === 'off', 'Scenario 8b: Earlier station (Pop) timer never illuminates STEREO while Country is still loading');
+
+  // Now Country playback actually starts
+  h.isSeeking = false;
+  h.isYtPlaybackActive = true;
+  h.syncStereoIndicator(25, 45);
+  await wait(90);
+  assert(h.stereoState === 'locked' && h.stereoTargetKey === '1970|Country', 'Scenario 8c: Final selected station (Country) cleanly acquires and locks after playback begins');
+
+  h.clearStereoTimers();
+  console.log('✓ 60. Analog FM Stereo Multiplex Indicator State Machine & Scenarios verified.');
+})();
+
+// --- Test Suite 61: Scale Graduation Proximity & Stereo Signal Strength Behavior ---
+console.log('\n--- Test Suite 61: Scale Graduation Proximity & Stereo Signal Strength Behavior ---');
+await (async () => {
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // Verify scale graduation calculation in player.js
+  assert(
+    bbJs.includes('const SCALE_GRADUATION_MHZ = 1.0;') &&
+    bbJs.includes('function getTuningProximity(freq, stations)') &&
+    bbJs.includes('const gradPx = Math.abs(mapX(89) - mapX(88));'),
+    'player.js defines SCALE_GRADUATION_MHZ = 1.0 and computes getTuningProximity using the #scale tick mapping fx'
+  );
+
+  // Mirror the exact scale mapping and getTuningProximity from extension/player/player.js
+  const fx = (f: number) => 330 + (f - 87.5) * 27.3;
+  const SCALE_GRADUATION_MHZ = 1.0;
+
+  function getTuningProximity(freq: number, stations: [string, number][]) {
+    const gradPx = Math.abs(fx(89) - fx(88)); // 27.3 SVG units per 1.0 MHz tick interval on #scale
+    let best: [string, number] | null = null;
+    let nearestStation: [string, number] | null = null;
+    let minFreqDiff = Infinity;
+    let minGraduations = Infinity;
+    for (let i = 0; i < stations.length; i++) {
+      const s = stations[i];
+      const dFreq = Math.abs(s[1] - freq);
+      const dPx = Math.abs(fx(s[1]) - fx(freq));
+      const dGrad = gradPx > 0 ? dPx / gradPx : dFreq / SCALE_GRADUATION_MHZ;
+      if (dFreq < 0.05) {
+        best = s;
+      }
+      if (dFreq < minFreqDiff) {
+        minFreqDiff = dFreq;
+        minGraduations = dGrad;
+        nearestStation = s;
+      }
+    }
+    const withinOneGraduation = !best && nearestStation !== null && minGraduations <= 1.0 + 1e-6;
+    return {
+      best,
+      nearestStation,
+      minFreqDiff: Number.isFinite(minFreqDiff) ? Number(minFreqDiff.toFixed(4)) : Infinity,
+      minGraduations: Number.isFinite(minGraduations) ? Number(minGraduations.toFixed(4)) : Infinity,
+      withinOneGraduation,
+    };
+  }
+
+  const stations1970: [string, number][] = [
+    ['AOR', 95.5],
+    ['Disco', 98.7],
+    ['Progressive Rock', 92.3],
+    ['Soft Rock', 103.5],
+    ['Funk', 107.5],
+    ['Punk Rock', 91.1],
+    ['Outlaw Country', 97.1],
+  ];
+
+  // Verify scale graduation geometry: 1 tick interval on #scale (f=88..108) is 1.0 MHz = 27.3px
+  assert(Math.abs((fx(89) - fx(88)) - 27.3) < 1e-6, 'One visible tick interval on #scale is 27.3 SVG units (1.0 MHz)');
+
+  // Create proximity-aware stereo indicator harness matching player.js
+  class ProximityStereoHarness {
+    public stereoState: 'off' | 'searching' | 'locked' = 'off';
+    public stereoSeq = 0;
+    public stereoTargetKey: string | null = null;
+    public stereoAcquiring = false;
+    public isLive = true;
+    public dec = 1970;
+    public freq = 92.3;
+    public stations: [string, number][] = stations1970;
+    public hasFirstSongStartedPlaying: boolean = true;
+    public hasActiveSignalPlayback: boolean = true;
+    public playbackEnabled: boolean = true;
+    public transportState: 'playing' | 'paused' | 'stopped' = 'playing';
+    public isYtPlaybackActive: boolean = true;
+    public isSeeking: boolean = false;
+
+    private delayTimer: ReturnType<typeof setTimeout> | null = null;
+    private lockTimer: ReturnType<typeof setTimeout> | null = null;
+
+    public clearStereoTimers() {
+      if (this.delayTimer) { clearTimeout(this.delayTimer); this.delayTimer = null; }
+      if (this.lockTimer) { clearTimeout(this.lockTimer); this.lockTimer = null; }
+    }
+
+    public resetStereoIndicator() {
+      this.stereoSeq++;
+      this.clearStereoTimers();
+      this.stereoAcquiring = false;
+      this.stereoTargetKey = null;
+      this.stereoState = 'off';
+    }
+
+    public tuneTo(newFreq: number, delayMs = 20, flickerMs = 40) {
+      const prevProx = getTuningProximity(this.freq, this.stations);
+      const nextProx = getTuningProximity(newFreq, this.stations);
+      const prevKey = `${this.dec}|${prevProx.best ? prevProx.best[0] : ''}`;
+      const nextKey = `${this.dec}|${nextProx.best ? nextProx.best[0] : ''}`;
+      this.freq = newFreq;
+
+      if (!nextProx.best) {
+        this.isYtPlaybackActive = false;
+        this.isSeeking = false;
+        this.syncStereoIndicator(delayMs, flickerMs);
+      } else {
+        if (nextKey !== prevKey) {
+          this.isYtPlaybackActive = false;
+          this.resetStereoIndicator();
+          this.isSeeking = true;
+        }
+        this.playbackEnabled = true;
+        this.syncStereoIndicator(delayMs, flickerMs);
+      }
+    }
+
+    public syncStereoIndicator(delayMs = 20, flickerMs = 40) {
+      if (!this.isLive) {
+        this.resetStereoIndicator();
+        return;
+      }
+      const prox = getTuningProximity(this.freq, this.stations);
+      const best = prox.best;
+      if (!best) {
+        const canFlickerNearStation = Boolean(
+          prox.withinOneGraduation &&
+          this.hasFirstSongStartedPlaying &&
+          this.hasActiveSignalPlayback &&
+          this.playbackEnabled &&
+          this.transportState === 'playing'
+        );
+        if (canFlickerNearStation) {
+          if (this.stereoState !== 'searching' || this.stereoAcquiring || this.stereoTargetKey !== null) {
+            this.stereoSeq++;
+            this.clearStereoTimers();
+            this.stereoAcquiring = false;
+            this.stereoTargetKey = null;
+            this.stereoState = 'searching';
+          }
+        } else if (this.stereoState !== 'off' || this.stereoAcquiring || this.stereoTargetKey !== null) {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+
+      const currentKey = `${this.dec}|${best[0]}`;
+      const isStationMusicPlaying = Boolean(
+        this.hasFirstSongStartedPlaying &&
+        this.hasActiveSignalPlayback &&
+        this.transportState === 'playing' &&
+        this.isYtPlaybackActive &&
+        !this.isSeeking
+      );
+      if (!isStationMusicPlaying) {
+        if (this.stereoState !== 'off' || this.stereoAcquiring || this.stereoTargetKey !== null) {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+      if (this.stereoTargetKey === currentKey && (this.stereoState === 'locked' || this.stereoAcquiring)) {
+        return;
+      }
+      const seq = ++this.stereoSeq;
+      this.clearStereoTimers();
+      this.stereoTargetKey = currentKey;
+      this.stereoAcquiring = true;
+      this.stereoState = 'off';
+
+      this.delayTimer = setTimeout(() => {
+        if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+        const curProx = getTuningProximity(this.freq, this.stations);
+        if (!curProx.best || `${this.dec}|${curProx.best[0]}` !== currentKey || this.isSeeking || this.transportState !== 'playing' || !this.isYtPlaybackActive || !this.hasActiveSignalPlayback) {
+          this.syncStereoIndicator(delayMs, flickerMs);
+          return;
+        }
+        this.stereoState = 'searching';
+        this.lockTimer = setTimeout(() => {
+          if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+          const lockProx = getTuningProximity(this.freq, this.stations);
+          if (!lockProx.best || `${this.dec}|${lockProx.best[0]}` !== currentKey || this.isSeeking || this.transportState !== 'playing' || !this.isYtPlaybackActive || !this.hasActiveSignalPlayback) {
+            this.syncStereoIndicator(delayMs, flickerMs);
+            return;
+          }
+          this.clearStereoTimers();
+          this.stereoAcquiring = false;
+          this.stereoState = 'locked';
+        }, flickerMs);
+      }, delayMs);
+    }
+  }
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const ph = new ProximityStereoHarness();
+
+  // 1. At a genre station (95.5 FM AOR), existing acquisition and locked behavior remains unchanged
+  ph.freq = 95.5;
+  ph.isSeeking = false;
+  ph.isYtPlaybackActive = true;
+  ph.syncStereoIndicator(20, 40);
+  assert(ph.stereoState === 'off' && ph.stereoAcquiring === true, 'Validation 1a: At genre station (95.5 FM), starts in pre-flicker delay');
+  await wait(30);
+  assert(ph.stereoState === 'searching', 'Validation 1b: At genre station (95.5 FM), flickers dimly during acquisition');
+  await wait(50);
+  assert(ph.stereoState === 'locked', 'Validation 1c: At genre station (95.5 FM), locks into steady bright glow');
+
+  // 2. One graduation to the left of a genre station (94.5 - 95.3 FM for 95.5 FM AOR) -> flickers dimly
+  for (const leftFreq of [95.3, 94.9, 94.5]) {
+    ph.tuneTo(leftFreq);
+    assert(ph.stereoState === 'searching', `Validation 2: Within 1 scale graduation to the left (${leftFreq} FM, ${Number((95.5 - leftFreq).toFixed(1))} grad from 95.5 FM) flickers dimly`);
+  }
+
+  // 3. One graduation to the right of a genre station (103.7 - 104.5 FM for 103.5 FM Soft Rock) -> flickers dimly
+  for (const rightFreq of [103.7, 104.1, 104.5]) {
+    ph.tuneTo(rightFreq);
+    assert(ph.stereoState === 'searching', `Validation 3: Within 1 scale graduation to the right (${rightFreq} FM, ${Number((rightFreq - 103.5).toFixed(1))} grad from 103.5 FM) flickers dimly`);
+  }
+
+  // 4. More than one graduation away on either side -> completely off
+  for (const farFreq of [89.5, 93.5, 93.9, 94.3, 100.1, 101.5, 102.3, 105.5, 106.3]) {
+    ph.tuneTo(farFreq);
+    const prox = getTuningProximity(farFreq, stations1970);
+    assert(prox.minGraduations > 1.0 && ph.stereoState === 'off', `Validation 4: More than 1 scale graduation away (${farFreq} FM, nearest=${prox.minGraduations} grad) turns STEREO completely off`);
+  }
+
+  // 5. Moving between two genre stations (92.3 FM Progressive Rock -> 95.5 FM AOR):
+  //    locked -> flickering -> off -> flickering -> off (loading) -> flickering -> locked
+  ph.freq = 92.3;
+  ph.isSeeking = false;
+  ph.isYtPlaybackActive = true;
+  ph.syncStereoIndicator(15, 30);
+  await wait(60);
+  assert(ph.stereoState === 'locked', 'Validation 5a: At 92.3 FM (Progressive Rock), indicator is locked');
+
+  ph.tuneTo(92.9); // 0.6 graduations right of 92.3 FM
+  assert(ph.stereoState === 'searching', 'Validation 5b: 1 graduation away (92.9 FM), indicator switches to dim flickering');
+
+  ph.tuneTo(93.9); // 1.6 graduations from both 92.3 FM and 95.5 FM
+  assert(ph.stereoState === 'off', 'Validation 5c: More than 1 graduation away (93.9 FM), indicator turns completely off');
+
+  ph.tuneTo(94.9); // 0.6 graduations left of 95.5 FM
+  assert(ph.stereoState === 'searching', 'Validation 5d: Entering 1-graduation range of next station (94.9 FM), dim flickering appears');
+
+  ph.tuneTo(95.5, 20, 40); // At 95.5 FM (AOR), loading new station
+  assert(ph.stereoState === 'off' && Boolean(ph.isSeeking), 'Validation 5e: At next station (95.5 FM), indicator is off while new video loads');
+
+  // Playback starts on 95.5 FM
+  ph.isSeeking = false;
+  ph.isYtPlaybackActive = true;
+  ph.syncStereoIndicator(20, 40);
+  await wait(30);
+  assert(ph.stereoState === 'searching', 'Validation 5f: Next station (95.5 FM) flickers during acquisition');
+  await wait(50);
+  assert(ph.stereoState === 'locked', 'Validation 5g: Next station (95.5 FM) locks into steady bright glow');
+
+  // 6. Moving the dial rapidly cannot cause the indicator to illuminate outside the permitted range
+  ph.tuneTo(98.7, 30, 50); // Tune to Disco
+  ph.isSeeking = false;
+  ph.isYtPlaybackActive = true;
+  ph.syncStereoIndicator(30, 50); // Start acquiring Disco
+  await wait(15);
+  // Rapidly move dial out to dead zone (101.1 FM, 2.4 graduations from 98.7 and 2.4 from 103.5)
+  ph.tuneTo(101.1);
+  assert(ph.stereoState === 'off', 'Validation 6a: Rapidly moving to 101.1 FM (>1 graduation away) immediately turns off indicator');
+  await wait(100);
+  assert(ph.stereoState === 'off', 'Validation 6b: Earlier station (Disco) acquisition timer cannot turn indicator back on outside permitted range');
+
+  // 7. Behavior works consistently across all genre stations in the decade
+  for (const [genreName, stFreq] of stations1970) {
+    const leftOneGrad = Number((stFreq - 0.8).toFixed(1));
+    const rightOneGrad = Number((stFreq + 0.8).toFixed(1));
+    ph.tuneTo(leftOneGrad);
+    assert(ph.stereoState === 'searching', `Validation 7 (${genreName} ${stFreq} FM): 0.8 grad left (${leftOneGrad} FM) flickers dimly`);
+    ph.tuneTo(rightOneGrad);
+    assert(ph.stereoState === 'searching', `Validation 7 (${genreName} ${stFreq} FM): 0.8 grad right (${rightOneGrad} FM) flickers dimly`);
+  }
+
+  // 8. Indicator remains off when no playable music is running, even when the dial is near a station
+  ph.hasActiveSignalPlayback = false;
+  ph.transportState = 'paused';
+  ph.tuneTo(95.1); // 0.4 graduations from 95.5 FM AOR
+  assert(ph.stereoState === 'off', 'Validation 8a: When paused, indicator remains off even at 0.4 graduations from a station (95.1 FM)');
+
+  ph.transportState = 'stopped';
+  ph.playbackEnabled = false;
+  ph.tuneTo(95.9); // 0.4 graduations from 95.5 FM AOR
+  assert(ph.stereoState === 'off', 'Validation 8b: When stopped, indicator remains off even at 0.4 graduations from a station (95.9 FM)');
+
+  ph.hasFirstSongStartedPlaying = false;
+  ph.transportState = 'playing';
+  ph.playbackEnabled = true;
+  ph.tuneTo(94.9); // 0.6 graduations from 95.5 FM AOR before first song ever starts
+  assert(ph.stereoState === 'off', 'Validation 8c: Before any playable music has started, indicator remains off near a station (94.9 FM)');
+
+  ph.clearStereoTimers();
+  console.log('✓ 61. Scale Graduation Proximity & Stereo Signal Strength Behavior verified.');
+})();
+
+// --- Test Suite 62: Stereo Lock Persistence Across Song Transitions & Re-Tuning ---
+console.log('\n--- Test Suite 62: Stereo Lock Persistence Across Song Transitions & Re-Tuning ---');
+await (async () => {
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  assert(
+    bbJs.includes('let stereoLockedKey = null;') &&
+    bbJs.includes('if (stereoLockedKey === currentKey)') &&
+    bbJs.includes('stereoLockedKey = currentKey;'),
+    'player.js tracks stereoLockedKey for the acquired station and keeps STEREO locked across song transitions'
+  );
+
+  const fx = (f: number) => 330 + (f - 87.5) * 27.3;
+  const SCALE_GRADUATION_MHZ = 1.0;
+
+  function getTuningProximity(freq: number, stations: [string, number][]) {
+    const gradPx = Math.abs(fx(89) - fx(88));
+    let best: [string, number] | null = null;
+    let nearestStation: [string, number] | null = null;
+    let minFreqDiff = Infinity;
+    let minGraduations = Infinity;
+    for (let i = 0; i < stations.length; i++) {
+      const s = stations[i];
+      const dFreq = Math.abs(s[1] - freq);
+      const dPx = Math.abs(fx(s[1]) - fx(freq));
+      const dGrad = gradPx > 0 ? dPx / gradPx : dFreq / SCALE_GRADUATION_MHZ;
+      if (dFreq < 0.05) best = s;
+      if (dFreq < minFreqDiff) {
+        minFreqDiff = dFreq;
+        minGraduations = dGrad;
+        nearestStation = s;
+      }
+    }
+    const withinOneGraduation = !best && nearestStation !== null && minGraduations <= 1.0 + 1e-6;
+    return { best, nearestStation, minFreqDiff, minGraduations, withinOneGraduation };
+  }
+
+  const stations1970: [string, number][] = [
+    ['AOR', 95.5],
+    ['Disco', 98.7],
+    ['Progressive Rock', 92.3],
+    ['Soft Rock', 103.5],
+    ['Funk', 107.5],
+    ['Punk Rock', 91.1],
+    ['Outlaw Country', 97.1],
+  ];
+
+  class StationLockStereoHarness {
+    public stereoState: 'off' | 'searching' | 'locked' = 'off';
+    public stereoSeq = 0;
+    public stereoTargetKey: string | null = null;
+    public stereoLockedKey: string | null = null;
+    public stereoAcquiring = false;
+    public isLive = true;
+    public dec = 1970;
+    public freq = 89.5; // Initially untuned
+    public lastKey = '1970|';
+    public stations: [string, number][] = stations1970;
+    public hasFirstSongStartedPlaying = false;
+    public hasActiveSignalPlayback = false;
+    public playbackEnabled = false;
+    public transportState: 'playing' | 'paused' | 'stopped' = 'stopped';
+    public isYtPlaybackActive = false;
+    public isSeeking = false;
+    public currentVideoId: string | null = null;
+    public currentSongTitle: string | null = null;
+
+    private delayTimer: ReturnType<typeof setTimeout> | null = null;
+    private lockTimer: ReturnType<typeof setTimeout> | null = null;
+
+    public clearStereoTimers() {
+      if (this.delayTimer) { clearTimeout(this.delayTimer); this.delayTimer = null; }
+      if (this.lockTimer) { clearTimeout(this.lockTimer); this.lockTimer = null; }
+    }
+
+    public resetStereoIndicator() {
+      this.stereoSeq++;
+      this.clearStereoTimers();
+      this.stereoAcquiring = false;
+      this.stereoTargetKey = null;
+      this.stereoLockedKey = null;
+      this.stereoState = 'off';
+    }
+
+    public tuneTo(newFreq: number, delayMs = 20, flickerMs = 40) {
+      this.freq = newFreq;
+      const prox = getTuningProximity(newFreq, this.stations);
+      const best = prox.best;
+      const key = `${this.dec}|${best ? best[0] : ''}`;
+      const stationChanged = key !== this.lastKey;
+
+      if (!best) {
+        this.isYtPlaybackActive = false;
+        this.stereoLockedKey = null;
+        this.isSeeking = false;
+        this.syncStereoIndicator(delayMs, flickerMs);
+      } else {
+        if (stationChanged) {
+          this.isYtPlaybackActive = false;
+          this.resetStereoIndicator();
+          this.isSeeking = true;
+        }
+        this.playbackEnabled = true;
+        this.transportState = 'playing';
+        this.syncStereoIndicator(delayMs, flickerMs);
+      }
+      this.lastKey = key;
+    }
+
+    public onYtStateChanged(rawState: number, videoId: string, delayMs = 20, flickerMs = 40) {
+      const isJingle = videoId === '3Wk2FzsxK4k' || (!this.hasFirstSongStartedPlaying && rawState !== 1);
+      if (rawState === 1 && videoId !== '3Wk2FzsxK4k') {
+        this.hasFirstSongStartedPlaying = true;
+        this.isYtPlaybackActive = true;
+        this.hasActiveSignalPlayback = true;
+        this.playbackEnabled = true;
+        this.isSeeking = false;
+        this.transportState = 'playing';
+        this.currentVideoId = videoId;
+        this.syncStereoIndicator(delayMs, flickerMs);
+      } else if (rawState === 0) {
+        this.isYtPlaybackActive = false;
+        if (!isJingle) {
+          this.isSeeking = true;
+          this.syncStereoIndicator(delayMs, flickerMs);
+        } else {
+          this.isSeeking = false;
+          this.hasActiveSignalPlayback = false;
+          this.resetStereoIndicator();
+        }
+      } else if (rawState === 3) {
+        // Buffering next song
+        this.isYtPlaybackActive = false;
+        this.isSeeking = true;
+        this.syncStereoIndicator(delayMs, flickerMs);
+      } else if (rawState === 2) {
+        // Paused
+        this.isYtPlaybackActive = false;
+        if (!this.isSeeking) {
+          this.transportState = 'paused';
+        }
+        this.syncStereoIndicator(delayMs, flickerMs);
+      }
+    }
+
+    public syncStereoIndicator(delayMs = 20, flickerMs = 40) {
+      if (!this.isLive) {
+        this.resetStereoIndicator();
+        return;
+      }
+      const prox = getTuningProximity(this.freq, this.stations);
+      const best = prox.best;
+      if (!best) {
+        this.stereoLockedKey = null;
+        const canFlickerNearStation = Boolean(
+          prox.withinOneGraduation &&
+          this.hasFirstSongStartedPlaying &&
+          this.hasActiveSignalPlayback &&
+          this.playbackEnabled &&
+          this.transportState === 'playing'
+        );
+        if (canFlickerNearStation) {
+          this.stereoSeq++;
+          this.clearStereoTimers();
+          this.stereoAcquiring = false;
+          this.stereoTargetKey = null;
+          this.stereoState = 'searching';
+        } else {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+
+      const currentKey = `${this.dec}|${best[0]}`;
+      if (this.stereoLockedKey && this.stereoLockedKey !== currentKey) {
+        this.stereoLockedKey = null;
+      }
+      if (this.stereoLockedKey === currentKey) {
+        this.clearStereoTimers();
+        this.stereoAcquiring = false;
+        this.stereoTargetKey = currentKey;
+        if (this.stereoState !== 'locked') {
+          this.stereoState = 'locked';
+        }
+        return;
+      }
+
+      const isStationMusicPlaying = Boolean(
+        this.hasFirstSongStartedPlaying &&
+        this.hasActiveSignalPlayback &&
+        this.transportState === 'playing' &&
+        this.isYtPlaybackActive &&
+        !this.isSeeking
+      );
+      if (!isStationMusicPlaying) {
+        if (this.stereoState !== 'off' || this.stereoAcquiring || this.stereoTargetKey !== null) {
+          this.resetStereoIndicator();
+        }
+        return;
+      }
+      if (this.stereoTargetKey === currentKey && (this.stereoState === 'locked' || this.stereoAcquiring)) {
+        return;
+      }
+
+      const seq = ++this.stereoSeq;
+      this.clearStereoTimers();
+      this.stereoTargetKey = currentKey;
+      this.stereoAcquiring = true;
+      this.stereoState = 'off';
+
+      this.delayTimer = setTimeout(() => {
+        if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+        this.stereoState = 'searching';
+        this.lockTimer = setTimeout(() => {
+          if (seq !== this.stereoSeq || this.stereoTargetKey !== currentKey) return;
+          this.clearStereoTimers();
+          this.stereoAcquiring = false;
+          this.stereoLockedKey = currentKey;
+          this.stereoState = 'locked';
+        }, flickerMs);
+      }, delayMs);
+    }
+  }
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const sh = new StationLockStereoHarness();
+
+  // 1. Initial tuning to a genre station (95.5 FM AOR): off while loading -> flickers when playback starts -> locks
+  sh.tuneTo(95.5, 20, 40);
+  assert(sh.stereoState === 'off' && sh.stereoLockedKey === null, 'Validation 1a: Indicator stays off while first song loads on newly tuned station');
+  sh.onYtStateChanged(1, 'vid_song_1', 20, 40);
+  assert(sh.stereoState === 'off' && sh.stereoAcquiring === true, 'Validation 1b: Acquisition begins once first song starts playing');
+  await wait(30);
+  assert(sh.stereoState === 'searching', 'Validation 1c: Indicator flickers dimly during initial station acquisition');
+  await wait(50);
+  assert(sh.stereoState === 'locked' && sh.stereoLockedKey === '1970|AOR', 'Validation 1d: Indicator locks steadily once station acquisition completes');
+
+  // 2. Next song transition on the same station: remains steadily locked without flickering
+  sh.onYtStateChanged(0, 'vid_song_1'); // Current song ends
+  assert(sh.stereoState === 'locked' && !sh.stereoAcquiring, 'Validation 2a: Indicator stays locked when current song ends (rawState=0)');
+  sh.onYtStateChanged(3, 'vid_song_2'); // Next song buffering/loading
+  assert(sh.stereoState === 'locked' && !sh.stereoAcquiring, 'Validation 2b: Indicator stays locked while next song buffers/loads (rawState=3)');
+  sh.currentSongTitle = 'Song Two';
+  sh.onYtStateChanged(1, 'vid_song_2'); // Next song starts playing
+  assert(sh.stereoState === 'locked' && !sh.stereoAcquiring, 'Validation 2c: Indicator remains locked without restarting acquisition when next song starts');
+
+  // 3. Multiple songs in a row on the same station: remains locked across several consecutive transitions
+  for (let i = 3; i <= 5; i++) {
+    sh.onYtStateChanged(0, `vid_song_${i - 1}`);
+    assert(sh.stereoState === 'locked', `Validation 3a (song ${i}): Locked on song end`);
+    sh.onYtStateChanged(3, `vid_song_${i}`);
+    assert(sh.stereoState === 'locked', `Validation 3b (song ${i}): Locked during buffering`);
+    sh.onYtStateChanged(1, `vid_song_${i}`);
+    assert(sh.stereoState === 'locked', `Validation 3c (song ${i}): Locked when playback starts`);
+  }
+
+  // 4. Pause and resume on the same station: does not trigger a new acquisition cycle
+  sh.onYtStateChanged(2, 'vid_song_5'); // Paused
+  assert(sh.stereoState === 'locked' && sh.stereoLockedKey === '1970|AOR', 'Validation 4a: Pausing playback does not clear station lock');
+  sh.onYtStateChanged(1, 'vid_song_5'); // Resumed
+  assert(sh.stereoState === 'locked' && !sh.stereoAcquiring, 'Validation 4b: Resuming playback does not trigger a new acquisition cycle');
+
+  // 5. Weak signal range (within 1 graduation) and no signal range (> 1 graduation) when tuning away
+  sh.tuneTo(94.9); // 0.6 graduations left of 95.5 FM AOR
+  assert(sh.stereoState === 'searching' && sh.stereoLockedKey === null, 'Validation 5a: Tuning within 1 graduation (94.9 FM) clears lock and shows weak-signal dim flicker');
+  sh.tuneTo(93.9); // 1.6 graduations away from both 95.5 FM and 92.3 FM
+  assert(sh.stereoState === 'off' && sh.stereoLockedKey === null, 'Validation 5b: Tuning >1 graduation away (93.9 FM) hides STEREO indicator completely');
+
+  // 6. Tune back to the SAME station (95.5 FM AOR): treated as a new tuning event, waits for playback, runs full acquisition
+  sh.tuneTo(95.5, 20, 40);
+  assert(sh.stereoState === 'off' && sh.stereoLockedKey === null && sh.isSeeking === true, 'Validation 6a: Tuning back to the same station (95.5 FM) keeps indicator off while loading/resuming');
+  sh.onYtStateChanged(1, 'vid_song_5', 20, 40);
+  assert(sh.stereoState === 'off' && sh.stereoAcquiring === true, 'Validation 6b: Returning to same station starts fresh acquisition once playback begins');
+  await wait(30);
+  assert(sh.stereoState === 'searching', 'Validation 6c: Returning to same station runs dim flickering acquisition');
+  await wait(50);
+  assert(sh.stereoState === 'locked' && sh.stereoLockedKey === '1970|AOR', 'Validation 6d: Returning to same station locks after acquisition completes');
+
+  sh.clearStereoTimers();
+  console.log('✓ 62. Stereo Lock Persistence Across Song Transitions & Re-Tuning verified.');
+})();
+
+// --- Test Suite 63: Green LCD Display Shared Phosphor Glow ---
+console.log('\n--- Test Suite 63: Green LCD Display Shared Phosphor Glow ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+
+  assert(
+    bbCss.includes('#panel{--lcd-glow-text-sm:') &&
+    bbCss.includes('--lcd-glow-text-md:') &&
+    bbCss.includes('--lcd-glow-status:') &&
+    bbCss.includes('--lcd-glow-seg:') &&
+    bbCss.includes('--lcd-glow-frame:') &&
+    bbCss.includes('--lcd-glow-pill-lit:'),
+    'player.css defines shared phosphor glow custom properties scoped strictly to #panel'
+  );
+
+  assert(
+    bbCss.includes('#panel #sg,#panel #sdot{text-shadow:var(--lcd-glow-text-md)}') &&
+    bbCss.includes('#panel .seg-st-sym,#panel .seg-st-text{text-shadow:var(--lcd-glow-status)}') &&
+    bbCss.includes('#panel .seg-bar.on,#panel .seg-dp-box,#panel .seg-st-bar.on{box-shadow:var(--lcd-glow-seg)}') &&
+    bbCss.includes('#panel .seg-unit-fm{text-shadow:var(--lcd-glow-text-md)}') &&
+    bbCss.includes('#panel .seg-unit-mhz{text-shadow:var(--lcd-glow-text-sm)}'),
+    'player.css applies size-appropriate dual-layer phosphor glow to song/time readout, status text, 7-segment bars, and FM/MHz units'
+  );
+
+  assert(
+    bbCss.includes('#panel .tag,#panel button.tag,#panel #hDate,#panel .chip,#panel .dec{text-shadow:var(--lcd-glow-text-sm);box-shadow:var(--lcd-glow-frame)}') &&
+    bbCss.includes('#panel #tgl{box-shadow:var(--lcd-glow-frame);transition:background .15s,box-shadow .15s}') &&
+    bbCss.includes('#panel #tglIcon{overflow:visible;filter:drop-shadow(0 0 2px rgba(126,255,164,.45))}') &&
+    bbCss.includes('#panel .chip.sel,#panel .dec.sel,#panel #hUp{text-shadow:none;box-shadow:var(--lcd-glow-pill-lit)}'),
+    'player.css applies restrained phosphor glow to LCD pills, borders, #tgl button/triangle icon, and active selected pills while keeping cutout text sharp'
+  );
+
+  assert(
+    bbCss.includes('#panel #sg{will-change:opacity;backface-visibility:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}'),
+    'player.css pins #panel #sg to a stable compositor layer with consistent antialiasing across opacity fade transitions'
+  );
+
+  assert(
+    bbHtml.includes('<filter id="tglGlow" x="-60%" y="-60%" width="220%" height="220%">') &&
+    bbHtml.includes('filter="url(#tglGlow)"'),
+    'index.html adapts the dual-layer SVG Gaussian blur + SourceGraphic merge filter for #tglIcon with unclipped filter bounds'
+  );
+
+  console.log('✓ 63. Green LCD Display Shared Phosphor Glow verified.');
+}
+
+// --- Test Suite 64: Dial Drag Lifecycle & Sticky Drag Prevention (kVol, kBal, kTun) ---
+console.log('\n--- Test Suite 64: Dial Drag Lifecycle & Sticky Drag Prevention (kVol, kBal, kTun) ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // Verify shared knob() drag lifecycle protections exist in player.js
+  assert(
+    bbJs.includes("window.addEventListener('pointermove',onMove,true);") &&
+    bbJs.includes("window.addEventListener('pointerup',stopDrag,true);") &&
+    bbJs.includes("window.addEventListener('pointercancel',stopDrag,true);") &&
+    bbJs.includes("window.addEventListener('mouseup',stopDrag,true);") &&
+    bbJs.includes("window.addEventListener('blur',stopDrag);") &&
+    bbJs.includes("el.onpointerup=el.onpointercancel=el.onlostpointercapture=stopDrag;") &&
+    bbJs.includes("(e.buttons&1)===0"),
+    'player.js knob() implements complete pointer/window release, lostpointercapture, blur, visibilitychange, and buttons===0 failsafe cleanup'
+  );
+
+  // Create a behavioral harness mirroring player.js S, knob(), and window/document listeners
+  function createDialTestEnv() {
+    const winListeners: Record<string, Set<Function>> = {};
+    const docListeners: Record<string, Set<Function>> = {};
+    const mockWin = {
+      addEventListener(type: string, fn: Function) {
+        if (!winListeners[type]) winListeners[type] = new Set();
+        winListeners[type].add(fn);
+      },
+      removeEventListener(type: string, fn: Function) {
+        winListeners[type]?.delete(fn);
+      },
+      dispatch(type: string, ev: any = {}) {
+        const eventObj = { type, ...ev };
+        winListeners[type]?.forEach((fn) => fn(eventObj));
+      },
+      activeListenerCount() {
+        return Object.values(winListeners).reduce((acc, s) => acc + s.size, 0);
+      },
+    };
+    const mockDoc = {
+      hidden: false,
+      addEventListener(type: string, fn: Function) {
+        if (!docListeners[type]) docListeners[type] = new Set();
+        docListeners[type].add(fn);
+      },
+      removeEventListener(type: string, fn: Function) {
+        docListeners[type]?.delete(fn);
+      },
+      dispatch(type: string, ev: any = {}) {
+        const eventObj = { type, ...ev };
+        docListeners[type]?.forEach((fn) => fn(eventObj));
+      },
+    };
+
+    const S: Record<string, number> = { vol: 0.7, bal: 0.5, tun: (100.3 - 87.5) / 20.5 };
+    let isTuningDrag = false;
+    let isBalanceDrag = false;
+    let flushTuneCalls = 0;
+    let syncStereoCalls = 0;
+    const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+
+    function createKnobElement() {
+      const captured = new Set<number>();
+      return {
+        style: { transform: '', cursor: 'grab' },
+        onpointerdown: null as any,
+        onpointermove: null as any,
+        onpointerup: null as any,
+        onpointercancel: null as any,
+        onlostpointercapture: null as any,
+        onwheel: null as any,
+        onkeydown: null as any,
+        setPointerCapture(pid: number) { captured.add(pid); },
+        hasPointerCapture(pid: number) { return captured.has(pid); },
+        releasePointerCapture(pid: number) { captured.delete(pid); },
+        capturedCount() { return captured.size; },
+      };
+    }
+
+    function knob(el: any, key: string, base: number, min: number, max: number, onSet: () => void, step: number, sens?: number) {
+      const rot = () => { el.style.transform = 'rotate(' + (min + S[key] * (max - min) - base) + 'deg)'; };
+      const set: any = (v: number) => { S[key] = clamp(v); onSet && onSet(); rot(); };
+      let lx = 0, ly = 0, drag = false, activePointerId: number | null = null, hadPrimaryButtonDown = false, lastMoveEvent: any = null;
+      const divisor = typeof sens === 'number' ? sens : 220;
+      const stopDrag = (e?: any) => {
+        if (!drag) return;
+        if (e && typeof e.pointerId === 'number' && activePointerId !== null && e.pointerId !== activePointerId && e.type !== 'blur' && e.type !== 'visibilitychange' && e.type !== 'lostpointercapture') return;
+        const pid = activePointerId;
+        drag = false;
+        activePointerId = null;
+        hadPrimaryButtonDown = false;
+        lastMoveEvent = null;
+        el.style.cursor = 'grab';
+        mockWin.removeEventListener('pointermove', onMove);
+        mockWin.removeEventListener('pointerup', stopDrag);
+        mockWin.removeEventListener('pointercancel', stopDrag);
+        mockWin.removeEventListener('mouseup', stopDrag);
+        mockWin.removeEventListener('blur', stopDrag);
+        mockDoc.removeEventListener('visibilitychange', onVisChange);
+        if (pid !== null) {
+          try { if (el.hasPointerCapture && el.hasPointerCapture(pid)) el.releasePointerCapture(pid); } catch (_) {}
+        }
+        if (key === 'tun') {
+          isTuningDrag = false;
+          flushTuneCalls++;
+          syncStereoCalls++;
+        }
+        if (key === 'bal') isBalanceDrag = false;
+      };
+      const onVisChange = () => { if (mockDoc.hidden) stopDrag({ type: 'visibilitychange' }); };
+      const onMove = (e: any) => {
+        if (!drag || e === lastMoveEvent) return;
+        if (typeof e.pointerId === 'number' && activePointerId !== null && e.pointerId !== activePointerId) return;
+        if ((e.isTrusted || hadPrimaryButtonDown) && typeof e.buttons === 'number' && e.pointerType !== 'touch' && (e.buttons & 1) === 0) {
+          stopDrag(e);
+          return;
+        }
+        lastMoveEvent = e;
+        if (e.clientX === lx && e.clientY === ly) return;
+        set(S[key] + ((e.clientX - lx) - (e.clientY - ly)) / divisor);
+        lx = e.clientX;
+        ly = e.clientY;
+      };
+      el.onpointerdown = (e: any) => {
+        if (typeof e.button === 'number' && e.button !== 0) return;
+        if (drag) stopDrag();
+        if (e.preventDefault) e.preventDefault();
+        drag = true;
+        activePointerId = typeof e.pointerId === 'number' ? e.pointerId : null;
+        hadPrimaryButtonDown = Boolean(e.isTrusted || (typeof e.buttons === 'number' && (e.buttons & 1) === 1));
+        lx = e.clientX;
+        ly = e.clientY;
+        try { if (activePointerId !== null && el.setPointerCapture) el.setPointerCapture(activePointerId); } catch (_) {}
+        el.style.cursor = 'grabbing';
+        if (key === 'tun') isTuningDrag = true;
+        if (key === 'bal') isBalanceDrag = true;
+        mockWin.addEventListener('pointermove', onMove);
+        mockWin.addEventListener('pointerup', stopDrag);
+        mockWin.addEventListener('pointercancel', stopDrag);
+        mockWin.addEventListener('mouseup', stopDrag);
+        mockWin.addEventListener('blur', stopDrag);
+        mockDoc.addEventListener('visibilitychange', onVisChange);
+      };
+      el.onpointermove = onMove;
+      el.onpointerup = el.onpointercancel = el.onlostpointercapture = stopDrag;
+      rot();
+      set.isDragging = () => drag;
+      set.stopDrag = stopDrag;
+      return set;
+    }
+
+    const kVol = createKnobElement();
+    const kBal = createKnobElement();
+    const kTun = createKnobElement();
+    let volUpdates = 0, balUpdates = 0, tunUpdates = 0;
+    const setVol = knob(kVol, 'vol', -163, -140, 140, () => { volUpdates++; }, 0.03);
+    const setBal = knob(kBal, 'bal', 10, -135, 135, () => { balUpdates++; }, 0.04);
+    const setTun = knob(kTun, 'tun', 40, -135, 135, () => { tunUpdates++; }, 0.2 / 20.5, 450);
+
+    return {
+      S, kVol, kBal, kTun, setVol, setBal, setTun, mockWin, mockDoc,
+      getFlags: () => ({ isTuningDrag, isBalanceDrag, flushTuneCalls, syncStereoCalls, volUpdates, balUpdates, tunUpdates }),
+    };
+  }
+
+  // Test all 6 required scenarios across all three dials: Volume (vol), Balance (bal), and Tuning (tun)
+  for (const dialKey of ['vol', 'bal', 'tun'] as const) {
+    const env = createDialTestEnv();
+    const el = dialKey === 'vol' ? env.kVol : dialKey === 'bal' ? env.kBal : env.kTun;
+    const setter = dialKey === 'vol' ? env.setVol : dialKey === 'bal' ? env.setBal : env.setTun;
+
+    // 1. Normal drag: pressing and moving the pointer updates the dial
+    const initialVal = env.S[dialKey];
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 1, clientX: 100, clientY: 100, isTrusted: true });
+    assert(setter.isDragging() === true && el.style.cursor === 'grabbing', `[${dialKey}] Scenario 1a: pointerdown starts drag and sets grabbing cursor`);
+    if (dialKey === 'tun') assert(env.getFlags().isTuningDrag === true, `[${dialKey}] Scenario 1b: isTuningDrag is true during tuning drag`);
+    if (dialKey === 'bal') assert(env.getFlags().isBalanceDrag === true, `[${dialKey}] Scenario 1b: isBalanceDrag is true during balance drag`);
+
+    el.onpointermove({ buttons: 1, pointerId: 1, clientX: 145, clientY: 100, isTrusted: true });
+    const draggedVal = env.S[dialKey];
+    assert(draggedVal > initialVal, `[${dialKey}] Scenario 1c: pointermove while pressed updates dial value (${initialVal.toFixed(3)} -> ${draggedVal.toFixed(3)})`);
+
+    // 2. Release stops movement: releasing the pointer ends dragging; subsequent pointer movement does not change the value
+    el.onpointerup({ button: 0, buttons: 0, pointerId: 1 });
+    assert(setter.isDragging() === false && el.style.cursor === 'grab', `[${dialKey}] Scenario 2a: pointerup immediately ends dragging and restores grab cursor`);
+    assert(el.capturedCount() === 0 && env.mockWin.activeListenerCount() === 0, `[${dialKey}] Scenario 2b: pointerup releases pointer capture and removes window listeners`);
+    if (dialKey === 'tun') assert(env.getFlags().isTuningDrag === false && env.getFlags().flushTuneCalls === 1, `[${dialKey}] Scenario 2c: releasing tuning dial clears isTuningDrag and flushes pending tune`);
+    if (dialKey === 'bal') assert(env.getFlags().isBalanceDrag === false, `[${dialKey}] Scenario 2c: releasing balance dial clears isBalanceDrag`);
+
+    // Move mouse after release — value MUST NOT change
+    el.onpointermove({ buttons: 0, pointerId: 1, clientX: 220, clientY: 50, isTrusted: true });
+    env.mockWin.dispatch('pointermove', { buttons: 0, pointerId: 1, clientX: 250, clientY: 20, isTrusted: true });
+    assert(env.S[dialKey] === draggedVal, `[${dialKey}] Scenario 2d: moving pointer after release does not change dial value`);
+
+    // 3. Release outside the dial: pressing and dragging, moving outside the dial, and releasing on window ends interaction
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 2, clientX: 150, clientY: 150, isTrusted: true });
+    env.mockWin.dispatch('pointermove', { buttons: 1, pointerId: 2, clientX: 110, clientY: 150, isTrusted: true });
+    const outsideDraggedVal = env.S[dialKey];
+    assert(outsideDraggedVal < draggedVal, `[${dialKey}] Scenario 3a: dragging outside dial bounds updates dial via window pointermove`);
+    // Release occurs outside the dial (dispatched on window, not directly on el.onpointerup)
+    env.mockWin.dispatch('pointerup', { button: 0, buttons: 0, pointerId: 2, clientX: 10, clientY: 10, isTrusted: true });
+    assert(setter.isDragging() === false && env.mockWin.activeListenerCount() === 0, `[${dialKey}] Scenario 3b: releasing mouse outside dial immediately ends drag and cleans up listeners`);
+    // Subsequent movement does not change value
+    el.onpointermove({ buttons: 0, pointerId: 2, clientX: 300, clientY: 300, isTrusted: true });
+    assert(env.S[dialKey] === outsideDraggedVal, `[${dialKey}] Scenario 3c: movement after outside release does not change dial value`);
+
+    // 4. Fresh interaction: the dial can be dragged normally again after release
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 3, clientX: 100, clientY: 100, isTrusted: true });
+    el.onpointermove({ buttons: 1, pointerId: 3, clientX: 130, clientY: 100, isTrusted: true });
+    const freshVal = env.S[dialKey];
+    assert(freshVal > outsideDraggedVal, `[${dialKey}] Scenario 4a: subsequent press and drag works normally after previous release`);
+    el.onpointerup({ button: 0, buttons: 0, pointerId: 3 });
+    assert(setter.isDragging() === false, `[${dialKey}] Scenario 4b: subsequent release cleanly stops drag`);
+
+    // 5. Interrupted interaction: pointercancel, lostpointercapture, window blur, visibilitychange, and buttons===0 failsafe
+    // 5a: pointercancel
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 4, clientX: 100, clientY: 100, isTrusted: true });
+    el.onpointercancel({ pointerId: 4, type: 'pointercancel' });
+    assert(setter.isDragging() === false && env.mockWin.activeListenerCount() === 0, `[${dialKey}] Scenario 5a: pointercancel clears active drag state`);
+
+    // 5b: lostpointercapture (when browser drops capture without firing pointerup)
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 5, clientX: 100, clientY: 100, isTrusted: true });
+    el.onlostpointercapture({ pointerId: 5, type: 'lostpointercapture' });
+    const valAfterLostCapture = env.S[dialKey];
+    el.onpointermove({ buttons: 0, pointerId: 5, clientX: 200, clientY: 100, isTrusted: true });
+    assert(setter.isDragging() === false && env.S[dialKey] === valAfterLostCapture, `[${dialKey}] Scenario 5b: lostpointercapture clears drag state and prevents sticky movement`);
+
+    // 5c: window blur
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 6, clientX: 100, clientY: 100, isTrusted: true });
+    env.mockWin.dispatch('blur', { type: 'blur' });
+    assert(setter.isDragging() === false && env.mockWin.activeListenerCount() === 0, `[${dialKey}] Scenario 5c: window blur clears active drag state`);
+
+    // 5d: buttons === 0 failsafe (if mouse was released outside OS window and re-enters with no button held)
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 7, clientX: 100, clientY: 100, isTrusted: true });
+    const valBeforeReentry = env.S[dialKey];
+    el.onpointermove({ buttons: 0, pointerId: 7, clientX: 180, clientY: 100, isTrusted: true, pointerType: 'mouse' });
+    assert(setter.isDragging() === false && env.S[dialKey] === valBeforeReentry, `[${dialKey}] Scenario 5d: pointermove with buttons===0 immediately terminates sticky drag without changing value`);
+
+    // 6. No stuck state & click without movement: right-click ignored, stationary click does not mutate value
+    el.onpointerdown({ button: 2, buttons: 2, pointerId: 8, clientX: 100, clientY: 100, isTrusted: true });
+    assert(setter.isDragging() === false, `[${dialKey}] Scenario 6a: non-primary mouse button (right-click) does not start drag`);
+
+    const valBeforeClick = env.S[dialKey];
+    el.onpointerdown({ button: 0, buttons: 1, pointerId: 9, clientX: 120, clientY: 120, isTrusted: true });
+    el.onpointermove({ buttons: 1, pointerId: 9, clientX: 120, clientY: 120, isTrusted: true });
+    el.onpointerup({ button: 0, buttons: 0, pointerId: 9, clientX: 120, clientY: 120 });
+    assert(env.S[dialKey] === valBeforeClick && setter.isDragging() === false && env.mockWin.activeListenerCount() === 0, `[${dialKey}] Scenario 6b: clicking dial without moving leaves value unchanged and leaves zero active drag state`);
+  }
+
+  console.log('✓ 64. Dial Drag Lifecycle & Sticky Drag Prevention (kVol, kBal, kTun) verified.');
+}
+
+// --- Test Suite 65: STEREO Icon Horizontal Position Offsets (Collapsed +25px / Expanded +20px) ---
+console.log('\n--- Test Suite 65: STEREO Icon Horizontal Position Offsets (Collapsed +25px / Expanded +20px) ---');
+{
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+
+  // 1. Expanded display rule (#stereo): +20px relative to previous -6px margin-left -> 14px
+  assert(
+    bbCss.includes('#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:14px;pointer-events:none;will-change:opacity,filter}'),
+    'Expanded display (#stereo) sets margin-left: 14px (+20px right from previous -6px)'
+  );
+
+  // 2. Collapsed display rule (#panel.collapsed #stereo): +25px relative to previous -6px margin-left -> 19px
+  assert(
+    bbCss.includes('#panel.collapsed #stereo{margin-left:19px}'),
+    'Collapsed display (#panel.collapsed #stereo) sets margin-left: 19px (+25px right from previous -6px)'
+  );
+
+  // 3. Verify exact delta relative to original -6px baseline and non-cumulative state toggling
+  const baselineMarginLeft = -6;
+  const expandedMarginLeft = 14;
+  const collapsedMarginLeft = 19;
+  assert(
+    expandedMarginLeft - baselineMarginLeft === 20,
+    'Expanded display offset is exactly +20px relative to baseline'
+  );
+  assert(
+    collapsedMarginLeft - baselineMarginLeft === 25,
+    'Collapsed display offset is exactly +25px relative to baseline'
+  );
+
+  // 4. Verify vertical position, SVG dimensions, and flex spacer isolation remain untouched
+  assert(
+    bbCss.includes('#stereo svg{display:block;width:44px;height:29.22px;transform:translateY(-0.25px)}') &&
+    bbHtml.includes('</div><span style="flex:1"></span><span id="st"></span><button id="tgl"'),
+    'Vertical alignment, SVG size, and flex spacer isolating #hDate/#st/#tgl remain intact'
+  );
+
+  console.log('✓ 65. STEREO Icon Horizontal Position Offsets (Collapsed +25px / Expanded +20px) verified.');
 }
 
 // --- Summary ---

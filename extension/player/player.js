@@ -31,6 +31,229 @@ let playbackEnabled = false;
 let isSeeking = false;
 let seekSafetyTimer = null;
 
+// Analog FM Stereo Indicator state machine ('off' | 'searching' | 'locked')
+let stereoState = 'off';
+let stereoSeq = 0;
+let stereoDelayTimer = null;
+let stereoFlickerTimer = null;
+let stereoLockTimer = null;
+let stereoTargetKey = null;
+let stereoLockedKey = null;
+let stereoAcquiring = false;
+let hasActiveSignalPlayback = false;
+const STEREO_FLICKER_LEVELS = [0.34, 0.08, 0.42, 0.05, 0.26, 0.38, 0.11, 0.46, 0.06, 0.30, 0.19, 0.44];
+let stereoFlickerStepIdx = 0;
+
+// Scale graduation mapping:
+// #scale draws visible ticks for f = 88..108 MHz at step 1.0 MHz using fx(f) = 330 + (f - 87.5) * 27.3.
+// One visible scale graduation = 1.0 MHz (27.3 SVG units on #scale).
+const SCALE_GRADUATION_MHZ = 1.0;
+
+function getTuningProximity(freq, stations) {
+  const list = Array.isArray(stations) ? stations : (ST[S.dec] || []);
+  const mapX = typeof fx === 'function' ? fx : (v => 330 + (v - 87.5) * 27.3);
+  const gradPx = Math.abs(mapX(89) - mapX(88)); // 27.3 SVG units per 1.0 MHz tick graduation
+  let best = null;
+  let nearestStation = null;
+  let minFreqDiff = Infinity;
+  let minGraduations = Infinity;
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    const dFreq = Math.abs(s[1] - freq);
+    const dPx = Math.abs(mapX(s[1]) - mapX(freq));
+    const dGrad = gradPx > 0 ? (dPx / gradPx) : (dFreq / SCALE_GRADUATION_MHZ);
+    if (dFreq < 0.05) {
+      best = s;
+    }
+    if (dFreq < minFreqDiff) {
+      minFreqDiff = dFreq;
+      minGraduations = dGrad;
+      nearestStation = s;
+    }
+  }
+  const withinOneGraduation = !best && nearestStation !== null && minGraduations <= (1.0 + 1e-6);
+  return {
+    best,
+    nearestStation,
+    minFreqDiff: Number.isFinite(minFreqDiff) ? Number(minFreqDiff.toFixed(4)) : Infinity,
+    minGraduations: Number.isFinite(minGraduations) ? Number(minGraduations.toFixed(4)) : Infinity,
+    withinOneGraduation
+  };
+}
+
+function clearStereoTimers() {
+  if (stereoDelayTimer) { clearTimeout(stereoDelayTimer); stereoDelayTimer = null; }
+  if (stereoFlickerTimer) { clearTimeout(stereoFlickerTimer); stereoFlickerTimer = null; }
+  if (stereoLockTimer) { clearTimeout(stereoLockTimer); stereoLockTimer = null; }
+}
+
+function setStereoVisualState(nextState, flickerOpacity) {
+  stereoState = nextState;
+  const el = $('stereo');
+  if (!el) return;
+  el.classList.toggle('stereo-off', nextState === 'off');
+  el.classList.toggle('stereo-searching', nextState === 'searching');
+  el.classList.toggle('stereo-locked', nextState === 'locked');
+  if (nextState === 'searching') {
+    const op = typeof flickerOpacity === 'number' ? flickerOpacity : 0.28;
+    el.style.setProperty('--stereo-flicker-op', String(op));
+  } else {
+    el.style.removeProperty('--stereo-flicker-op');
+  }
+}
+
+function startStereoFlickerLoop(seq) {
+  if (stereoFlickerTimer) { clearTimeout(stereoFlickerTimer); stereoFlickerTimer = null; }
+  const step = () => {
+    if (seq !== stereoSeq || stereoState !== 'searching') return;
+    const baseOp = STEREO_FLICKER_LEVELS[stereoFlickerStepIdx % STEREO_FLICKER_LEVELS.length];
+    stereoFlickerStepIdx++;
+    const jitter = (Math.random() - 0.5) * 0.06;
+    const op = Number(Math.max(0.04, Math.min(0.48, baseOp + jitter)).toFixed(2));
+    setStereoVisualState('searching', op);
+    const nextDelay = 38 + Math.floor(Math.random() * 45);
+    stereoFlickerTimer = setTimeout(step, nextDelay);
+  };
+  step();
+}
+
+function resetStereoIndicator() {
+  stereoSeq++;
+  clearStereoTimers();
+  stereoAcquiring = false;
+  stereoTargetKey = null;
+  stereoLockedKey = null;
+  setStereoVisualState('off');
+}
+
+function startBetweenStationsFlicker() {
+  const panelEl = $('panel');
+  if (!panelEl || !panelEl.classList.contains('live')) {
+    resetStereoIndicator();
+    return;
+  }
+  stereoLockedKey = null;
+  if (stereoState === 'searching' && !stereoAcquiring && stereoTargetKey === null && stereoFlickerTimer !== null) {
+    return;
+  }
+  const seq = ++stereoSeq;
+  clearStereoTimers();
+  stereoAcquiring = false;
+  stereoTargetKey = null;
+  setStereoVisualState('searching', 0.28);
+  startStereoFlickerLoop(seq);
+}
+
+function syncStereoIndicator() {
+  const panelEl = $('panel');
+  if (!panelEl || !panelEl.classList.contains('live')) {
+    if (stereoState !== 'off' || stereoAcquiring || stereoTargetKey !== null || stereoLockedKey !== null) {
+      resetStereoIndicator();
+    }
+    return;
+  }
+
+  const stations = ST[S.dec] || [];
+  const minFreq = typeof MIN === 'number' ? MIN : 87.5;
+  const spanFreq = typeof SPAN === 'number' ? SPAN : 20.5;
+  const f = Math.round((minFreq + S.tun * spanFreq) * 10) / 10;
+  const prox = getTuningProximity(f, stations);
+  const best = prox.best;
+  S.locked = !!best;
+
+  if (!best) {
+    stereoLockedKey = null;
+    const canFlickerNearStation = Boolean(
+      prox.withinOneGraduation &&
+      hasFirstSongStartedPlaying &&
+      hasActiveSignalPlayback &&
+      playbackEnabled &&
+      S.state === 'playing'
+    );
+    if (canFlickerNearStation) {
+      startBetweenStationsFlicker();
+    } else if (stereoState !== 'off' || stereoAcquiring || stereoTargetKey !== null) {
+      resetStereoIndicator();
+    }
+    return;
+  }
+
+  const currentKey = S.dec + '|' + best[0];
+  if (stereoLockedKey && stereoLockedKey !== currentKey) {
+    stereoLockedKey = null;
+  }
+
+  // Once a station is acquired and locked, keep the STEREO indicator steadily illuminated
+  // across song transitions, buffering, and pause/resume while the dial remains on this station.
+  if (stereoLockedKey === currentKey) {
+    clearStereoTimers();
+    stereoAcquiring = false;
+    stereoTargetKey = currentKey;
+    if (stereoState !== 'locked') {
+      setStereoVisualState('locked');
+    }
+    return;
+  }
+
+  const isStationMusicPlaying = Boolean(
+    S.locked &&
+    hasFirstSongStartedPlaying &&
+    hasActiveSignalPlayback &&
+    S.state === 'playing' &&
+    isYtPlaybackActive &&
+    !isSeeking &&
+    transientStatus !== 'seek' &&
+    !pendingTuneData
+  );
+
+  if (!isStationMusicPlaying) {
+    if (stereoState !== 'off' || stereoAcquiring || stereoTargetKey !== null) {
+      resetStereoIndicator();
+    }
+    return;
+  }
+
+  if (stereoTargetKey === currentKey && (stereoState === 'locked' || stereoAcquiring)) {
+    return;
+  }
+
+  const seq = ++stereoSeq;
+  clearStereoTimers();
+  stereoTargetKey = currentKey;
+  stereoAcquiring = true;
+  setStereoVisualState('off');
+
+  const acquireDelayMs = 130 + Math.floor(Math.random() * 90);
+  stereoDelayTimer = setTimeout(() => {
+    if (seq !== stereoSeq || stereoTargetKey !== currentKey) return;
+    const curF = Math.round((minFreq + S.tun * spanFreq) * 10) / 10;
+    const curProx = getTuningProximity(curF, ST[S.dec] || []);
+    if (!curProx.best || (S.dec + '|' + curProx.best[0]) !== currentKey || !S.locked || isSeeking || S.state !== 'playing' || !isYtPlaybackActive || !hasActiveSignalPlayback || !panelEl.classList.contains('live')) {
+      syncStereoIndicator();
+      return;
+    }
+
+    setStereoVisualState('searching', 0.26);
+    startStereoFlickerLoop(seq);
+
+    const flickerDurationMs = 420 + Math.floor(Math.random() * 240);
+    stereoLockTimer = setTimeout(() => {
+      if (seq !== stereoSeq || stereoTargetKey !== currentKey) return;
+      const lockF = Math.round((minFreq + S.tun * spanFreq) * 10) / 10;
+      const lockProx = getTuningProximity(lockF, ST[S.dec] || []);
+      if (!lockProx.best || (S.dec + '|' + lockProx.best[0]) !== currentKey || !S.locked || isSeeking || S.state !== 'playing' || !isYtPlaybackActive || !hasActiveSignalPlayback || !panelEl.classList.contains('live')) {
+        syncStereoIndicator();
+        return;
+      }
+
+      clearStereoTimers();
+      stereoAcquiring = false;
+      stereoLockedKey = currentKey;
+      setStereoVisualState('locked');
+    }, flickerDurationMs);
+  }, acquireDelayMs);
+}
+
 function setSeekingState(active) {
   isSeeking = Boolean(active);
   if (seekSafetyTimer) {
@@ -42,10 +265,12 @@ function setSeekingState(active) {
       if (isSeeking) {
         isSeeking = false;
         updateStatusDisplay();
+        syncStereoIndicator();
       }
     }, 12000);
   }
   updateStatusDisplay();
+  syncStereoIndicator();
 }
 
 // Local Web Audio static noise generator
@@ -577,6 +802,16 @@ function setState(s,quiet){
 
  updateStatusDisplay();
  updateGenrePills();
+  if (normalized === 'stopped' || normalized === 'blank') {
+    isYtPlaybackActive = false;
+    hasActiveSignalPlayback = false;
+    resetStereoIndicator();
+  } else if (normalized === 'paused') {
+    isYtPlaybackActive = false;
+    syncStereoIndicator();
+  } else {
+    syncStereoIndicator();
+  }
 
  if (normalized === 'stopped' || normalized === 'blank' || (prevState !== 'playing' && prevState !== 'paused')) {
    renderSong();
@@ -635,9 +870,12 @@ act($('bPlay'),()=>{
 act($('bPause'),()=>{
   clearTransientStatus();
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
-  playbackEnabled = false;
-  staticController.stop();
   const next = S.state === 'playing' ? 'paused' : 'playing';
+  playbackEnabled = next === 'playing';
+  if (next === 'paused') {
+    isYtPlaybackActive = false;
+  }
+  staticController.stop();
   lastUserTransportAction = { state: next, time: Date.now() };
   setState(next, true);
   trace('CLICK_PAUSE', { optimisticState: next });
@@ -645,6 +883,9 @@ act($('bPause'),()=>{
 });
 act($('bStop'),()=>{
   playbackEnabled = false;
+  isYtPlaybackActive = false;
+  hasActiveSignalPlayback = false;
+  resetStereoIndicator();
   staticController.stop();
   showTransientStatus('stopped');
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
@@ -661,31 +902,81 @@ let lastUserBalanceTime = 0;
 function knob(el,key,base,min,max,onSet,step,sens){
  const rot=()=>el.style.transform='rotate('+(min+S[key]*(max-min)-base)+'deg)';
  const set=v=>{S[key]=clamp(v);onSet&&onSet();rot();};
- let lx,ly,drag=false;
+ let lx=0,ly=0,drag=false,activePointerId=null,hadPrimaryButtonDown=false,lastMoveEvent=null;
  const divisor = typeof sens === 'number' ? sens : 220;
- el.onpointerdown=e=>{
-   drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';
-   if(key==='tun') isTuningDrag=true;
-   if(key==='bal') isBalanceDrag=true;
-   staticController.ensureContext();
- };
- el.onpointermove=e=>{if(!drag)return;set(S[key]+((e.clientX-lx)-(e.clientY-ly))/divisor);lx=e.clientX;ly=e.clientY};
- el.onpointerup=el.onpointercancel=()=>{
-   drag=false;el.style.cursor='grab';
+ const stopDrag=e=>{
+   if(!drag)return;
+   if(e && typeof e.pointerId==='number' && activePointerId!==null && e.pointerId!==activePointerId && e.type!=='blur' && e.type!=='visibilitychange' && e.type!=='lostpointercapture')return;
+   const pid=activePointerId;
+   drag=false;
+   activePointerId=null;
+   hadPrimaryButtonDown=false;
+   lastMoveEvent=null;
+   el.style.cursor='grab';
+   window.removeEventListener('pointermove',onMove,true);
+   window.removeEventListener('pointerup',stopDrag,true);
+   window.removeEventListener('pointercancel',stopDrag,true);
+   window.removeEventListener('mouseup',stopDrag,true);
+   window.removeEventListener('blur',stopDrag);
+   document.removeEventListener('visibilitychange',onVisChange);
+   if(pid!==null){
+     try{if(el.hasPointerCapture&&el.hasPointerCapture(pid))el.releasePointerCapture(pid);}catch(_){}
+   }
    if(key==='tun'){
      isTuningDrag=false;
      if(typeof flushPendingTune==='function') flushPendingTune();
+     syncStereoIndicator();
    }
    if(key==='bal') isBalanceDrag=false;
  };
+ const onVisChange=()=>{if(document.hidden)stopDrag({type:'visibilitychange'});};
+ const onMove=e=>{
+   if(!drag||e===lastMoveEvent)return;
+   if(typeof e.pointerId==='number' && activePointerId!==null && e.pointerId!==activePointerId)return;
+   if((e.isTrusted||hadPrimaryButtonDown) && typeof e.buttons==='number' && e.pointerType!=='touch' && (e.buttons&1)===0){
+     stopDrag(e);
+     return;
+   }
+   lastMoveEvent=e;
+   if(e.clientX===lx && e.clientY===ly)return;
+   set(S[key]+((e.clientX-lx)-(e.clientY-ly))/divisor);
+   lx=e.clientX;
+   ly=e.clientY;
+ };
+ el.onpointerdown=e=>{
+   if(typeof e.button==='number' && e.button!==0)return;
+   if(drag)stopDrag();
+   e.preventDefault();
+   drag=true;
+   activePointerId=typeof e.pointerId==='number'?e.pointerId:null;
+   hadPrimaryButtonDown=Boolean(e.isTrusted||(typeof e.buttons==='number'&&(e.buttons&1)===1));
+   lx=e.clientX;
+   ly=e.clientY;
+   try{if(activePointerId!==null&&el.setPointerCapture)el.setPointerCapture(activePointerId);}catch(_){}
+   el.style.cursor='grabbing';
+   if(key==='tun') isTuningDrag=true;
+   if(key==='bal') isBalanceDrag=true;
+   staticController.ensureContext();
+   window.addEventListener('pointermove',onMove,true);
+   window.addEventListener('pointerup',stopDrag,true);
+   window.addEventListener('pointercancel',stopDrag,true);
+   window.addEventListener('mouseup',stopDrag,true);
+   window.addEventListener('blur',stopDrag);
+   document.addEventListener('visibilitychange',onVisChange);
+ };
+ el.onpointermove=onMove;
+ el.onpointerup=el.onpointercancel=el.onlostpointercapture=stopDrag;
  el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step)};
  el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step)}};
- rot();return set;
+ rot();
+ set.isDragging=()=>drag;
+ set.stopDrag=stopDrag;
+ return set;
 }
-knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
+const setVolKnob=knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
 if($('kBal')){$('kBal').setAttribute('aria-valuemin','-1');$('kBal').setAttribute('aria-valuemax','1');$('kBal').setAttribute('aria-valuenow','0');}
-knob($('kBal'),'bal',10,-135,135,()=>{lastUserBalanceTime=Date.now();const bVal=Number((S.bal*2-1).toFixed(2));if($('kBal'))$('kBal').setAttribute('aria-valuenow',String(bVal));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
-knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);
+const setBalKnob=knob($('kBal'),'bal',10,-135,135,()=>{lastUserBalanceTime=Date.now();const bVal=Number((S.bal*2-1).toFixed(2));if($('kBal'))$('kBal').setAttribute('aria-valuenow',String(bVal));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
+const setTunKnob=knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);
 $('kBal').ondblclick=()=>{lastUserBalanceTime=Date.now();S.bal=.5;$('kBal').style.transform='rotate(-10deg)';$('kBal').setAttribute('aria-valuenow','0');emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
 
 // optional deck buttons: rewind / fast forward flash when clicked, record latches on/off.
@@ -727,7 +1018,7 @@ function setSongYear(y){}
 const flip=()=>{if(!logoDec)return;dark=!dark;paintLogo();emit('theme',{dark})};
 $('logoBar').onclick=flip;$('logoBar').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 document.addEventListener('retrofm:song',e=>{const d=e.detail||{};if(d.title)setSong(d);if(d.year)setSongYear(d.year)});
-window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true)};
+window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag})};
 
 // tuning: dial = FM frequency, locks onto the selected decade's genre stations
 const MIN=87.5,SPAN=20.5;let lastKey='';
@@ -771,27 +1062,35 @@ function tune(){
  $('year').innerHTML=render7SegFreq(f.toFixed(1));
  S.locked=!!best;
  const sdotEl=$('sdot');if(sdotEl)sdotEl.style.display=best?'':'none';
- const stereoEl=$('stereo');if(stereoEl)stereoEl.style.display=best?'':'none';
  const giEl=$('gi');if(giEl)giEl.textContent=best?'':'Between stations';
  updateGenrePills();
  const key=S.dec+'|'+(best?best[0]:'');
+ const stationChanged = key !== lastKey;
  if(best){const hg=$('hGen');if(hg)hg.textContent=best[0].toUpperCase();if(gl===stations)gi=gl.indexOf(best)}
- if(!best){
-   setSeekingState(false);
-   if(playbackEnabled) staticController.start(S.vol);
-   song=null;
-   playbackProgress.currentTime = 0;
-   playbackProgress.duration = 0;
-   playbackProgress.videoId = null;
-   renderSong();
-   updateStatusDisplay();
- }else{
+  if(!best){
+    isYtPlaybackActive = false;
+    stereoLockedKey = null;
+    setSeekingState(false);
+    if(playbackEnabled) staticController.start(S.vol);
+    song=null;
+    playbackProgress.currentTime = 0;
+    playbackProgress.duration = 0;
+    playbackProgress.videoId = null;
+    renderSong();
+    updateStatusDisplay();
+    syncStereoIndicator();
+  }else{
    staticController.stop();
-   setSeekingState(true);
+   if (stationChanged) {
+     isYtPlaybackActive = false;
+     resetStereoIndicator();
+     setSeekingState(true);
+   }
    playbackEnabled = true;
    updateStatusDisplay();
+   syncStereoIndicator();
  }
- if(key!==lastKey){
+  if(key!==lastKey){
    lastKey=key;
    if(best){
      song=null;
@@ -861,8 +1160,6 @@ function updateGenrePills() {
     if (Math.abs(s[1] - f) < 0.05) best = s;
   });
   S.locked = !!best;
-  const stereoEl = $('stereo');
-  if (stereoEl) stereoEl.style.display = best ? '' : 'none';
   document.querySelectorAll('.chip').forEach(c => {
     const isSelected = !!best && c.dataset.g === best[0];
     c.classList.toggle('sel', isSelected && isPlaying);
@@ -1058,7 +1355,7 @@ function setSong(d){
   renderSong();
 }
 window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});
-window.addEventListener('beforeunload',()=>{staticController.dispose();});
+window.addEventListener('beforeunload',()=>{clearStereoTimers();staticController.dispose();});
 $('sdot').onclick=()=>{
   if(songDisplayMode==='song_info'){
     songDisplayMode='elapsed_time';
@@ -1116,6 +1413,10 @@ let committedSelection = null;
 
 function goLive(){
   const y=D.getFullYear(),dec=Math.floor(y/10)*10,g=gl[gi];
+  isYtPlaybackActive = false;
+  hasActiveSignalPlayback = false;
+  resetStereoIndicator();
+  setSeekingState(true);
   pan.classList.replace('entry','live');
   $('hDate').textContent=MON[D.getMonth()]+' '+D.getDate()+', '+y;
   const hg=$('hGen');if(hg)hg.textContent=g[0].toUpperCase();
@@ -1146,6 +1447,7 @@ function goLive(){
 
 function cancelToLive(){
   if (!committedSelection) return false;
+  resetStereoIndicator();
   // Restore committed date & genre
   D = new Date(committedSelection.date.getTime());
   dIn.value = committedSelection.inputValue || (MON[D.getMonth()]+' '+D.getDate()+', '+D.getFullYear());
@@ -1199,6 +1501,8 @@ dIn.onclick=()=>{if(step==='genre'){step='date';refresh()}};
 $('bDate').onclick=()=>{step='date';refresh();dIn.focus()};
 $('bGen').onclick=()=>{if(D){step='genre';refresh()}dIn.focus()};
 const back=s=>{
+  hasActiveSignalPlayback = false;
+  resetStereoIndicator();
   pan.classList.replace('live','entry');
   step=s;
   emit('update',{});
@@ -1371,6 +1675,8 @@ function applyRadioState(state) {
   appConnected = state.appConnected !== false;
 
   if (!appConnected) {
+    hasActiveSignalPlayback = false;
+    resetStereoIndicator();
     updateStatusDisplay();
     const giEl = $('gi'); if (giEl) giEl.textContent = 'Open RetroFM app to broadcast';
     song = null;
@@ -1467,6 +1773,15 @@ function applyRadioState(state) {
     }
   }
 
+  const stations = ST[S.dec] || [];
+  const f = Math.round((MIN + S.tun * SPAN) * 10) / 10;
+  let matchedStation = null;
+  stations.forEach(s => {
+    if (Math.abs(s[1] - f) < 0.05) matchedStation = s;
+  });
+  const activeDialGenre = matchedStation ? matchedStation[0] : null;
+  const isMismatchedGenre = state.genre && activeDialGenre && state.genre !== activeDialGenre;
+
   // 1. Playback status
   if (state.playbackStatus) {
     if (state.playbackStatus === 'blank') {
@@ -1475,18 +1790,33 @@ function applyRadioState(state) {
         isYtPlaybackActive = false;
         setState('blank', true);
       }
+      hasActiveSignalPlayback = false;
+      resetStereoIndicator();
     } else if (state.playbackStatus === 'seek' || state.playbackStatus === 'seeking') {
+      isYtPlaybackActive = false;
       setSeekingState(true);
-    } else {
+    } else if (!isMismatchedGenre) {
       isYtPlaybackActive = state.playbackStatus === 'playing';
       if (state.playbackStatus === 'playing') {
+        if (typeof state.hasFirstSongStartedPlaying !== 'boolean') {
+          hasFirstSongStartedPlaying = true;
+        }
+        hasActiveSignalPlayback = true;
         setSeekingState(false);
         playbackEnabled = true;
       } else if (state.playbackStatus === 'stopped') {
         setSeekingState(false);
         playbackEnabled = false;
+        hasActiveSignalPlayback = false;
         staticController.stop();
+        resetStereoIndicator();
       } else if (state.playbackStatus === 'paused') {
+        if (!stereoLockedKey) {
+          hasActiveSignalPlayback = false;
+          resetStereoIndicator();
+        } else {
+          syncStereoIndicator();
+        }
         if (!isSeeking) {
           setVisualTransport('paused');
         }
@@ -1499,6 +1829,7 @@ function applyRadioState(state) {
         return;
       }
       setVisualTransport(state.playbackStatus);
+      syncStereoIndicator();
     }
   }
 
@@ -1520,12 +1851,6 @@ function applyRadioState(state) {
     clearSongTimers();
     renderSong();
   } else if (state.currentSong && state.currentSong.title) {
-    const stations = ST[S.dec] || [];
-    const f = Math.round((MIN + S.tun * SPAN) * 10) / 10;
-    let matchedStation = null;
-    stations.forEach(s => {
-      if (Math.abs(s[1] - f) < 0.05) matchedStation = s;
-    });
     const activeDialGenre = matchedStation ? matchedStation[0] : null;
     const isMismatchedGenre = state.genre && activeDialGenre && state.genre !== activeDialGenre;
     if (!isMismatchedGenre) {
@@ -1593,11 +1918,18 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
       }
       if (rawState === 1 && vid && vid !== '3Wk2FzsxK4k') {
         hasFirstSongStartedPlaying = true;
+      } else if (rawState === 1 && !vid && pan.classList.contains('live')) {
+        hasFirstSongStartedPlaying = true;
       }
       if (rawState === 1) {
+        if (vid !== '3Wk2FzsxK4k') {
+          isYtPlaybackActive = true;
+          hasActiveSignalPlayback = true;
+        }
         playbackEnabled = true;
         setSeekingState(false);
         setVisualTransport('playing');
+        syncStereoIndicator();
       } else if (rawState === 2) {
         if (!isSeeking) {
           setVisualTransport('paused');
@@ -1607,6 +1939,15 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
           setSeekingState(true);
         } else {
           setSeekingState(false);
+        }
+      }
+      if (rawState === 2 || rawState === 0) {
+        isYtPlaybackActive = false;
+        if (isJingle) {
+          hasActiveSignalPlayback = false;
+          resetStereoIndicator();
+        } else {
+          syncStereoIndicator();
         }
       }
       if (rawState === 0) {
@@ -1622,6 +1963,7 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
         playbackEnabled = false;
       } else if (rawState === 3) {
         // Buffering / loading
+        isYtPlaybackActive = false;
         setSeekingState(true);
       }
 
