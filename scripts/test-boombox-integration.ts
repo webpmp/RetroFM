@@ -6,7 +6,7 @@
 
 import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, STATIONS_BY_DECADE, normalizeYouTubeVideoId } from '../src/App.js';
 import { VolumeController } from '../src/services/audio/VolumeController.js';
-import { YouTubeMusicProvider } from '../src/services/music/YouTubeMusicProvider.js';
+import { YouTubeMusicProvider, computeStereoBalanceGains } from '../src/services/music/YouTubeMusicProvider.js';
 import { buildBreak, newDjState, TALK_PRESETS } from '../src/services/djBreak/djBreakObservations.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -4414,6 +4414,141 @@ console.log('\n--- Test Suite 57: DJ Ducking Watchdog Lifecycle, Long Commentary
   assert(shouldDelegateOverMusic === true, 'Test 6b: Production DJ Over Music delegates to Boom Box when ducking is requested');
 
   console.log('✓ 57. DJ Ducking Watchdog Lifecycle, Long Commentary & Fade Duration verified.');
+}
+
+// --- Test Suite 58: STEREO Indicator Icon in Green Display ---
+console.log('\n--- Test Suite 58: STEREO Indicator Icon in Green Display ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+
+  // 1. STEREO SVG placed inside #decades immediately to the right of #hDate
+  assert(
+    bbHtml.includes('<button class="tag" id="hDate" title="Change date"></button><div id="stereo">'),
+    'index.html places #stereo container immediately to the right of #hDate pill in #decades'
+  );
+  assert(
+    bbHtml.includes('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" width="44" height="29.22">') &&
+    bbHtml.includes('>STEREO</text>'),
+    'index.html includes the inline STEREO indicator SVG asset sized so icon and text match the 23px date pill height'
+  );
+
+  // 2. CSS styling for #decades and #stereo
+  assert(bbCss.includes('#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:-6px}'), 'player.css styles #stereo container to match 23px date pill height');
+  assert(bbCss.includes('#stereo svg{display:block;width:44px;height:29.22px;transform:translateY(-0.25px)}'), 'player.css sets #stereo svg dimensions so visual icon+text height equals 23px (53px collapsed / 41px expanded)');
+
+  // 3. player.js toggles #stereo display when tuned vs between stations
+  assert(
+    bbJs.includes("const stereoEl=$('stereo');if(stereoEl)stereoEl.style.display=best?'':'none';"),
+    'player.js tune() shows #stereo when tuned to a genre station (best) and hides it (display:none) when between stations'
+  );
+
+  console.log('✓ 58. STEREO Indicator Icon in Green Display verified.');
+}
+
+// --- Test Suite 59: Functional Left-to-Right Stereo Audio Balance Routing ---
+console.log('\n--- Test Suite 59: Functional Left-to-Right Stereo Audio Balance Routing ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+  const contentYtJs = fs.readFileSync(path.join(__dirname, '../extension/content_youtube.js'), 'utf-8');
+  const mainWorldJs = fs.readFileSync(path.join(__dirname, '../extension/player/yt_main_world.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Verify exact balance-to-gain mapping table (-1, -0.5, 0, +0.5, +1)
+  const mapNeg1 = computeStereoBalanceGains(-1);
+  assert(mapNeg1.balance === -1 && mapNeg1.leftGain === 1 && mapNeg1.rightGain === 0, 'Balance -1 (full left) -> Left 100% (1.0), Right 0% (0.0 muted)');
+
+  const mapNegHalf = computeStereoBalanceGains(-0.5);
+  assert(mapNegHalf.balance === -0.5 && mapNegHalf.leftGain === 1 && mapNegHalf.rightGain === 0.5, 'Balance -0.5 -> Left 100% (1.0), Right 50% (0.5)');
+
+  const mapCenter = computeStereoBalanceGains(0);
+  assert(mapCenter.balance === 0 && mapCenter.leftGain === 1 && mapCenter.rightGain === 1, 'Balance 0 (center) -> Left 100% (1.0), Right 100% (1.0)');
+
+  const mapPosHalf = computeStereoBalanceGains(0.5);
+  assert(mapPosHalf.balance === 0.5 && mapPosHalf.leftGain === 0.5 && mapPosHalf.rightGain === 1, 'Balance +0.5 -> Left 50% (0.5), Right 100% (1.0)');
+
+  const mapPos1 = computeStereoBalanceGains(1);
+  assert(mapPos1.balance === 1 && mapPos1.leftGain === 0 && mapPos1.rightGain === 1, 'Balance +1 (full right) -> Left 0% (0.0 muted), Right 100% (1.0)');
+
+  // 2. Verify intermediate continuous values and no channel boosting above 1.0
+  for (const b of [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1]) {
+    const g = computeStereoBalanceGains(b);
+    assert(g.leftGain >= 0 && g.leftGain <= 1, `Balance ${b}: leftGain (${g.leftGain}) is within [0, 1] without boost`);
+    assert(g.rightGain >= 0 && g.rightGain <= 1, `Balance ${b}: rightGain (${g.rightGain}) is within [0, 1] without boost`);
+    // Verify consistency with Boom Box VU meter formula: S.bal = (b + 1) / 2
+    const sBal = (b + 1) / 2;
+    const vuGl = sBal <= 0.5 ? 1 : Number((2 * (1 - sBal)).toFixed(4));
+    const vuGr = sBal >= 0.5 ? 1 : Number((2 * sBal).toFixed(4));
+    assert(Math.abs(g.leftGain - vuGl) < 1e-4 && Math.abs(g.rightGain - vuGr) < 1e-4, `Balance ${b}: audio L/R gains match Boom Box VU meter L/R gains`);
+  }
+
+  // 3. Verify true stereo signal separation (stereo content is NOT collapsed to mono)
+  // Simulate discrete stereo signal (Left = 0.8, Right = 0.25) passing through ChannelSplitter(2) -> leftGain/rightGain -> ChannelMerger(2)
+  function processStereoSignal(leftIn: number, rightIn: number, balance: number) {
+    const { leftGain, rightGain } = computeStereoBalanceGains(balance);
+    return {
+      leftOut: Number((leftIn * leftGain).toFixed(4)),
+      rightOut: Number((rightIn * rightGain).toFixed(4)),
+    };
+  }
+
+  const centerSignal = processStereoSignal(0.8, 0.25, 0);
+  assert(centerSignal.leftOut === 0.8 && centerSignal.rightOut === 0.25, 'Center (0): discrete stereo signal preserved (L=0.8, R=0.25, not downmixed to mono)');
+
+  const leftHalfSignal = processStereoSignal(0.8, 0.25, -0.5);
+  assert(leftHalfSignal.leftOut === 0.8 && leftHalfSignal.rightOut === 0.125, 'Turn left (-0.5): left stays at 0.8, right attenuated to 0.125');
+
+  const fullLeftSignal = processStereoSignal(0.8, 0.25, -1);
+  assert(fullLeftSignal.leftOut === 0.8 && fullLeftSignal.rightOut === 0, 'Full left (-1): left stays at 0.8, right channel is completely silent (0)');
+
+  const rightHalfSignal = processStereoSignal(0.8, 0.25, 0.5);
+  assert(rightHalfSignal.leftOut === 0.4 && rightHalfSignal.rightOut === 0.25, 'Turn right (+0.5): left attenuated to 0.4, right stays at 0.25');
+
+  const fullRightSignal = processStereoSignal(0.8, 0.25, 1);
+  assert(fullRightSignal.leftOut === 0 && fullRightSignal.rightOut === 0.25, 'Full right (+1): left channel is completely silent (0), right stays at 0.25');
+
+  const restoredCenterSignal = processStereoSignal(0.8, 0.25, 0);
+  assert(restoredCenterSignal.leftOut === 0.8 && restoredCenterSignal.rightOut === 0.25, 'Return to center (0): restores original equal stereo channel levels');
+
+  // 4. Verify Web Audio stereo graph and message pipeline across codebase
+  assert(
+    mainWorldJs.includes('createChannelSplitter(2)') &&
+    mainWorldJs.includes('createChannelMerger(2)') &&
+    mainWorldJs.includes('createMediaElementSource(video)'),
+    'yt_main_world.js routes YouTube video through Web Audio ChannelSplitter(2) -> L/R GainNodes -> ChannelMerger(2)'
+  );
+  assert(
+    contentYtJs.includes("case 'SET_BALANCE':") &&
+    contentYtJs.includes('applyBalanceToPlayer(message.balance'),
+    'content_youtube.js handles SET_BALANCE command and bridges to yt_main_world.js'
+  );
+  assert(
+    bgJs.includes("actionName === 'SET_BALANCE'") &&
+    bgJs.includes("action: 'SET_BALANCE', balance: targetBal"),
+    'background.js forwards SET_BALANCE in real time and applies targetBalance on NAVIGATE_YOUTUBE'
+  );
+  assert(
+    appTsx.includes('await musicProviderRef.current.setBalance(clampedBal);') &&
+    appTsx.includes('balance: stereoBalanceRef.current'),
+    'src/App.tsx forwards SET_BALANCE to YouTubeMusicProvider.setBalance and includes balance in broadcastCurrentRadioState'
+  );
+  assert(
+    bbJs.includes('function setVisualBalance(balance)') &&
+    bbJs.includes('setVisualBalance(state.balance)'),
+    'player.js synchronizes visual balance knob rotation via setVisualBalance without triggering feedback loops'
+  );
+
+  // 5. Verify YouTubeMusicProvider balance state & coexistence with VolumeController
+  const provider = new YouTubeMusicProvider();
+  assert(provider.getBalance() === 0, 'YouTubeMusicProvider initializes balance to center (0)');
+  await provider.setBalance(-0.5);
+  assert(provider.getBalance() === -0.5, 'YouTubeMusicProvider stores updated balance (-0.5)');
+  await provider.setBalance(0);
+  assert(provider.getBalance() === 0, 'YouTubeMusicProvider resets balance to center (0)');
+
+  console.log('✓ 59. Functional Left-to-Right Stereo Audio Balance Routing verified.');
 }
 
 // --- Summary ---

@@ -656,6 +656,8 @@ act($('bStop'),()=>{
 
 // knobs
 let isTuningDrag = false;
+let isBalanceDrag = false;
+let lastUserBalanceTime = 0;
 function knob(el,key,base,min,max,onSet,step,sens){
  const rot=()=>el.style.transform='rotate('+(min+S[key]*(max-min)-base)+'deg)';
  const set=v=>{S[key]=clamp(v);onSet&&onSet();rot();};
@@ -664,6 +666,7 @@ function knob(el,key,base,min,max,onSet,step,sens){
  el.onpointerdown=e=>{
    drag=true;lx=e.clientX;ly=e.clientY;el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';
    if(key==='tun') isTuningDrag=true;
+   if(key==='bal') isBalanceDrag=true;
    staticController.ensureContext();
  };
  el.onpointermove=e=>{if(!drag)return;set(S[key]+((e.clientX-lx)-(e.clientY-ly))/divisor);lx=e.clientX;ly=e.clientY};
@@ -673,15 +676,17 @@ function knob(el,key,base,min,max,onSet,step,sens){
      isTuningDrag=false;
      if(typeof flushPendingTune==='function') flushPendingTune();
    }
+   if(key==='bal') isBalanceDrag=false;
  };
  el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step)};
  el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step)}};
  rot();return set;
 }
 knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
-knob($('kBal'),'bal',10,-135,135,()=>{const bVal=Number((S.bal*2-1).toFixed(2));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
+if($('kBal')){$('kBal').setAttribute('aria-valuemin','-1');$('kBal').setAttribute('aria-valuemax','1');$('kBal').setAttribute('aria-valuenow','0');}
+knob($('kBal'),'bal',10,-135,135,()=>{lastUserBalanceTime=Date.now();const bVal=Number((S.bal*2-1).toFixed(2));if($('kBal'))$('kBal').setAttribute('aria-valuenow',String(bVal));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
 knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);
-$('kBal').ondblclick=()=>{S.bal=.5;$('kBal').style.transform='rotate(-10deg)';emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
+$('kBal').ondblclick=()=>{lastUserBalanceTime=Date.now();S.bal=.5;$('kBal').style.transform='rotate(-10deg)';$('kBal').setAttribute('aria-valuenow','0');emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
 
 // optional deck buttons: rewind / fast forward flash when clicked, record latches on/off.
 // Set any of these to false to disable that button completely (no click area, no event).
@@ -766,6 +771,7 @@ function tune(){
  $('year').innerHTML=render7SegFreq(f.toFixed(1));
  S.locked=!!best;
  const sdotEl=$('sdot');if(sdotEl)sdotEl.style.display=best?'':'none';
+ const stereoEl=$('stereo');if(stereoEl)stereoEl.style.display=best?'':'none';
  const giEl=$('gi');if(giEl)giEl.textContent=best?'':'Between stations';
  updateGenrePills();
  const key=S.dec+'|'+(best?best[0]:'');
@@ -854,6 +860,9 @@ function updateGenrePills() {
   stations.forEach(s => {
     if (Math.abs(s[1] - f) < 0.05) best = s;
   });
+  S.locked = !!best;
+  const stereoEl = $('stereo');
+  if (stereoEl) stereoEl.style.display = best ? '' : 'none';
   document.querySelectorAll('.chip').forEach(c => {
     const isSelected = !!best && c.dataset.g === best[0];
     c.classList.toggle('sel', isSelected && isPlaying);
@@ -1249,6 +1258,18 @@ function setVisualVolume(fraction) {
   $('kVol').style.transform = 'rotate(' + (-140 + S.vol * 280 - (-163)) + 'deg)';
 }
 
+function setVisualBalance(balance) {
+  if (typeof balance !== 'number' || isNaN(balance)) return;
+  if (isBalanceDrag || (Date.now() - lastUserBalanceTime < 400)) return;
+  const clampedBal = Math.max(-1, Math.min(1, balance));
+  S.bal = clamp((clampedBal + 1) / 2);
+  const el = $('kBal');
+  if (el) {
+    el.style.transform = 'rotate(' + (-135 + S.bal * 270 - 10) + 'deg)';
+    el.setAttribute('aria-valuenow', String(Number(clampedBal.toFixed(2))));
+  }
+}
+
 function setVisualTransport(incomingState) {
   if (incomingState !== 'playing' && incomingState !== 'paused' && incomingState !== 'stopped') return;
 
@@ -1469,15 +1490,24 @@ function applyRadioState(state) {
         if (!isSeeking) {
           setVisualTransport('paused');
         }
+        if (typeof state.masterVolume === 'number') {
+          setVisualVolume(state.masterVolume / 100);
+        }
+        if (typeof state.balance === 'number') {
+          setVisualBalance(state.balance);
+        }
         return;
       }
       setVisualTransport(state.playbackStatus);
     }
   }
 
-  // 2. Volume (visual only, no command feedback loop)
+  // 2. Volume & Balance (visual only, no command feedback loop)
   if (typeof state.masterVolume === 'number') {
     setVisualVolume(state.masterVolume / 100);
+  }
+  if (typeof state.balance === 'number') {
+    setVisualBalance(state.balance);
   }
 
   // 3. Current Song

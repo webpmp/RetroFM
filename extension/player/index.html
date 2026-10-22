@@ -35,7 +35,53 @@
 </div></div>
 <div id="panel" class="entry">
  <div id="board"><div class="bl" id="bDate">DATE</div><div id="fDate"></div><div class="bl" id="bGen" style="margin-top:8px">GENRE ▲▼</div><div id="fGen"></div><div id="bHint"></div><input id="dIn" autocomplete="off" spellcheck="false" maxlength="20" aria-label="Date"></div>
- <div id="decades"><button class="tag" id="hDate" title="Change date"></button><span style="flex:1"></span><span id="st"></span><button id="tgl" aria-label="Expand or collapse display" aria-expanded="true"><svg id="tglIcon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="#8dffb0"/></svg></button></div>
+ <div id="decades"><button class="tag" id="hDate" title="Change date"></button><div id="stereo">
+    <!-- Inline Stereo Indicator SVG Asset -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" width="44" height="29.22">
+      <defs>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur1" />
+          <feGaussianBlur stdDeviation="8" result="blur2" />
+          <feMerge>
+            <feMergeNode in="blur2" />
+            <feMergeNode in="blur1" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- Left Speaker Cabinet -->
+      <g fill="none" stroke="#7effa4" stroke-width="2.5" filter="url(#glow)">
+        <rect x="75" y="30" width="110" height="150" rx="6" />
+        <circle cx="85" cy="40" r="2" fill="#7effa4" />
+        <circle cx="175" cy="40" r="2" fill="#7effa4" />
+        <circle cx="85" cy="170" r="2" fill="#7effa4" />
+        <circle cx="175" cy="170" r="2" fill="#7effa4" />
+        <circle cx="130" cy="70" r="18" stroke-width="2" />
+        <circle cx="130" cy="70" r="6" fill="#7effa4" />
+        <circle cx="130" cy="130" r="30" stroke-width="2.5" />
+        <circle cx="130" cy="130" r="22" stroke-width="1.5" />
+        <circle cx="130" cy="130" r="8" fill="#7effa4" />
+      </g>
+
+      <!-- Right Speaker Cabinet -->
+      <g fill="none" stroke="#7effa4" stroke-width="2.5" filter="url(#glow)">
+        <rect x="215" y="30" width="110" height="150" rx="6" />
+        <circle cx="225" cy="40" r="2" fill="#7effa4" />
+        <circle cx="315" cy="40" r="2" fill="#7effa4" />
+        <circle cx="225" cy="170" r="2" fill="#7effa4" />
+        <circle cx="315" cy="170" r="2" fill="#7effa4" />
+        <circle cx="270" cy="70" r="18" stroke-width="2" />
+        <circle cx="270" cy="70" r="6" fill="#7effa4" />
+        <circle cx="270" cy="130" r="30" stroke-width="2.5" />
+        <circle cx="270" cy="130" r="22" stroke-width="1.5" />
+        <circle cx="270" cy="130" r="8" fill="#7effa4" />
+      </g>
+
+      <!-- STEREO Text Labels -->
+      <text x="200" y="225" fill="#7effa4" font-family="monospace, sans-serif" font-size="34" font-weight="bold" letter-spacing="4" text-anchor="middle" filter="url(#glow)">STEREO</text>
+    </svg>
+  </div><span style="flex:1"></span><span id="st"></span><button id="tgl" aria-label="Expand or collapse display" aria-expanded="true"><svg id="tglIcon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="#8dffb0"/></svg></button></div>
  <div id="row"><div id="year"></div><div id="freq"><span id="sg"></span><button id="sdot" aria-label="Toggle title and artist fade" title="Fade between title and artist (click to turn off)" aria-pressed="true">♫</button></div></div>
 <div id="chips"></div>
  </div>

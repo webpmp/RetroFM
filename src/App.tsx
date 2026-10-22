@@ -1079,6 +1079,8 @@ export default function App() {
   const isTransportCommandInFlightRef = useRef<boolean>(false);
   const isExplicitStoppedRef = useRef<boolean>(false);
   const activeDecadeRef = useRef<number | null>(null);
+  const stereoBalanceRef = useRef<number>(0);
+  const [, setStereoBalance] = useState<number>(0);
   const lastBroadcastStateKeyRef = useRef<string>('');
   const playbackStatusRef = useRef<MusicPlaybackStatus>(playbackStatus);
   playbackStatusRef.current = playbackStatus;
@@ -1223,6 +1225,7 @@ export default function App() {
       currentSongArtist: currentSong?.artist || '',
       currentSongYear: currentSong?.year || '',
       masterVolume: currentVol,
+      balance: stereoBalanceRef.current,
       decade,
       freq: activeStation.frequency,
       genre: activeStation.genre,
@@ -1255,6 +1258,7 @@ export default function App() {
       genre: activeStation.genre,
       stations: allStations, // stations: STATIONS_BY_DECADE[decade] || []
       masterVolume: currentVol,
+      balance: stereoBalanceRef.current,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       isDucking: isDuck,
       appConnected: true,
@@ -1329,9 +1333,16 @@ export default function App() {
             }
             break;
           case 'SET_BALANCE':
-            if (typeof action.balance === 'number') {
-              logMessage(`[Boom Box Balance] Stereo balance set to ${action.balance.toFixed(2)} (Pan: ${Math.round(action.balance * 100)}%)`);
-              setLastBoomBoxCommand({ action: `SET_BALANCE (${action.balance.toFixed(2)})`, result: 'SUCCESS', time: timeStr });
+            if (typeof action.balance === 'number' && !isNaN(action.balance)) {
+              const clampedBal = Number(Math.max(-1, Math.min(1, action.balance)).toFixed(2));
+              stereoBalanceRef.current = clampedBal;
+              setStereoBalance(clampedBal);
+              const leftPct = clampedBal <= 0 ? 100 : Math.round((1 - clampedBal) * 100);
+              const rightPct = clampedBal >= 0 ? 100 : Math.round((1 + clampedBal) * 100);
+              await musicProviderRef.current.setBalance(clampedBal);
+              logMessage(`[Boom Box Balance] Stereo balance set to ${clampedBal.toFixed(2)} (L: ${leftPct}%, R: ${rightPct}%)`);
+              setLastBoomBoxCommand({ action: `SET_BALANCE (${clampedBal.toFixed(2)})`, result: 'SUCCESS', time: timeStr });
+              broadcastCurrentRadioState(true);
             }
             break;
           case 'TUNE': {
@@ -1648,6 +1659,9 @@ export default function App() {
             isAdvancingRef.current = false;
             stationPlaybackCacheRef.current = {};
             activeStationGenreRef.current = null;
+            stereoBalanceRef.current = 0;
+            setStereoBalance(0);
+            musicProviderRef.current.setBalance(0).catch(() => {});
             // Pre-prepare RetroFM station jingle on background YouTube tab
             prepareSong(RETROFM_JINGLE_CONFIG.videoId, RETROFM_JINGLE_CONFIG.title);
             broadcastCurrentRadioState(true);

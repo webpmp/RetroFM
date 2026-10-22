@@ -7,6 +7,8 @@ if (!window.__retroFmContentLoaded) {
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
+  const EVENT_SET_BALANCE = 'RETROFM_SET_YT_BALANCE';
+  const EVENT_BALANCE_STATUS = 'RETROFM_YT_BALANCE_STATUS';
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
   const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
   const EVENT_TRACE = 'RETROFM_TRACE';
@@ -48,6 +50,7 @@ if (!window.__retroFmContentLoaded) {
       window.removeEventListener(EVENT_TRACE, onTraceEvent);
       window.removeEventListener(EVENT_AUDIO_DIAGNOSTICS, onAudioDiagnosticsEvent);
       window.removeEventListener(EVENT_VOLUME_STATUS, onVolumeStatusEvent);
+      window.removeEventListener(EVENT_BALANCE_STATUS, onBalanceStatusEvent);
       window.removeEventListener(EVENT_MAIN_WORLD_ERROR, onMainWorldErrorEvent);
     } catch (e) {}
   }
@@ -127,6 +130,9 @@ if (!window.__retroFmContentLoaded) {
 
   let latestPlayerVolume = 100;
   let latestPlayerMuted = false;
+  let latestPlayerBalance = 0;
+  let latestLeftGain = 1;
+  let latestRightGain = 1;
   let latestPlayerState = null;
   let latestVideoId = null;
 
@@ -242,11 +248,30 @@ if (!window.__retroFmContentLoaded) {
         latestPlayerVolume = detail.volume;
         latestPlayerMuted = !!detail.muted;
       }
+      if (detail && typeof detail.balance === 'number') {
+        latestPlayerBalance = detail.balance;
+        if (typeof detail.leftGain === 'number') latestLeftGain = detail.leftGain;
+        if (typeof detail.rightGain === 'number') latestRightGain = detail.rightGain;
+      }
     } catch (e) {
       reportError(e, 'onVolumeStatusEvent');
     }
   }
   window.addEventListener(EVENT_VOLUME_STATUS, onVolumeStatusEvent);
+
+  function onBalanceStatusEvent(event) {
+    try {
+      const detail = safeParseDetail(event ? event.detail : null);
+      if (detail && typeof detail.balance === 'number') {
+        latestPlayerBalance = detail.balance;
+        if (typeof detail.leftGain === 'number') latestLeftGain = detail.leftGain;
+        if (typeof detail.rightGain === 'number') latestRightGain = detail.rightGain;
+      }
+    } catch (e) {
+      reportError(e, 'onBalanceStatusEvent');
+    }
+  }
+  window.addEventListener(EVENT_BALANCE_STATUS, onBalanceStatusEvent);
 
   // Forward main-world errors to background
   function onMainWorldErrorEvent(event) {
@@ -323,6 +348,9 @@ if (!window.__retroFmContentLoaded) {
         currentTime: 0,
         duration: 0,
         volume: reportedVolFraction,
+        balance: latestPlayerBalance,
+        leftGain: latestLeftGain,
+        rightGain: latestRightGain,
         muted: latestPlayerMuted
       };
     }
@@ -338,8 +366,38 @@ if (!window.__retroFmContentLoaded) {
       currentTime: Math.floor(video.currentTime),
       duration: Math.floor(video.duration || 0),
       volume: reportedVolFraction,
+      balance: latestPlayerBalance,
+      leftGain: latestLeftGain,
+      rightGain: latestRightGain,
       muted: latestPlayerMuted || video.muted
     };
+  }
+
+  function applyBalanceToPlayer(targetBalance, reason = 'applyBalance') {
+    const rawVal = typeof targetBalance === 'number' && !isNaN(targetBalance) ? targetBalance : 0;
+    const clampedBalance = Number(Math.max(-1, Math.min(1, rawVal)).toFixed(4));
+    const leftGain = clampedBalance <= 0 ? 1 : Number(Math.max(0, 1 - clampedBalance).toFixed(4));
+    const rightGain = clampedBalance >= 0 ? 1 : Number(Math.max(0, 1 + clampedBalance).toFixed(4));
+
+    console.log(
+      `[RetroFM Balance] [${new Date().toISOString()}] Sending balance to main-world: ${clampedBalance} (L=${leftGain}, R=${rightGain}, reason=${reason})`
+    );
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent(EVENT_SET_BALANCE, {
+          detail: JSON.stringify({ balance: clampedBalance, reason })
+        })
+      );
+    } catch (e) {}
+
+    try {
+      window.postMessage({ type: 'RETROFM_SET_BALANCE_MSG', balance: clampedBalance, reason }, '*');
+    } catch (e) {}
+
+    latestPlayerBalance = clampedBalance;
+    latestLeftGain = leftGain;
+    latestRightGain = rightGain;
   }
 
   /**
@@ -718,6 +776,21 @@ if (!window.__retroFmContentLoaded) {
         } else {
           console.warn(`[RetroFM Volume] content_youtube RAMP_VOLUME failed: invalid targetVolume`);
           sendResponse({ success: false, error: 'Cannot ramp volume' });
+        }
+        break;
+      }
+      case 'SET_BALANCE': {
+        if (typeof message.balance === 'number' && !isNaN(message.balance)) {
+          applyBalanceToPlayer(message.balance, 'SET_BALANCE');
+          sendResponse({
+            success: true,
+            balance: latestPlayerBalance,
+            leftGain: latestLeftGain,
+            rightGain: latestRightGain
+          });
+        } else {
+          console.warn(`[RetroFM Balance] content_youtube SET_BALANCE failed: invalid balance parameter`);
+          sendResponse({ success: false, error: 'Cannot set balance' });
         }
         break;
       }

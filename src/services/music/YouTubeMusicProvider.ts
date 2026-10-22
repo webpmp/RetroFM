@@ -2,9 +2,19 @@ import { MusicPlaybackStatus, MusicProvider, SongProgramRequest, SongProgramResu
 
 export const FIXED_EXTENSION_ID = 'hjphfmcilldbipolljlbjnnadeogocab';
 
+export function computeStereoBalanceGains(balance: number): { balance: number; leftGain: number; rightGain: number } {
+  const b = typeof balance === 'number' && !isNaN(balance)
+    ? Number(Math.max(-1, Math.min(1, balance)).toFixed(4))
+    : 0;
+  const leftGain = b <= 0 ? 1 : Number(Math.max(0, 1 - b).toFixed(4));
+  const rightGain = b >= 0 ? 1 : Number(Math.max(0, 1 + b).toFixed(4));
+  return { balance: b, leftGain, rightGain };
+}
+
 export class YouTubeMusicProvider implements MusicProvider {
   public readonly name = 'YouTubeMusicProvider';
   private connectedTabId: number | null = null;
+  private currentBalance = 0;
   private isExtensionDetected = false;
   private reportedExtensionVersion: string | null = null;
   private messageCounter = 0;
@@ -385,6 +395,7 @@ export class YouTubeMusicProvider implements MusicProvider {
       });
       if (res?.tabId) {
         this.connectedTabId = res.tabId;
+        this.setBalance(this.currentBalance).catch(() => {});
         const status = res.status || (await this.getStatus());
         return { success: true, status };
       }
@@ -430,6 +441,9 @@ export class YouTubeMusicProvider implements MusicProvider {
         currentTime: res?.currentTime || 0,
         duration: res?.duration || 0,
         volume: typeof res?.volume === 'number' ? res.volume : 1,
+        balance: typeof res?.balance === 'number' ? res.balance : this.currentBalance,
+        leftGain: typeof res?.leftGain === 'number' ? res.leftGain : computeStereoBalanceGains(this.currentBalance).leftGain,
+        rightGain: typeof res?.rightGain === 'number' ? res.rightGain : computeStereoBalanceGains(this.currentBalance).rightGain,
         muted: !!res?.muted,
         connectedTabId: this.connectedTabId,
       };
@@ -556,6 +570,22 @@ export class YouTubeMusicProvider implements MusicProvider {
     return !!res?.success;
   }
 
+  public getBalance(): number {
+    return this.currentBalance;
+  }
+
+  public async setBalance(balance: number): Promise<boolean> {
+    const { balance: clamped } = computeStereoBalanceGains(balance);
+    this.currentBalance = clamped;
+    const tabId = await this.ensureConnected();
+    if (!tabId) return false;
+    const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
+      tabId,
+      command: { action: 'SET_BALANCE', balance: clamped },
+    });
+    return !!res?.success;
+  }
+
   public async rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
@@ -570,12 +600,13 @@ export class YouTubeMusicProvider implements MusicProvider {
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
-      this.recordTrace('PREPARE_YOUTUBE_DISPATCH', { tabId, url, videoId, targetVolume });
+      this.recordTrace('PREPARE_YOUTUBE_DISPATCH', { tabId, url, videoId, targetVolume, targetBalance: this.currentBalance });
       const res = await this.sendExtensionMessage('NAVIGATE_YOUTUBE', {
         tabId,
         url,
         videoId,
         targetVolume,
+        targetBalance: this.currentBalance,
         prepareOnly: true,
         revealYouTubeToStart: false,
       });
@@ -603,6 +634,7 @@ export class YouTubeMusicProvider implements MusicProvider {
         url,
         videoId,
         targetVolume,
+        targetBalance: this.currentBalance,
         revealYouTubeToStart,
         initialTime,
       });

@@ -6,6 +6,7 @@ let activeRetroFmTabId = null;
 let activeBoomBoxTabId = null;
 let lastKnownRadioState = null;
 let latestYouTubeState = null;
+let lastKnownBalance = 0;
 
 // Unified Transport Trace Log (max 300 entries, stored in memory and persisted to chrome.storage.session)
 const MAX_TRANSPORT_TRACE_ENTRIES = 300;
@@ -784,6 +785,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (actionName === 'STOP' || actionName === 'PAUSE') {
             clearPendingPlayIntent(`boombox_${actionName.toLowerCase()}`);
           }
+          if (actionName === 'SET_BALANCE' && typeof payload?.balance === 'number' && !isNaN(payload.balance)) {
+            lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.balance)).toFixed(4));
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                chrome.tabs.sendMessage(ytTabId, { action: 'SET_BALANCE', balance: lastKnownBalance }).catch(() => {});
+              }
+            }).catch(() => {});
+          } else if (actionName === 'BOOMBOX_RELOADED') {
+            lastKnownBalance = 0;
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                chrome.tabs.sendMessage(ytTabId, { action: 'SET_BALANCE', balance: 0 }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
           const retroTabId = await resolveRetroFmTab();
           recordTrace('background', 'BOOMBOX_ACTION_ARRIVED', {
             action: payload?.action,
@@ -1203,6 +1219,8 @@ function handleIncomingRequest(request, sender, sendResponse) {
         const actionName = (payload?.command?.action || '').toUpperCase();
         if (actionName === 'STOP' || actionName === 'PAUSE') {
           clearPendingPlayIntent(`command_${actionName.toLowerCase()}`);
+        } else if (actionName === 'SET_BALANCE' && typeof payload?.command?.balance === 'number' && !isNaN(payload.command.balance)) {
+          lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.command.balance)).toFixed(4));
         } else if (actionName === 'PLAY') {
           const hasActiveClick = !!(latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive);
           if (!hasActiveClick && !hasSessionActivation) {
@@ -1288,7 +1306,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
           // Ensure content script is injected into the newly loaded page
           await ensureYouTubeScriptInjected(tabId);
 
-          // 2.5 Apply requested targetVolume BEFORE telling video to play
+          // 2.5 Apply requested targetVolume and targetBalance BEFORE telling video to play
           const targetVol = typeof payload?.targetVolume === 'number' ? payload.targetVolume : null;
           if (targetVol !== null) {
             try {
@@ -1296,6 +1314,15 @@ function handleIncomingRequest(request, sender, sendResponse) {
             } catch (volErr) {
               console.warn('[Retro FM] Pre-play setVolume notice:', volErr);
             }
+          }
+          const targetBal = typeof payload?.targetBalance === 'number' && !isNaN(payload.targetBalance)
+            ? Number(Math.max(-1, Math.min(1, payload.targetBalance)).toFixed(4))
+            : lastKnownBalance;
+          lastKnownBalance = targetBal;
+          try {
+            await chrome.tabs.sendMessage(tabId, { action: 'SET_BALANCE', balance: targetBal });
+          } catch (balErr) {
+            console.warn('[Retro FM] Pre-play setBalance notice:', balErr);
           }
 
           // If prepareOnly, do not trigger play or recovery!

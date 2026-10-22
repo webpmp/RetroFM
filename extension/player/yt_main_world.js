@@ -7,11 +7,14 @@
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
+  const EVENT_SET_BALANCE = 'RETROFM_SET_YT_BALANCE';
+  const EVENT_BALANCE_STATUS = 'RETROFM_YT_BALANCE_STATUS';
   const EVENT_PLAYER_COMMAND = 'RETROFM_PLAYER_COMMAND';
   const EVENT_STATE_CHANGE = 'RETROFM_YT_STATE_CHANGED';
   const EVENT_TRACE = 'RETROFM_TRACE';
   const EVENT_ERROR = 'RETROFM_MAIN_WORLD_ERROR';
   const STORAGE_KEY_SAVED_VOLUME = 'retrofm_saved_master_volume';
+  const STORAGE_KEY_SAVED_BALANCE = 'retrofm_saved_stereo_balance';
 
   function reportError(err, context = '') {
     try {
@@ -70,6 +73,217 @@
       }
     }
   } catch (e) {}
+
+  // Restore remembered stereo balance (-1 to +1, default 0 = center) from sessionStorage if available
+  let queuedBalance = 0;
+  try {
+    const savedBal = sessionStorage.getItem(STORAGE_KEY_SAVED_BALANCE);
+    if (savedBal !== null) {
+      const parsedBal = parseFloat(savedBal);
+      if (!isNaN(parsedBal) && parsedBal >= -1 && parsedBal <= 1) {
+        queuedBalance = Number(parsedBal.toFixed(4));
+      }
+    }
+  } catch (e) {}
+
+  function clampBalance(val) {
+    if (typeof val !== 'number' || isNaN(val)) return 0;
+    return Number(Math.max(-1, Math.min(1, val)).toFixed(4));
+  }
+
+  function computeStereoBalanceGains(balance) {
+    const b = clampBalance(balance);
+    // Conventional stereo balance: attenuate opposite channel, never boost favored channel above 1.0
+    // -1 -> L=1.0, R=0.0 | -0.5 -> L=1.0, R=0.5 | 0 -> L=1.0, R=1.0 | +0.5 -> L=0.5, R=1.0 | +1 -> L=0.0, R=1.0
+    const leftGain = b <= 0 ? 1 : Number(Math.max(0, 1 - b).toFixed(4));
+    const rightGain = b >= 0 ? 1 : Number(Math.max(0, 1 + b).toFixed(4));
+    return { balance: b, leftGain, rightGain };
+  }
+
+  // Web Audio API true stereo channel balance routing graph
+  let stereoAudioCtx = null;
+  let stereoInputNode = null;
+  let stereoSplitterNode = null;
+  let leftGainNode = null;
+  let rightGainNode = null;
+  let stereoMergerNode = null;
+  const attachedMediaElements = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  const initialBalanceGains = computeStereoBalanceGains(queuedBalance);
+  let appliedLeftGain = initialBalanceGains.leftGain;
+  let appliedRightGain = initialBalanceGains.rightGain;
+
+  function isVideoAttachedToStereoGraph(video) {
+    if (!video) return false;
+    return !!(attachedMediaElements ? attachedMediaElements.has(video) : video.__retroFmMediaSourceNode);
+  }
+
+  function ensureStereoBalanceNodes() {
+    if (stereoAudioCtx && leftGainNode && rightGainNode && stereoInputNode) {
+      return true;
+    }
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return false;
+    try {
+      stereoAudioCtx = new AudioCtx();
+
+      // Input node preserves 2-channel discrete stereo (L->0, R->1) while upmixing 1-channel mono to L+R
+      stereoInputNode = stereoAudioCtx.createGain();
+      stereoInputNode.gain.value = 1;
+      try {
+        stereoInputNode.channelCount = 2;
+        stereoInputNode.channelCountMode = 'explicit';
+        stereoInputNode.channelInterpretation = 'speakers';
+      } catch (e) {}
+
+      stereoSplitterNode = stereoAudioCtx.createChannelSplitter(2);
+      leftGainNode = stereoAudioCtx.createGain();
+      rightGainNode = stereoAudioCtx.createGain();
+      stereoMergerNode = stereoAudioCtx.createChannelMerger(2);
+
+      const gains = computeStereoBalanceGains(queuedBalance);
+      appliedLeftGain = gains.leftGain;
+      appliedRightGain = gains.rightGain;
+      leftGainNode.gain.value = gains.leftGain;
+      rightGainNode.gain.value = gains.rightGain;
+
+      stereoInputNode.connect(stereoSplitterNode);
+      stereoSplitterNode.connect(leftGainNode, 0, 0);
+      stereoSplitterNode.connect(rightGainNode, 1, 0);
+      leftGainNode.connect(stereoMergerNode, 0, 0);
+      rightGainNode.connect(stereoMergerNode, 0, 1);
+      stereoMergerNode.connect(stereoAudioCtx.destination);
+
+      stereoAudioCtx.onstatechange = () => {
+        try {
+          if (stereoAudioCtx && stereoAudioCtx.state === 'running') {
+            const player = getPlayer();
+            const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+            if (video) {
+              attachVideoToStereoGraph(video, true);
+            }
+          }
+          broadcastBalanceStatus();
+        } catch (e) {}
+      };
+
+      return true;
+    } catch (err) {
+      reportError(err, 'ensureStereoBalanceNodes');
+      return false;
+    }
+  }
+
+  function attachVideoToStereoGraph(video, forceAttach = false) {
+    if (!video) return false;
+    if (!ensureStereoBalanceNodes()) return false;
+
+    if (stereoAudioCtx.state === 'suspended') {
+      stereoAudioCtx.resume().catch(() => {});
+    }
+
+    if (isVideoAttachedToStereoGraph(video)) {
+      return true;
+    }
+
+    // If video is paused, AudioContext is still suspended, and balance is at center (0),
+    // wait until AudioContext is running, playback starts, or balance is adjusted
+    if (!forceAttach && video.paused && stereoAudioCtx.state === 'suspended' && queuedBalance === 0) {
+      return false;
+    }
+
+    try {
+      const sourceNode = stereoAudioCtx.createMediaElementSource(video);
+      sourceNode.connect(stereoInputNode);
+      if (attachedMediaElements) {
+        attachedMediaElements.set(video, sourceNode);
+      }
+      video.__retroFmMediaSourceNode = sourceNode;
+      trace('STEREO_BALANCE_GRAPH_ATTACHED', {
+        balance: queuedBalance,
+        leftGain: appliedLeftGain,
+        rightGain: appliedRightGain,
+        audioContextState: stereoAudioCtx.state
+      });
+      return true;
+    } catch (err) {
+      reportError(err, 'attachVideoToStereoGraph');
+      return false;
+    }
+  }
+
+  function broadcastBalanceStatus() {
+    const player = getPlayer();
+    const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+    try {
+      window.dispatchEvent(
+        new CustomEvent(EVENT_BALANCE_STATUS, {
+          detail: JSON.stringify({
+            balance: queuedBalance,
+            leftGain: appliedLeftGain,
+            rightGain: appliedRightGain,
+            stereoGraphAttached: isVideoAttachedToStereoGraph(video),
+            audioContextState: stereoAudioCtx ? stereoAudioCtx.state : 'uninitialized'
+          })
+        })
+      );
+    } catch (e) {
+      reportError(e, 'broadcastBalanceStatus');
+    }
+  }
+
+  function applyBalance(balance, reason = 'direct') {
+    if (typeof balance !== 'number' || isNaN(balance)) return;
+    const { balance: clampedBal, leftGain, rightGain } = computeStereoBalanceGains(balance);
+    queuedBalance = clampedBal;
+    appliedLeftGain = leftGain;
+    appliedRightGain = rightGain;
+
+    try {
+      sessionStorage.setItem(STORAGE_KEY_SAVED_BALANCE, String(clampedBal));
+    } catch (e) {}
+
+    const hasGraph = ensureStereoBalanceNodes();
+    const player = getPlayer();
+    const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+    if (video) {
+      attachVideoToStereoGraph(video, true);
+    }
+
+    if (hasGraph && stereoAudioCtx && leftGainNode && rightGainNode) {
+      try {
+        if (stereoAudioCtx.state === 'suspended') {
+          stereoAudioCtx.resume().catch(() => {});
+        }
+        const now = stereoAudioCtx.currentTime;
+        if (stereoAudioCtx.state === 'running' && !reason.startsWith('init') && !reason.startsWith('event:')) {
+          leftGainNode.gain.cancelScheduledValues(now);
+          leftGainNode.gain.setValueAtTime(leftGainNode.gain.value, now);
+          leftGainNode.gain.linearRampToValueAtTime(leftGain, now + 0.015);
+
+          rightGainNode.gain.cancelScheduledValues(now);
+          rightGainNode.gain.setValueAtTime(rightGainNode.gain.value, now);
+          rightGainNode.gain.linearRampToValueAtTime(rightGain, now + 0.015);
+        } else {
+          leftGainNode.gain.cancelScheduledValues(now);
+          leftGainNode.gain.setValueAtTime(leftGain, now);
+          leftGainNode.gain.value = leftGain;
+
+          rightGainNode.gain.cancelScheduledValues(now);
+          rightGainNode.gain.setValueAtTime(rightGain, now);
+          rightGainNode.gain.value = rightGain;
+        }
+      } catch (err) {
+        reportError(err, 'applyBalance:gainRamp');
+      }
+    }
+
+    console.log(
+      `[RetroFM MainWorld] [${new Date().toISOString()}] setBalance called: balance=${clampedBal} (reason=${reason}) -> leftGain=${leftGain}, rightGain=${rightGain}`
+    );
+
+    broadcastBalanceStatus();
+    broadcastStatus();
+  }
 
   let playerFound = false;
   let lastUnmuteTime = 0;
@@ -156,6 +370,9 @@
           detail: JSON.stringify({
             volume: currentVol,
             muted: isMuted,
+            balance: queuedBalance,
+            leftGain: appliedLeftGain,
+            rightGain: appliedRightGain,
             hasPlayer: !!player
           })
         })
@@ -164,6 +381,31 @@
       reportError(e, 'broadcastStatus');
     }
   }
+
+  // Listen for stereo balance change requests from isolated content script
+  window.addEventListener(EVENT_SET_BALANCE, (event) => {
+    try {
+      let data = event.detail;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          data = Number(data);
+        }
+      }
+
+      const bal = typeof data === 'object' && data !== null && typeof data.balance === 'number'
+        ? data.balance
+        : (typeof data === 'number' ? data : null);
+
+      if (bal !== null && !isNaN(bal)) {
+        applyBalance(bal, data?.reason || 'CustomEvent');
+      }
+    } catch (err) {
+      reportError(err, 'addEventListener:EVENT_SET_BALANCE');
+      console.warn('[RetroFM MainWorld] Error processing balance event:', err);
+    }
+  });
 
   // Listen for volume change requests from isolated content script
   window.addEventListener(EVENT_SET_VOLUME, (event) => {
@@ -236,6 +478,13 @@
         dispatchDelayMs: t_boombox_play_click ? (t_mw_play_call - t_boombox_play_click) : null
       });
       try {
+        const video = player.querySelector('video') || document.querySelector('video');
+        if (video) {
+          attachVideoToStereoGraph(video, true);
+        }
+        if (stereoAudioCtx && stereoAudioCtx.state === 'suspended') {
+          stereoAudioCtx.resume().catch(() => {});
+        }
         if (typeof player.playVideo === 'function') {
           player.playVideo();
         }
@@ -328,7 +577,7 @@
     }
   });
 
-  // Support window.postMessage strictly for VOLUME commands and status queries
+  // Support window.postMessage strictly for VOLUME/BALANCE commands and status queries
   window.addEventListener('message', (event) => {
     try {
       if (event.source !== window || !event.data) return;
@@ -337,8 +586,14 @@
         if (vol !== null) {
           applyVolume(vol, event.data.reason || 'postMessage');
         }
+      } else if (event.data.type === 'RETROFM_SET_BALANCE_MSG') {
+        const bal = typeof event.data.balance === 'number' ? event.data.balance : null;
+        if (bal !== null && !isNaN(bal)) {
+          applyBalance(bal, event.data.reason || 'postMessage');
+        }
       } else if (event.data.type === 'RETROFM_QUERY_VOLUME_MSG') {
         broadcastStatus();
+        broadcastBalanceStatus();
       }
     } catch (err) {
       reportError(err, 'addEventListener:message');
@@ -352,13 +607,17 @@
     } catch (e) {}
   }
 
-  // Reapply queued volume on video lifecycle events (song start / loadedmetadata / playing)
+  // Reapply queued volume and stereo balance on video lifecycle events (song start / loadedmetadata / playing)
   function attachMediaListeners(media) {
-    if (!media || media.__retroFmListenersAttached) return;
+    if (!media) return;
+    attachVideoToStereoGraph(media, !media.paused);
+    if (media.__retroFmListenersAttached) return;
     media.__retroFmListenersAttached = true;
 
     const onMediaLifecycle = (evtType) => {
       try {
+        attachVideoToStereoGraph(media, evtType === 'play' || evtType === 'playing' || !media.paused);
+        applyBalance(queuedBalance, `event:${evtType}`);
         if (queuedVolume !== null) {
           applyVolume(queuedVolume, `event:${evtType}`);
         } else {
@@ -373,12 +632,13 @@
     media.addEventListener('loadstart', () => onMediaLifecycle('loadstart'));
     media.addEventListener('loadedmetadata', () => onMediaLifecycle('loadedmetadata'));
     media.addEventListener('canplay', () => onMediaLifecycle('canplay'));
+    media.addEventListener('play', () => onMediaLifecycle('play'));
     media.addEventListener('playing', () => {
       try {
         const player = getPlayer();
         const currentVol = (player && typeof player.getVolume === 'function') ? player.getVolume() : 'unknown';
         console.log(
-          `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}`
+          `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}, queuedBalance=${queuedBalance}`
         );
         onMediaLifecycle('playing');
         syncPlaybackProgress(true);
@@ -418,6 +678,7 @@
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'navigationStart');
       }
+      applyBalance(queuedBalance, 'navigationStart');
     } catch (err) {
       reportError(err, 'handleNavigationStart');
     }
@@ -432,6 +693,7 @@
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'yt-navigate-finish');
       }
+      applyBalance(queuedBalance, 'yt-navigate-finish');
     } catch (err) { reportError(err, 'yt-navigate-finish'); }
   });
   window.addEventListener('yt-player-updated', () => {
@@ -439,6 +701,7 @@
       if (queuedVolume !== null) {
         applyVolume(queuedVolume, 'yt-player-updated');
       }
+      applyBalance(queuedBalance, 'yt-player-updated');
       flushPendingPlayerCommand('yt-player-updated');
     } catch (err) { reportError(err, 'yt-player-updated'); }
   });
@@ -727,6 +990,11 @@
       videoMuted,
       videoVolume,
       videoReadyState,
+      stereoBalance: queuedBalance,
+      leftChannelGain: appliedLeftGain,
+      rightChannelGain: appliedRightGain,
+      stereoGraphAttached: isVideoAttachedToStereoGraph(video),
+      audioContextState: stereoAudioCtx ? stereoAudioCtx.state : 'uninitialized',
       visibilityState,
       userActivation,
       pausedRightAfterUnmute,
@@ -827,10 +1095,12 @@
   }, 15000);
 
   // Initial broadcast and video attach check
+  ensureStereoBalanceNodes();
   const initialVideo = document.querySelector('video');
   if (initialVideo) {
     attachMediaListeners(initialVideo);
   }
+  applyBalance(queuedBalance, 'init');
   // Send initial diagnostics snapshot
   setTimeout(() => sendDiagnosticsSnapshot('initial'), 1000);
 })();

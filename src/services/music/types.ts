@@ -6,6 +6,9 @@ export interface MusicPlaybackStatus {
   currentTime: number;
   duration: number;
   volume: number; // 0.0 to 1.0
+  balance?: number; // -1.0 (full left) to +1.0 (full right), 0.0 = center
+  leftGain?: number; // 0.0 to 1.0
+  rightGain?: number; // 0.0 to 1.0
   muted: boolean;
   connectedTabId?: number | null;
   videoId?: string | null;
@@ -63,6 +66,7 @@ export interface MusicProvider {
   stop(): Promise<boolean>;
   seek(seconds: number): Promise<boolean>;
   setVolume(volume: number, rampId?: number): Promise<boolean>;
+  setBalance?(balance: number): Promise<boolean>;
   rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean>;
   navigate(url: string, videoId?: string): Promise<boolean>;
   programSong(request: SongProgramRequest): Promise<SongProgramResult>;

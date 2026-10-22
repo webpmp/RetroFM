@@ -46,7 +46,9 @@ body.dark{--img:var(--imgB)}
 #board[data-s=date] #bDate,#board[data-s=genre] #bGen{opacity:1;color:#ffb347;font-weight:700}
 .foc[data-s=date] #fDate .fl.cur{box-shadow:inset 0 0 0 1px #ffb347}
 #bHint{font-size:11px;margin-top:8px;opacity:.7}#bHint.err{color:#ff9a6b;opacity:1}
-#decades{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+#decades{display:flex;gap:6px;margin-bottom:8px;align-items:center;min-height:23px}
+#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:-6px}
+#stereo svg{display:block;width:44px;height:29.22px;transform:translateY(-0.25px)}
 button.tag{background:transparent;color:#8dffb0;font:inherit;font-size:11px;cursor:pointer;transition:background .15s}button.tag:hover,button.tag:focus-visible{background:rgba(141,255,176,.2)}
 .tag{border:1px solid #4fbf7a;border-radius:4px;padding:0 8px;height:23px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;line-height:1;font:inherit;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
 #hUp{margin-left:auto;padding:3px 10px;border:1px solid #4fbf7a;border-radius:4px;background:#8dffb0;color:#0e2217;font:inherit;font-size:11px;cursor:pointer}
