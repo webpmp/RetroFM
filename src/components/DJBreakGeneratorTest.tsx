@@ -43,6 +43,7 @@ import {
   Song as ObsSong,
   DjState,
   TALK_PRESETS,
+  type TalkLength,
 } from '../services/djBreak/djBreakObservations.js';
 import {
   buildVarietyBreak,
@@ -50,7 +51,9 @@ import {
   type VarietyState,
   type Jingle,
   type TopEntry,
+  artistTitle,
 } from '../services/djBreak/djVariety.js';
+import { shapeDelivery } from '../services/djBreak/djDelivery.js';
 import { LibrarySong } from '../services/songSelector.js';
 
 export const HISTORICAL_PRESET_DATES = [
@@ -193,6 +196,63 @@ export function DJBreakGeneratorTest({
     }
     onDjTalkFrequencyChange?.(freq);
     onLogEvent?.(`[DJ Talk Frequency] Switched to ${freq}`);
+  };
+
+  // DJ Talk Length: 'short' | 'mixed' | 'long' (default: 'mixed')
+  const [djTalkLength, setDjTalkLength] = useState<TalkLength>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_length') as TalkLength | null;
+      if (stored && (stored === 'short' || stored === 'mixed' || stored === 'long')) {
+        return stored;
+      }
+    }
+    return 'mixed';
+  });
+
+  const handleTalkLengthChange = (len: TalkLength) => {
+    setDjTalkLength(len);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_length', len);
+    }
+    onLogEvent?.(`[DJ Talk Length] Switched to ${len}`);
+  };
+
+  // Excitement slider: 0 to 100 (default: 30)
+  const [djExcitement, setDjExcitement] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_excitement');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleExcitementChange = (val: number) => {
+    setDjExcitement(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_excitement', String(val));
+    }
+  };
+
+  // Pauses slider: 0 to 100 (default: 30)
+  const [djPauses, setDjPauses] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_pauses');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handlePausesChange = (val: number) => {
+    setDjPauses(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_pauses', String(val));
+    }
   };
 
   const localDjStateRef = useRef<DjState>(newDjState());
@@ -493,6 +553,7 @@ export function DJBreakGeneratorTest({
             topOfWeek,
             jingles: jinglesDataRef.current,
             news: null,
+            length: djTalkLength,
           },
           localVarietyStateRef.current,
           Math.random,
@@ -500,19 +561,40 @@ export function DJBreakGeneratorTest({
         );
         localVarietyStateRef.current = varietyRes.state;
 
+        let finalText = varietyRes.text;
+        if (finalText && varietyRes.kind !== 'jingle') {
+          const protect: string[] = [];
+          if (prev) {
+            const spokenPrev = artistTitle(prev);
+            protect.push(spokenPrev.artist, spokenPrev.title, prev.title, prev.artist);
+          }
+          if (next) {
+            const spokenNext = artistTitle(next);
+            protect.push(spokenNext.artist, spokenNext.title, next.title, next.artist);
+          }
+          const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+          const beforeShaping = finalText;
+          finalText = shapeDelivery(finalText, {
+            excitement: djExcitement,
+            pauses: djPauses,
+            protect: uniqueProtect,
+          });
+          console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${finalText}"`);
+        }
+
         const detailFormatted = varietyRes.kind === 'observation' ? (varietyRes.detail ? `observation/${varietyRes.detail}` : 'observation') : varietyRes.kind;
-        if (!varietyRes.text && varietyRes.kind !== 'jingle') {
+        if (!finalText && varietyRes.kind !== 'jingle') {
           console.log('[DJ] silent break');
         } else {
-          console.log(`[DJ] mode=observations kind=${varietyRes.kind} detail=${varietyRes.detail ?? 'none'} text="${varietyRes.text}"`);
+          console.log(`[DJ] mode=observations kind=${varietyRes.kind} detail=${varietyRes.detail ?? 'none'} text="${finalText}"`);
         }
         onObservationBreakGenerated?.({
-          text: varietyRes.text,
+          text: finalText,
           slot: 'before',
           kind: detailFormatted,
         });
 
-        if (!varietyRes.text && varietyRes.kind !== 'jingle') {
+        if (!finalText && varietyRes.kind !== 'jingle') {
           onLogEvent?.('[DJ Break Observations] Observation break generated empty text (no commentary).');
           setResult({
             success: true,
@@ -528,7 +610,7 @@ export function DJBreakGeneratorTest({
           return;
         }
 
-        const displayText = varietyRes.kind === 'jingle' ? `[Jingle: ${varietyRes.jingle?.title || varietyRes.jingle?.youtube_id}]` : varietyRes.text;
+        const displayText = varietyRes.kind === 'jingle' ? `[Jingle: ${varietyRes.jingle?.title || varietyRes.jingle?.youtube_id}]` : finalText;
         const words = displayText.split(/\s+/).filter(Boolean);
         const genBreak: GeneratedDJBreak = {
           id: `obs_break_${Date.now()}`,
@@ -1018,31 +1100,95 @@ export function DJBreakGeneratorTest({
 
         {/* DJ Talk Frequency (Only shown when DJ Mode is Observations (template)) */}
         {djMode === 'observations' && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
-            <div className="flex items-center gap-2">
-              <Mic2 className="w-4 h-4 text-amber-400" />
-              <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
-                DJ talk frequency:
-              </span>
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                <Mic2 className="w-4 h-4 text-amber-400" />
+                <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+                  DJ talk frequency:
+                </span>
+              </div>
+
+              <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+                {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
+                  <button
+                    key={freq}
+                    type="button"
+                    onClick={() => handleTalkFrequencyChange(freq)}
+                    className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                      djTalkFrequency === freq
+                        ? 'bg-amber-500 text-black shadow'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {freq}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
-              {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
-                <button
-                  key={freq}
-                  type="button"
-                  onClick={() => handleTalkFrequencyChange(freq)}
-                  className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
-                    djTalkFrequency === freq
-                      ? 'bg-amber-500 text-black shadow'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {freq}
-                </button>
-              ))}
+            {/* DJ Talk Length: Short / Mixed / Long */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                <Mic2 className="w-4 h-4 text-amber-400" />
+                <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+                  DJ talk length:
+                </span>
+              </div>
+
+              <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+                {(['short', 'mixed', 'long'] as const).map((len) => (
+                  <button
+                    key={len}
+                    type="button"
+                    onClick={() => handleTalkLengthChange(len)}
+                    className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                      djTalkLength === len
+                        ? 'bg-amber-500 text-black shadow'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {len}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+
+            {/* Delivery Shaping Sliders: Excitement & Pauses */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2.5 border-b border-zinc-800/80">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-zinc-300 font-bold">Excitement:</span>
+                  <span className="text-amber-400 font-mono font-bold">{djExcitement}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={djExcitement}
+                  onChange={(e) => handleExcitementChange(parseInt(e.target.value, 10) || 0)}
+                  className="w-full accent-amber-500 cursor-pointer h-1.5"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-zinc-300 font-bold">Pauses:</span>
+                  <span className="text-amber-400 font-mono font-bold">{djPauses}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={djPauses}
+                  onChange={(e) => handlePausesChange(parseInt(e.target.value, 10) || 0)}
+                  className="w-full accent-amber-500 cursor-pointer h-1.5"
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {/* AI Provider Toggle: Gemini vs LM Studio (Only applies in AI-written mode) */}

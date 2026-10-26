@@ -51,15 +51,19 @@ import {
   Song as ObsSong,
   DjState,
   TALK_PRESETS,
+  type TalkLength,
 } from './services/djBreak/djBreakObservations.js';
 import {
   buildVarietyBreak,
   newVarietyState,
+  artistTitle,
   type VarietyState,
   type BreakResult as VarietyBreakResult,
   type Jingle,
   type TopEntry,
 } from './services/djBreak/djVariety.js';
+import { economyLine, type PricesFile } from './services/djBreak/costOfLiving.js';
+import { shapeDelivery } from './services/djBreak/djDelivery.js';
 import { clientNewsQueue, ClientNewsStatus } from './services/news/clientNewsQueue.js';
 import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
 import manifest from '../extension/manifest.json';
@@ -448,6 +452,8 @@ export default function App() {
   const varietyStateRef = useRef<VarietyState>(newVarietyState());
   const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
   const jinglesDataRef = useRef<Jingle[]>([]);
+  const pricesDataRef = useRef<PricesFile | null>(null);
+  const recentEconomyKindsRef = useRef<string[]>([]);
   const pendingJingleRef = useRef<Jingle | null>(null);
   const activeJingleRef = useRef<Jingle | null>(null);
   const jingleEndedHandlerRef = useRef<(() => void) | null>(null);
@@ -460,6 +466,14 @@ export default function App() {
     slot: 'before' | 'after';
     kind: string | null;
     detail?: string;
+    timing?: 'land' | 'follow';
+    wordCount?: number;
+    spokenSeconds?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
   } | null>(null);
 
   // Ahead-of-time DJ Break preparation & triggering refs
@@ -471,12 +485,21 @@ export default function App() {
     slot: 'before' | 'after';
     kind: string | null;
     detail?: string;
+    timing?: 'land' | 'follow';
+    maxSeconds?: number;
+    wordCount?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
     pendingVarietyState?: VarietyState;
     varietyResult?: VarietyBreakResult;
     pendingState?: DjState;
     triggerTimeRemaining: number;
     duckTriggerTimeRemaining: number;
     newsText?: string | null;
+    economyKind?: string | null;
   } | null>(null);
   const [newsDebugStatus, setNewsDebugStatus] = useState<ClientNewsStatus>(() => clientNewsQueue.getStatus());
   const isPreparingBreakRef = useRef<boolean>(false);
@@ -515,6 +538,63 @@ export default function App() {
       localStorage.setItem('retrofm_dj_talk_frequency', freq);
     }
     logMessage(`[DJ Talk Frequency] Switched to ${freq}`);
+  };
+
+  // DJ Talk Length: 'short' | 'mixed' | 'long' (default: 'mixed')
+  const [djTalkLength, setDjTalkLength] = useState<TalkLength>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_length') as TalkLength | null;
+      if (stored && (stored === 'short' || stored === 'mixed' || stored === 'long')) {
+        return stored;
+      }
+    }
+    return 'mixed';
+  });
+
+  const handleDjTalkLengthChange = (len: TalkLength) => {
+    setDjTalkLength(len);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_length', len);
+    }
+    logMessage(`[DJ Talk Length] Switched to ${len}`);
+  };
+
+  // DJ Excitement slider: 0 to 100 (default: 30)
+  const [djExcitement, setDjExcitement] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_excitement');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleDjExcitementChange = (val: number) => {
+    setDjExcitement(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_excitement', String(val));
+    }
+  };
+
+  // DJ Pauses slider: 0 to 100 (default: 30)
+  const [djPauses, setDjPauses] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_pauses');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleDjPausesChange = (val: number) => {
+    setDjPauses(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_pauses', String(val));
+    }
   };
 
   // --- PROGRAM SONG Test State ---
@@ -947,6 +1027,18 @@ export default function App() {
       })
       .catch(() => {
         jinglesDataRef.current = [];
+      });
+
+    fetch('/data/prices.json')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: PricesFile | null) => {
+        pricesDataRef.current = data;
+        if (data && data.series) {
+          logMessage(`[DJ Variety] Loaded prices.json (${Object.keys(data.series).length} series).`);
+        }
+      })
+      .catch(() => {
+        pricesDataRef.current = null;
       });
   }, []);
 
@@ -1820,6 +1912,20 @@ export default function App() {
                   pendingJingleRef.current = prep.varietyResult.jingle;
                   // We do not speak over a jingle; jingle will be played in YouTube tab when song ends naturally
                 } else if (prep.text) {
+                  // Check maxSeconds limit for follow timing
+                  if (prep.timing === 'follow' && prep.maxSeconds && prep.durationSec > prep.maxSeconds) {
+                    console.log(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+                    logMessage(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+                    if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+                      volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
+                    }
+                    if (prep.kind === 'news' && prep.newsText) {
+                      clientNewsQueue.returnLineToQueue(prep.newsText);
+                    }
+                    preparedBreakRef.current = null;
+                    return;
+                  }
+
                   if (prep.audioData) {
                     // Audio is ready: commit state and speak!
                     if (prep.pendingVarietyState) {
@@ -1831,11 +1937,18 @@ export default function App() {
                     if (prep.kind === 'news' && prep.newsText) {
                       clientNewsQueue.markLineUsed(prep.newsText);
                     }
+                    if (prep.kind === 'economy' && prep.economyKind) {
+                      recentEconomyKindsRef.current = [...recentEconomyKindsRef.current, prep.economyKind].slice(-4);
+                    }
                     setLastDjBreak({
                       text: prep.text,
                       slot: prep.slot,
                       kind: prep.kind,
                       detail: prep.detail,
+                      timing: prep.timing,
+                      wordCount: prep.wordCount,
+                      spokenSeconds: prep.durationSec,
+                      deliverySettings: prep.deliverySettings,
                     });
                     console.log(`[DJ] speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
                     logMessage(`[DJ] Speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
@@ -1855,6 +1968,9 @@ export default function App() {
                     logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
                       volumeControllerRef.current.cancel('Audio not ready for DJ speech');
+                    }
+                    if (prep.kind === 'news' && prep.newsText) {
+                      clientNewsQueue.returnLineToQueue(prep.newsText);
                     }
                   }
                 } else {
@@ -3975,6 +4091,12 @@ export default function App() {
       const nextNewsItem = clientNewsQueue.getNextNewsLine();
       const newsItem: { text: string } | null = nextNewsItem ? { text: nextNewsItem.text } : null;
 
+      // Economy line from cost-of-living data if available
+      const ecoLine = pricesDataRef.current
+        ? economyLine(pricesDataRef.current, date, Math.random, recentEconomyKindsRef.current)
+        : null;
+      const economyItem: { text: string } | null = ecoLine ? { text: ecoLine.text } : null;
+
       const res = buildVarietyBreak(
         {
           prev,
@@ -3987,14 +4109,16 @@ export default function App() {
           topOfWeek,
           jingles: jinglesDataRef.current,
           news: newsItem,
+          economy: economyItem,
+          length: djTalkLength,
         },
         varietyStateRef.current,
         Math.random,
         TALK_PRESETS[djTalkFrequency]
       );
 
-      const triggerTimeRemaining = 1.0 + Math.random() * 1.0; // Between 1.0s and 2.0s
-      const duckTriggerTimeRemaining = triggerTimeRemaining + 0.5; // Lead duck 500ms before speech
+      const timing = res.timing || 'land';
+      const maxSeconds = res.maxSeconds;
 
       if (res.kind === 'silent' || (!res.text && res.kind !== 'jingle')) {
         console.log('[DJ] silent break');
@@ -4006,16 +4130,19 @@ export default function App() {
           slot: 'before',
           kind: res.kind,
           detail: res.detail,
+          timing,
+          maxSeconds,
           pendingVarietyState: res.state,
           varietyResult: res,
-          triggerTimeRemaining,
-          duckTriggerTimeRemaining,
+          triggerTimeRemaining: 1.5,
+          duckTriggerTimeRemaining: 2.0,
         };
         return;
       }
 
       if (res.kind === 'jingle') {
         console.log(`[DJ] preparing jingle break: ${res.jingle?.id} (${res.jingle?.youtube_id})`);
+        const triggerTimeRemaining = 1.0 + Math.random() * 1.0;
         preparedBreakRef.current = {
           id: currentSongId,
           audioData: null,
@@ -4024,27 +4151,49 @@ export default function App() {
           slot: 'before',
           kind: 'jingle',
           detail: res.jingle?.title || res.jingle?.id,
+          timing: 'land',
           pendingVarietyState: res.state,
           varietyResult: res,
           triggerTimeRemaining,
-          duckTriggerTimeRemaining,
+          duckTriggerTimeRemaining: triggerTimeRemaining + 0.5,
         };
         return;
       }
 
-      console.log(`[DJ] preparing break (kind: ${res.kind}, detail: ${res.detail ?? 'none'}): "${res.text}"`);
+      // Delivery Shaping: Shape punctuation before TTS synthesis
+      let finalText = res.text;
+      const protect: string[] = [];
+      if (prev) {
+        const spokenPrev = artistTitle(prev);
+        protect.push(spokenPrev.artist, spokenPrev.title, prev.title, prev.artist);
+      }
+      if (next) {
+        const spokenNext = artistTitle(next);
+        protect.push(spokenNext.artist, spokenNext.title, next.title, next.artist);
+      }
+      const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+      const beforeShaping = finalText;
+      finalText = shapeDelivery(finalText, {
+        excitement: djExcitement,
+        pauses: djPauses,
+        protect: uniqueProtect,
+      });
+      console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${finalText}"`);
+      console.log(`[DJ] preparing break (kind: ${res.kind}, detail: ${res.detail ?? 'none'}): "${finalText}"`);
 
       // Synthesize audio ahead of time
       let audioBase64: string | null = null;
       let durationSec = 4;
 
       if (voiceEngine === 'BROWSER') {
-        // Browser SpeechSynthesis does not produce base64 audio, ready immediately
+        // Browser SpeechSynthesis does not produce base64 audio, estimate ~2.5 words/sec
         audioBase64 = 'browser-speech';
+        const words = finalText.split(/\s+/).filter(Boolean);
+        durationSec = Math.max(3, Math.round(words.length / 2.5));
       } else {
         const voiceToUse = voiceEngine === 'KOKORO' ? selectedKokoroVoice : selectedVoice;
         const resp = await generateTTS({
-          text: res.text,
+          text: finalText,
           engine: voiceEngine,
           voice: voiceToUse,
           style: djStyle,
@@ -4054,7 +4203,7 @@ export default function App() {
 
         if (resp.success && resp.audioBase64) {
           audioBase64 = `data:${resp.mimeType || 'audio/wav'};base64,${resp.audioBase64}`;
-          durationSec = resp.durationSeconds || 4;
+          durationSec = resp.durationSeconds || Math.max(3, Math.round(finalText.split(/\s+/).filter(Boolean).length / 2.5));
         } else {
           console.warn('[DJ] TTS generation failed during ahead-of-time prep:', resp.error);
         }
@@ -4066,19 +4215,50 @@ export default function App() {
         return;
       }
 
+      // Timing calculation based on measured audio duration
+      let triggerTimeRemaining = 1.5;
+      if (timing === 'land') {
+        const landOffset = 0.5 + Math.random() * 1.5; // Random in [0.5, 2.0]
+        triggerTimeRemaining = durationSec - landOffset;
+        if (triggerTimeRemaining > 25) {
+          triggerTimeRemaining = 25;
+        }
+        if (triggerTimeRemaining < 1.0) {
+          triggerTimeRemaining = 1.0;
+        }
+      } else {
+        // follow: speech starts 1.0 to 2.0 seconds before current song ends
+        triggerTimeRemaining = 1.0 + Math.random() * 1.0;
+      }
+
+      const duckTriggerTimeRemaining = triggerTimeRemaining + 0.5; // Duck 500ms before speech starts
+      const wordCount = finalText.split(/\s+/).filter(Boolean).length;
+
+      console.log(`[DJ] timing=${timing} audio=${durationSec.toFixed(1)}s start=remaining ${triggerTimeRemaining.toFixed(1)}s`);
+      logMessage(`[DJ] timing=${timing} audio=${durationSec.toFixed(1)}s start=remaining ${triggerTimeRemaining.toFixed(1)}s`);
+
       preparedBreakRef.current = {
         id: currentSongId,
         audioData: audioBase64,
         durationSec,
-        text: res.text,
+        text: finalText,
         slot: 'before',
         kind: res.kind,
         detail: res.detail,
+        timing,
+        maxSeconds,
+        wordCount,
+        deliverySettings: {
+          length: djTalkLength,
+          excitement: djExcitement,
+          pauses: djPauses,
+        },
         pendingVarietyState: res.state,
         varietyResult: res,
         triggerTimeRemaining,
         duckTriggerTimeRemaining,
         newsText: res.kind === 'news' && nextNewsItem ? nextNewsItem.text : null,
+        economyKind: res.kind === 'economy' && ecoLine ? ecoLine.kind : null,
       };
 
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
@@ -4096,7 +4276,7 @@ export default function App() {
   const generateObservationBreak = (
     prev?: LibrarySong | null,
     next?: LibrarySong | null
-  ): { text: string; slot: 'before' | 'after'; kind: string | null; detail?: string } => {
+  ): { text: string; slot: 'before' | 'after'; kind: string | null; detail?: string; timing?: 'land' | 'follow'; wordCount?: number } => {
     const history = sessionHistoryRef.current;
     const p = history.pointer;
     const historyPrev = p > 0 ? history.entries[p - 1].song : (previousLibrarySongRef.current || currentSongPickRef.current?.song);
@@ -4132,6 +4312,9 @@ export default function App() {
     }
 
     const nextNewsItem = clientNewsQueue.getNextNewsLine();
+    const ecoLine = pricesDataRef.current
+      ? economyLine(pricesDataRef.current, date, Math.random, recentEconomyKindsRef.current)
+      : null;
     const res = buildVarietyBreak(
       {
         prev: prevSong,
@@ -4144,6 +4327,8 @@ export default function App() {
         topOfWeek,
         jingles: jinglesDataRef.current,
         news: nextNewsItem ? { text: nextNewsItem.text } : null,
+        economy: ecoLine ? { text: ecoLine.text } : null,
+        length: djTalkLength,
       },
       varietyStateRef.current,
       Math.random,
@@ -4153,22 +4338,62 @@ export default function App() {
     if (res.kind === 'news' && nextNewsItem) {
       clientNewsQueue.markLineUsed(nextNewsItem.text);
     }
-
-    const kindFormatted = res.kind ? res.kind : 'none';
-    if (!res.text) {
-      console.log('[DJ] silent break');
-    } else {
-      console.log(`[DJ] mode=observations kind=${kindFormatted} detail=${res.detail ?? 'none'} text="${res.text}"`);
+    if (res.kind === 'economy' && ecoLine) {
+      recentEconomyKindsRef.current = [...recentEconomyKindsRef.current, ecoLine.kind].slice(-4);
     }
 
+    let spokenText = res.text;
+    if (spokenText && res.kind !== 'jingle') {
+      const protect: string[] = [];
+      if (prevSong) {
+        const spokenPrev = artistTitle(prevSong);
+        protect.push(spokenPrev.artist, spokenPrev.title, prevSong.title, prevSong.artist);
+      }
+      if (nextSong) {
+        const spokenNext = artistTitle(nextSong);
+        protect.push(spokenNext.artist, spokenNext.title, nextSong.title, nextSong.artist);
+      }
+      const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+      const beforeShaping = spokenText;
+      spokenText = shapeDelivery(spokenText, {
+        excitement: djExcitement,
+        pauses: djPauses,
+        protect: uniqueProtect,
+      });
+      console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${spokenText}"`);
+    }
+
+    const kindFormatted = res.kind ? res.kind : 'none';
+    if (!spokenText) {
+      console.log('[DJ] silent break');
+    } else {
+      console.log(`[DJ] mode=observations kind=${kindFormatted} detail=${res.detail ?? 'none'} text="${spokenText}"`);
+    }
+
+    const wordCount = spokenText ? spokenText.split(/\s+/).filter(Boolean).length : 0;
     setLastDjBreak({
-      text: res.text,
+      text: spokenText,
       slot: 'before',
       kind: res.kind,
       detail: res.detail,
+      timing: res.timing || 'land',
+      wordCount,
+      spokenSeconds: spokenText ? Math.max(3, Math.round(wordCount / 2.5)) : 0,
+      deliverySettings: {
+        length: djTalkLength,
+        excitement: djExcitement,
+        pauses: djPauses,
+      },
     });
 
-    return { text: res.text, slot: 'before', kind: res.kind, detail: res.detail };
+    return {
+      text: spokenText,
+      slot: 'before',
+      kind: res.kind,
+      detail: res.detail,
+      timing: res.timing || 'land',
+      wordCount,
+    };
   };
 
   const handleTestDjLine = async () => {
@@ -5178,6 +5403,45 @@ export default function App() {
                           ? `"${lastDjBreak.text}"`
                           : (lastDjBreak?.kind === 'jingle' ? '[Played RETRO FM jingle]' : '(No DJ break generated yet)')}
                       </div>
+
+                      {/* Debug line: kind, detail, timing, word count, spoken length, delivery settings */}
+                      {lastDjBreak && (
+                        <div className="text-[10px] text-zinc-400 font-mono bg-zinc-950/80 px-2 py-1 rounded border border-zinc-800/60 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                          <div>
+                            <span className="text-zinc-500">break:</span>{' '}
+                            <span className="text-amber-300 font-semibold">{lastDjBreak.kind || 'plain'}</span>
+                            {lastDjBreak.detail && <span className="text-zinc-400"> ({lastDjBreak.detail})</span>}
+                            {lastDjBreak.timing && (
+                              <>
+                                <span className="text-zinc-600"> • </span>
+                                <span className="text-zinc-500">timing:</span>{' '}
+                                <span className="text-cyan-300">{lastDjBreak.timing}</span>
+                              </>
+                            )}
+                          </div>
+                          <div>
+                            {typeof lastDjBreak.wordCount === 'number' && (
+                              <>
+                                <span className="text-zinc-500">words:</span>{' '}
+                                <span className="text-zinc-300">{lastDjBreak.wordCount}</span>
+                                <span className="text-zinc-600"> • </span>
+                              </>
+                            )}
+                            {typeof lastDjBreak.spokenSeconds === 'number' && (
+                              <>
+                                <span className="text-zinc-500">spoken:</span>{' '}
+                                <span className="text-zinc-300">{lastDjBreak.spokenSeconds.toFixed(1)}s</span>
+                                <span className="text-zinc-600"> • </span>
+                              </>
+                            )}
+                            <span className="text-zinc-500">settings:</span>{' '}
+                            <span className="text-amber-400">
+                              len={lastDjBreak.deliverySettings?.length ?? djTalkLength}, ex={lastDjBreak.deliverySettings?.excitement ?? djExcitement}, pa={lastDjBreak.deliverySettings?.pauses ?? djPauses}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {lastDjBreak?.kind === 'news' && (
                         <div className="text-[10px] text-zinc-400 font-medium flex items-center justify-end gap-1">
                           <span>News:</span>

@@ -25,9 +25,19 @@ export interface NewsWriterOptions {
  * Builds the news writer prompt for a single packet according to spec.
  */
 export function buildNewsPrompt(packet: NewsPacket, retryReasons?: string[]): string {
-  const baseInstruction = `You are a radio DJ on ${packet.date}, glancing at the day's newspaper between records. Write 1 or 2 short spoken sentences (15 to 35 words) giving a light, human reaction to this headline, in the present tense. Do not read the headline word for word. Use only information in the headline and abstract: do not add names, places, numbers, causes, or outcomes, and say nothing about what happened afterwards. Do not greet the listener, mention the time of day, or name the next song. Output only the sentences.`;
+  const kwStr = packet.keywords && packet.keywords.length > 0 ? packet.keywords.join(', ') : '';
+  const baseInstruction = `You are a radio DJ on ${packet.date}, glancing at the day's newspaper between records.
+Write 1 or 2 short spoken sentences (15 to 35 words) giving a light, human reaction to this headline, in the present tense.
+Do not read the headline word for word.
+Make clear who or what the story is about, using the names and terms from the headline, abstract, or keywords.
+Use only information in the headline, abstract, and keywords: do not invent names, places, numbers, causes, or outcomes, and say nothing about what happened afterwards.
+Do not start with any greeting or lead-in (do not say "good morning", "folks", "listeners", "here's the news", etc.), do not mention the time of day, and do not name the next song.
+Output only the spoken sentences.`;
 
   let prompt = `${baseInstruction}\n\nHEADLINE: "${packet.headline}"\nABSTRACT: "${packet.abstract || ''}"`;
+  if (kwStr) {
+    prompt += `\nKEYWORDS: "${kwStr}"`;
+  }
 
   if (retryReasons && retryReasons.length > 0) {
     prompt += `\n\nIMPORTANT CORRECTION: Your previous attempt was rejected for these reasons: ${retryReasons.join('; ')}. Fix these issues and ensure no invented names, places, numbers, future hindsight, greetings, or hype phrases are included. Output only the 1 or 2 spoken sentences.`;

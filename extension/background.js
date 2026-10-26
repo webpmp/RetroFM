@@ -618,6 +618,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: VU_AUDIO_LEVELS - Real-time audio signal levels from YouTube tab to Boom Box
+      if (type === 'VU_AUDIO_LEVELS') {
+        const bbTabId = await resolveBoomBoxTab();
+        if (bbTabId) {
+          try {
+            await chrome.tabs.sendMessage(bbTabId, {
+              type: 'VU_AUDIO_LEVELS',
+              payload
+            });
+          } catch (e) {}
+        }
+        sendResponse({ success: true });
+        return;
+      }
+
       // Feature: YT_TAB_ACTIVATED - User clicked anywhere in YouTube page to grant playback permission
       if (type === 'YT_TAB_ACTIVATED') {
         hasSessionActivation = true;

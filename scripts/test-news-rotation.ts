@@ -188,22 +188,28 @@ assert.notStrictEqual(controller1, controller2);
 qm.cancel();
 console.log('✓ PASS: Previous prefetch job cancelled cleanly when date changes.\n');
 
-// 8. Regression: auditNewsLine allows non-greeting 'folks' and 'everybody' while rejecting actual greetings
-console.log('Test 8: auditNewsLine greeting vs general noun regression');
+// 8. auditNewsLine rejects greetings and hype phrases (including folks, listeners, everybody)
+console.log('Test 8: auditNewsLine greeting and hype rejection');
 const docPacket: NewsPacket = {
   date: '1977-05-01',
   headline: 'Talk About Doctors Instead of Athletes',
   abstract: 'Walt Frazier article on Arthur Ashe open lr urging black parents to see that their children receive formal educ; holds many black children are influenced by lifestyles of athletes and movie stars that are glamorized by media; says black parents should stress reading and educ to their children and that media should also write about successful black drs, teachers and businessmen; illus (M)',
+  keywords: ['Arthur Ashe', 'Walt Frazier', 'Education'],
 };
-const validLineWithFolks = "Well, isn't that a thought? Maybe we should be shining a light on those folks hitting the books instead of just the ones hitting the court.";
-const auditFolks = auditNewsLine(validLineWithFolks, docPacket);
-assert.strictEqual(auditFolks.ok, true, `Expected valid line with 'folks' to pass, but failed: ${auditFolks.reasons.join(', ')}`);
+const validNewsLine = "Arthur Ashe and Walt Frazier want parents to urge reading and education rather than just focusing on professional sports.";
+const auditValid = auditNewsLine(validNewsLine, docPacket);
+assert.strictEqual(auditValid.ok, true, `Expected valid news line to pass, but failed: ${auditValid.reasons.join(', ')}`);
 
 const invalidGreetingLine = 'Good morning listeners, maybe we should be shining a light on education.';
 const auditGreeting = auditNewsLine(invalidGreetingLine, docPacket);
 assert.strictEqual(auditGreeting.ok, false, 'Expected line with "Good morning listeners" to be rejected');
 assert.ok(auditGreeting.reasons.includes('greeting, time-of-day or hype phrase'));
-console.log('✓ PASS: auditNewsLine permits general nouns ("folks"/"everybody") while rejecting actual greetings.\n');
+
+const invalidFolksLine = 'Hey folks, check out what the paper says today about sports.';
+const auditFolks = auditNewsLine(invalidFolksLine, docPacket);
+assert.strictEqual(auditFolks.ok, false, 'Expected line with "folks" to be rejected');
+assert.ok(auditFolks.reasons.includes('greeting, time-of-day or hype phrase'));
+console.log('✓ PASS: auditNewsLine accepts valid factual commentary and rejects greeting/hype phrases.\n');
 
 console.log('================================================================================');
 console.log('All 8 news rotation & pipeline tests passed successfully!');

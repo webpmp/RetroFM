@@ -107,6 +107,13 @@
   let leftGainNode = null;
   let rightGainNode = null;
   let stereoMergerNode = null;
+  let leftAnalyserNode = null;
+  let rightAnalyserNode = null;
+  let leftTimeData = null;
+  let rightTimeData = null;
+  let vuSamplingInterval = null;
+  let lastNonZeroSentTime = 0;
+  let consecutiveSilenceCount = 0;
   const attachedMediaElements = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
   const initialBalanceGains = computeStereoBalanceGains(queuedBalance);
   let appliedLeftGain = initialBalanceGains.leftGain;
@@ -146,12 +153,38 @@
       leftGainNode.gain.value = gains.leftGain;
       rightGainNode.gain.value = gains.rightGain;
 
+      // Real-time Audio Analysers for VU metering (placed post-balance gain)
+      try {
+        leftAnalyserNode = stereoAudioCtx.createAnalyser();
+        leftAnalyserNode.fftSize = 512;
+        leftAnalyserNode.smoothingTimeConstant = 0.2;
+        leftTimeData = new Float32Array(leftAnalyserNode.fftSize);
+
+        rightAnalyserNode = stereoAudioCtx.createAnalyser();
+        rightAnalyserNode.fftSize = 512;
+        rightAnalyserNode.smoothingTimeConstant = 0.2;
+        rightTimeData = new Float32Array(rightAnalyserNode.fftSize);
+      } catch (e) {
+        reportError(e, 'createAnalyser');
+      }
+
       stereoInputNode.connect(stereoSplitterNode);
       stereoSplitterNode.connect(leftGainNode, 0, 0);
       stereoSplitterNode.connect(rightGainNode, 1, 0);
+
+      // Tap balance-gain outputs into analysers (parallel branch, does not alter destination path)
+      if (leftAnalyserNode) {
+        try { leftGainNode.connect(leftAnalyserNode); } catch (e) {}
+      }
+      if (rightAnalyserNode) {
+        try { rightGainNode.connect(rightAnalyserNode); } catch (e) {}
+      }
+
       leftGainNode.connect(stereoMergerNode, 0, 0);
       rightGainNode.connect(stereoMergerNode, 0, 1);
       stereoMergerNode.connect(stereoAudioCtx.destination);
+
+      startVuSamplingLoop();
 
       stereoAudioCtx.onstatechange = () => {
         try {
@@ -170,6 +203,85 @@
     } catch (err) {
       reportError(err, 'ensureStereoBalanceNodes');
       return false;
+    }
+  }
+
+  function calculateRms(analyser, dataBuffer) {
+    if (!analyser || !dataBuffer) return 0;
+    try {
+      analyser.getFloatTimeDomainData(dataBuffer);
+      let sumSquares = 0;
+      const len = dataBuffer.length;
+      for (let i = 0; i < len; i++) {
+        const val = dataBuffer[i];
+        sumSquares += val * val;
+      }
+      return Math.sqrt(sumSquares / len);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function startVuSamplingLoop() {
+    if (vuSamplingInterval) return;
+    // Sample audio levels approximately 30 times per second (~33ms)
+    vuSamplingInterval = setInterval(() => {
+      try {
+        sampleAndBroadcastVuLevels();
+      } catch (e) {}
+    }, 33);
+  }
+
+  function sampleAndBroadcastVuLevels() {
+    const player = getPlayer();
+    const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
+    const isVideoPlaying = !!(video && !video.paused && !video.ended && video.readyState >= 2);
+    const isContextRunning = !!(stereoAudioCtx && stereoAudioCtx.state === 'running');
+
+    // If video is not actively playing, audio context is suspended/inactive, or elements unattached:
+    if (!isVideoPlaying || !isContextRunning || !leftAnalyserNode || !rightAnalyserNode) {
+      // Send zero levels to settle meters if we previously had non-zero values
+      if (consecutiveSilenceCount < 5) {
+        consecutiveSilenceCount++;
+        postVuLevels(0, 0, false);
+      }
+      return;
+    }
+
+    const rawL = calculateRms(leftAnalyserNode, leftTimeData);
+    const rawR = calculateRms(rightAnalyserNode, rightTimeData);
+
+    // Noise floor & silence threshold:
+    // When music is paused, stopped, between tracks, or in silent passages, RMS drops to near zero (< 0.001)
+    const SILENCE_THRESHOLD = 0.0015;
+    const cleanL = rawL > SILENCE_THRESHOLD ? rawL : 0;
+    const cleanR = rawR > SILENCE_THRESHOLD ? rawR : 0;
+
+    if (cleanL === 0 && cleanR === 0) {
+      consecutiveSilenceCount++;
+      // Once silence has been confirmed for 3+ consecutive frames (~100ms),
+      // keep sending zero for a few updates so the meters finish decaying to 0
+      if (consecutiveSilenceCount <= 5) {
+        postVuLevels(0, 0, true);
+      }
+    } else {
+      consecutiveSilenceCount = 0;
+      lastNonZeroSentTime = Date.now();
+      postVuLevels(cleanL, cleanR, true);
+    }
+  }
+
+  function postVuLevels(leftLevel, rightLevel, isActive) {
+    try {
+      window.postMessage({
+        type: 'RETROFM_VU_LEVELS_MSG',
+        l: Number(leftLevel.toFixed(4)),
+        r: Number(rightLevel.toFixed(4)),
+        active: Boolean(isActive),
+        ts: Date.now()
+      }, '*');
+    } catch (e) {
+      reportError(e, 'postVuLevels');
     }
   }
 

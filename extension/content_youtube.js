@@ -186,10 +186,38 @@ if (!window.__retroFmContentLoaded) {
   }
   window.addEventListener(EVENT_STATE_CHANGE, onStateChangeEvent);
 
+  function handleVuLevelsFromMainWorld(data) {
+    if (!data || typeof data.l !== 'number' || typeof data.r !== 'number') return;
+    if (!isContextValid()) {
+      cleanupInvalidatedContext();
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: 'VU_AUDIO_LEVELS',
+        payload: {
+          l: Math.max(0, Math.min(2, data.l)),
+          r: Math.max(0, Math.min(2, data.r)),
+          active: Boolean(data.active),
+          ts: typeof data.ts === 'number' ? data.ts : Date.now()
+        }
+      }, () => {
+        if (chrome.runtime?.lastError) {}
+      });
+    } catch (e) {
+      cleanupInvalidatedContext();
+      reportError(e, 'handleVuLevelsFromMainWorld');
+    }
+  }
+
   function onWindowMessageEvent(e) {
     try {
-      if (e && e.source === window && e.data && e.data.type === 'RETROFM_YT_STATE_CHANGED_MSG') {
-        handleStateChangeFromMainWorld(e.data);
+      if (e && e.source === window && e.data) {
+        if (e.data.type === 'RETROFM_YT_STATE_CHANGED_MSG') {
+          handleStateChangeFromMainWorld(e.data);
+        } else if (e.data.type === 'RETROFM_VU_LEVELS_MSG') {
+          handleVuLevelsFromMainWorld(e.data);
+        }
       }
     } catch (err) {
       reportError(err, 'onWindowMessageEvent');

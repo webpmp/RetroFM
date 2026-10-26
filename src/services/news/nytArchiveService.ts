@@ -21,6 +21,7 @@ export interface ReducedNYTArticle {
   printPage: string;
   printSection: string;
   keywords?: string[];
+  wordCount?: number;
 }
 
 export interface MonthlyArchiveCache {
@@ -211,6 +212,7 @@ function reduceDocs(rawDocs: any[]): ReducedNYTArticle[] {
     const typeOfMaterial = (doc.type_of_material || '').trim();
     const printPage = String(doc.print_page || '').trim();
     const printSection = (doc.print_section || '').trim().toUpperCase();
+    const wordCount = typeof doc.word_count === 'number' ? doc.word_count : (typeof doc.word_count === 'string' ? parseInt(doc.word_count, 10) : undefined);
     const keywords: string[] = Array.isArray(doc.keywords)
       ? doc.keywords.map((k: any) => typeof k === 'string' ? k : (k.value || ''))
       : [];
@@ -225,6 +227,7 @@ function reduceDocs(rawDocs: any[]): ReducedNYTArticle[] {
       printPage,
       printSection,
       keywords,
+      wordCount: isNaN(wordCount as any) ? undefined : wordCount,
     };
   });
 }
@@ -294,7 +297,18 @@ export function selectNewsPackets(
         headline,
         abstract,
         section: art.section || art.desk || 'News',
+        keywords: art.keywords && art.keywords.length > 0 ? art.keywords : undefined,
       };
+
+      // Check context sufficiency: headline + abstract + keywords must make clear who/what the story is about
+      const combinedText = `${headline} ${abstract} ${(art.keywords || []).join(' ')}`.trim();
+      const combinedWords = combinedText.split(/\s+/).filter(Boolean);
+      if (combinedWords.length < 5 || !/[a-zA-Z]{3,}/.test(combinedText)) {
+        continue;
+      }
+      if (/^(business|briefs|digest|notes|summary|the u\.n\. today)$/i.test(headline) && abstract.length < 25) {
+        continue;
+      }
 
       // Check isSensitive
       if (isSensitive(packet)) {
@@ -320,13 +334,21 @@ export function selectNewsPackets(
       }
 
       const catResult = categorizeNYTArticle(mockDoc);
-      const score = computeDJInterestScore({
+      let score = computeDJInterestScore({
         isFrontPage: natResult.isFrontPage,
         category: catResult.category,
         publishedDate: art.pubDate,
         targetDate,
         desk: art.desk,
       });
+
+      // Prioritize front-page (A1) and high word-count items
+      if (natResult.isFrontPage) {
+        score += 50;
+      }
+      if (art.wordCount && art.wordCount > 500) {
+        score += Math.min(20, Math.floor(art.wordCount / 100));
+      }
 
       result.push({ packet, score });
     }

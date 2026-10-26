@@ -15,3 +15,4 @@ docker-compose.yml
 
 public/data/retrofm_library*.json
 public/data/weekly_top.json
+public/data/prices.json

@@ -10,7 +10,7 @@
  *   const result = auditNewsLine(line, packet);   // { ok, reasons }
  */
 
-export interface NewsPacket { date: string; headline: string; abstract?: string; section?: string }
+export interface NewsPacket { date: string; headline: string; abstract?: string; section?: string; keywords?: string[] }
 export interface AuditResult { ok: boolean; reasons: string[] }
 
 const ONES: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -33,7 +33,7 @@ const ALLOWED_CAPS = new Set(["retrofm", "monday", "tuesday", "wednesday", "thur
   "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
   "times", "new", "york"]);
 
-const GREETING = /\b(good (morning|afternoon|evening|night)|tonight|this (morning|evening|afternoon)|listeners|hey there|welcome back|stay tuned|breaking news|you won'?t believe)\b/i;
+const GREETING = /\b(good (morning|afternoon|evening|night)|tonight|this (morning|evening|afternoon)|folks|listeners|everybody|hey there|welcome back|stay tuned|breaking news|you won'?t believe)\b/i;
 const HINDSIGHT = /\b(later|eventually|would go on|years? later|in hindsight|turned out|went on to|remembered as|we now know|historians?|history books)\b/i;
 
 const words = (s: string) => s.match(/[A-Za-z][A-Za-z'’-]*/g) ?? [];
@@ -41,7 +41,7 @@ const words = (s: string) => s.match(/[A-Za-z][A-Za-z'’-]*/g) ?? [];
 export function auditNewsLine(line: string, packet: NewsPacket): AuditResult {
   const reasons: string[] = [];
   const text = (line ?? "").trim();
-  const source = `${packet.headline} ${packet.abstract ?? ""}`;
+  const source = `${packet.headline} ${packet.abstract ?? ""} ${(packet.keywords ?? []).join(" ")}`;
   const srcLower = source.toLowerCase();
   const n = text.split(/\s+/).filter(Boolean).length;
   if (!text) return { ok: false, reasons: ["empty"] };

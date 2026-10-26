@@ -1512,37 +1512,71 @@ const back=s=>{
 $('hDate').onclick=()=>back('date');if($('hGen'))$('hGen').onclick=()=>back('genre');
 tune();refresh();dIn.focus();
 
-// VU meters (simulated: music plays in YouTube tab; needles scale directly with master volume)
-let env=0,nl=0,nr=0,beat=.5,vuRunning=false;
+// VU meters (driven by real-time audio analysis from YouTube tab via Web Audio API)
+let nl = 0, nr = 0, vuRunning = false;
+let latestAudioLeft = 0, latestAudioRight = 0, lastAudioUpdateTime = 0;
+
+function onVuAudioLevelsReceived(payload) {
+  if (!payload) return;
+  const rawL = typeof payload.l === 'number' && isFinite(payload.l) ? payload.l : 0;
+  const rawR = typeof payload.r === 'number' && isFinite(payload.r) ? payload.r : 0;
+  latestAudioLeft = Math.max(0, Math.min(2, rawL));
+  latestAudioRight = Math.max(0, Math.min(2, rawR));
+  lastAudioUpdateTime = Date.now();
+  if (!vuRunning) {
+    vuRunning = true;
+    requestAnimationFrame(vu);
+  }
+}
+
+// Convert RMS amplitude to vintage analog VU needle deflection (0..1)
+function mapRmsToVuDeflection(rms) {
+  if (typeof rms !== 'number' || isNaN(rms) || rms <= 0.0015) {
+    return 0;
+  }
+  // Vintage analog receiver VU meter calibration:
+  // Normalizes decibels to the full physical sweep of the meter:
+  // -38 dBFS (very quiet music) maps to lower deflection (~0.05)
+  // -24 to -18 dBFS (typical verse / energetic music) maps to mid-scale (~0.45 - 0.62)
+  // -14 dBFS (loud chorus / drum hits) reaches ~0.76 (threshold of +0dB / red zone)
+  // -10 to -6 dBFS (dense peaks / maximum crest) sweeps through upper red zone (0.88 - 1.0)
+  // True digital silence / noise floor (< 0.0015 RMS) reliably returns to absolute 0
+  const db = 20 * Math.log10(rms);
+  const minDb = -38;
+  const maxDb = -6.5;
+  if (db <= minDb) return 0;
+  if (db >= maxDb) return 1;
+  return (db - minDb) / (maxDb - minDb);
+}
+
 function vu(){
  const isPlaying = S.state === 'playing' && isYtPlaybackActive;
- if(isPlaying){
-  if(Math.random()<.14) beat=.35+Math.random()*.55;
-  env += (beat-env)*.3;
- } else {
-  env *= .85;
+ const now = Date.now();
+ const isDataStale = (now - lastAudioUpdateTime) > 350;
+
+ let targetL = 0;
+ let targetR = 0;
+
+ if (isPlaying && !isDataStale) {
+   targetL = mapRmsToVuDeflection(latestAudioLeft);
+   targetR = mapRmsToVuDeflection(latestAudioRight);
  }
 
- // Master volume scaling: at vol=0, needles stay completely at rest
- const v = Math.max(0, S.vol);
- const gl = S.bal<=.5 ? 1 : 2*(1-S.bal);
- const gr = S.bal>=.5 ? 1 : 2*S.bal;
-
- const tl = isPlaying ? env * gl * v * (.88 + Math.random()*.24) : 0;
- const tr = isPlaying ? env * gr * v * (.88 + Math.random()*.24) : 0;
-
- nl += (tl-nl) * (tl > nl ? .35 : .12);
- nr += (tr-nr) * (tr > nr ? .35 : .12);
+ // Vintage analog VU ballistics:
+ // Fast attack (~30-40ms) when signal rises to capture transients, musical beats, and drum hits
+ // Smooth, natural mechanical inertia decay (~160-200ms) when signal falls
+ nl += (targetL - nl) * (targetL > nl ? 0.38 : 0.12);
+ nr += (targetR - nr) * (targetR > nr ? 0.38 : 0.12);
 
  aim('nl', 833, nl);
  aim('nr', 957, nr);
 
- // Stop RAF loop once needles have settled back to zero if not playing
- if(isPlaying || nl > 0.005 || nr > 0.005 || env > 0.005){
+ // Stop RAF loop once needles have settled back to absolute zero if not playing or silent
+ if(isPlaying && !isDataStale || nl > 0.002 || nr > 0.002){
   vuRunning = true;
   requestAnimationFrame(vu);
  } else {
-  nl = 0; nr = 0; env = 0;
+  nl = 0; nr = 0;
   aim('nl', 833, 0);
   aim('nr', 957, 0);
   vuRunning = false;
@@ -1896,7 +1930,10 @@ function requestRadioState() {
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message && message.type === 'RADIO_STATE') {
+    if (message && message.type === 'VU_AUDIO_LEVELS' && message.payload) {
+      onVuAudioLevelsReceived(message.payload);
+      sendResponse({ received: true });
+    } else if (message && message.type === 'RADIO_STATE') {
       applyRadioState(message.payload);
       sendResponse({ received: true });
     } else if (message && message.type === 'YT_READY') {
