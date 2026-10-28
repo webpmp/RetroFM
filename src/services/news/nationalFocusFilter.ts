@@ -33,12 +33,68 @@ const NON_STORY_HEADLINE_PHRASES = [
   'quiz',
   'answers to quiz',
   'calendar of events',
+  'quotation of the day',
+  'advertising:',
+  'transcript of ',
+  'briefing',
+  'market averages',
+  'market fails',
+  'dow rises',
+  'dow drops',
+  'closing prices',
+  'commodities index',
+  'wholesale commodity',
+  'stock prices',
+  'stock gain wilts',
+  'most issues drop',
+  'trading session',
+  'treasury bills',
 ];
+
+/**
+ * Checks if a headline represents a table-like entry or a column title starting with "News of".
+ * Excludes:
+ * - Column titles starting with "News of" (e.g. "News of the Theater...")
+ * - Table-like headlines (several all-caps column labels such as POST, PROB., ODDS, POS., NO., HORSE, JOCKEY, TRAINER, etc., or runs of 3+ numbers).
+ */
+export function isTableLikeOrColumnHeadline(headline: string): boolean {
+  const h = (headline || '').trim();
+  if (!h) return false;
+
+  // Exclude column titles starting with "News of"
+  if (/^news of\b/i.test(h)) {
+    return true;
+  }
+
+  // Check for table-like headers (3 or more all-caps column labels)
+  const tableKeywords = new Set([
+    'POST', 'PROB.', 'PROB', 'ODDS', 'POS.', 'POS', 'NO.', 'HORSE',
+    'JOCKEY', 'TRAINER', 'AVG', 'PCT', 'PTS', 'SCORE', 'SCORES', 'STANDINGS'
+  ]);
+  const tokens = h.split(/\s+/).map((t) => t.replace(/[^A-Za-z0-9.]/g, ''));
+  let matchCount = 0;
+  for (const t of tokens) {
+    if (tableKeywords.has(t.toUpperCase())) {
+      matchCount++;
+    }
+  }
+  if (matchCount >= 3) {
+    return true;
+  }
+
+  // Runs of numbers (e.g. 3 or more isolated numbers in a row, like box scores)
+  if (/(?:\b\d+\b[\s,-]+){3,}\b\d+\b/.test(h)) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Checks if an item is a non-story item that should be dropped from the DJ pool
  * (routine business earnings reports, corrections, no-title entries, bridge/chess columns,
- * quizzes, calendar listings, obituary notices, or items with summary shorter than ~60 chars).
+ * quizzes, calendar listings, obituary notices, table-like headlines, "News of" columns,
+ * or items with summary shorter than ~60 chars).
  */
 export function isNonStoryItem(
   headline: string,
@@ -47,6 +103,11 @@ export function isNonStoryItem(
 ): { isNonStory: boolean; reason: string } {
   const h = (headline || '').trim();
   const hLower = h.toLowerCase();
+
+  // 0. Table-like headlines and "News of" column titles
+  if (isTableLikeOrColumnHeadline(h)) {
+    return { isNonStory: true, reason: 'Non-story item: Table-like headline or "News of" column title' };
+  }
 
   // 1. Specific non-story headline phrases
   for (const phrase of NON_STORY_HEADLINE_PHRASES) {
@@ -79,10 +140,29 @@ export function isNonStoryItem(
     }
   }
 
-  // 2. Obituary notices
-  const typeOfMaterial = (doc.type_of_material || '').toLowerCase();
-  const desk = (doc.news_desk || '').toLowerCase();
-  const section = (doc.section_name || '').toLowerCase();
+  const typeOfMaterial = (doc?.type_of_material || '').toLowerCase();
+  const desk = (doc?.news_desk || '').toLowerCase();
+  const section = (doc?.section_name || '').toLowerCase();
+
+  // 2. Cultural desk listings, reviews, guides, ballet, theater, and dance items
+  // Exclude Cultural Desk listings, reviews, and guides ("Going Out Guide", "Books of The Times", ballet, theater, and dance items)
+  if (
+    desk.includes('cultural') ||
+    desk === 'culture' ||
+    desk.includes('weekend') ||
+    section.includes('weekend') ||
+    typeOfMaterial === 'review' ||
+    typeOfMaterial === 'guide' ||
+    /^(?:going out guide|books of the times|ballet:|the dance:|dance:|theater:|theatre:)/i.test(h) ||
+    /\b(?:going out guide|books of the times)\b/i.test(hLower)
+  ) {
+    return {
+      isNonStory: true,
+      reason: 'Non-story item: Cultural Desk listing, review, or guide (Going Out Guide, Books of The Times, ballet, theater, dance)',
+    };
+  }
+
+  // 3. Obituary notices
   if (
     typeOfMaterial === 'obituary' ||
     desk.includes('obit') ||
@@ -121,7 +201,8 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
 
   const printSec = (doc.print_section || '').trim().toUpperCase();
   const printPage = String(doc.print_page || '').trim();
-  const isFrontPage = printSec === 'A' && (printPage === '1' || printPage === '01');
+  // Print section is 'A' or '1', or empty for early archives (e.g. 1964) where section was not split/labeled
+  const isFrontPage = (printSec === 'A' || printSec === '1' || printSec === '') && (printPage === '1' || printPage === '01');
 
   const rawDesk = (doc.news_desk || '').trim();
   const desk = rawDesk.toLowerCase();
@@ -367,7 +448,19 @@ export function categorizeNYTArticle(doc: any): {
     category = 'sports';
   }
 
-  // B. Music section, subsection, or keywords
+  // B. Business / Financial desk or section (evaluated BEFORE music keyword guessing so defense/hardware contracts with "RECORDINGS AND RECORDING EQUIPMENT" are never labeled music)
+  const isBusinessMetadataDesk =
+    desk.includes('business') ||
+    desk.includes('financial') ||
+    desk.includes('money') ||
+    section.includes('business') ||
+    section.includes('financial');
+
+  if (!category && isBusinessMetadataDesk) {
+    category = 'business';
+  }
+
+  // C. Music section, subsection, or keywords
   if (!category) {
     const isMusicMetadata =
       section.includes('music') ||
@@ -383,7 +476,7 @@ export function categorizeNYTArticle(doc: any): {
     }
   }
 
-  // C. Movies / TV / Arts desk, section, or keywords
+  // D. Movies / TV / Arts desk, section, or keywords
   if (!category) {
     const isArtsMetadata =
       desk.includes('arts') ||
@@ -409,20 +502,14 @@ export function categorizeNYTArticle(doc: any): {
     }
   }
 
-  // D. Business / Financial desk, section, or keywords
+  // E. Business / Financial keywords
   if (!category) {
-    const isBusinessMetadata =
-      desk.includes('business') ||
-      desk.includes('financial') ||
-      desk.includes('money') ||
-      section.includes('business') ||
-      section.includes('financial') ||
-      keywords.some((k: string) =>
-        /\b(stocks and bonds|finances|corporations|mergers|banking|credit|trade|securities|interest rates|labor|wages)\b/i.test(
-          k
-        )
-      );
-    if (isBusinessMetadata) {
+    const isBusinessKeywords = keywords.some((k: string) =>
+      /\b(stocks and bonds|finances|corporations|mergers|banking|credit|trade|securities|interest rates|labor|wages)\b/i.test(
+        k
+      )
+    );
+    if (isBusinessKeywords) {
       category = 'business';
     }
   }
@@ -506,49 +593,151 @@ export function computeDJInterestScore(params: {
   publishedDate?: string;
   targetDate?: string;
   desk?: string;
+  section?: string;
+  headline?: string;
+  abstract?: string;
+  keywords?: string[];
 }): number {
+  const d = (params.desk || '').toLowerCase();
+  const s = (params.section || '').toLowerCase();
+  const h = (params.headline || '').toLowerCase();
+  const a = (params.abstract || '').toLowerCase();
+  const kw = (params.keywords || []).map((k) => k.toLowerCase()).join(' ');
+  const combined = `${h} ${a} ${kw}`;
+  // Core text includes headline, keywords, desk, and section
+  // Note: early archive records (such as 1964) lack desk/section metadata ("None" / "Archives"),
+  // so topic boosts and category detection MUST match on headline and keywords directly.
+  const core = `${h} ${kw} ${d} ${s}`;
+
+  // Classification flags
+  const isLocalOrMetro =
+    d.includes('metro') ||
+    s.includes('metro') ||
+    d.includes('suburban') ||
+    d.includes('regional') ||
+    d.includes('new york') ||
+    s.includes('new york');
+
+  // Major national events (presidential, federal governance, armed conflict, nationwide disasters)
+  const isMajorNationalNews =
+    /\b(president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|the president\b|president of the|white house|congress|senate|supreme court|federal|fbi|pentagon|war|blockade|invasion|battle|falklands?|disaster)\b/i.test(
+      combined
+    );
+
+  // Requirement (2) & (7): Topic ranking
+  // Civil rights, war and foreign crises, presidency and Congress above economy and finance.
+  // Evaluate core (headline, keywords, desk) so historical records without desk metadata get proper boost.
+  const isCivilRightsWarPresidencyCongress =
+    /\b(civil rights|voting rights|rights vote|segregation|integration|racial|negroes|war|blockade|warships|invasion|battle|military|crisis|cyprus|disarms?|fighters?|swedish group|turks|peacekeeping|hostage|treaty|falklands?|the president\b|president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|white house|congress|senate|capitol hill|supreme court)\b/i.test(
+      core
+    );
+
+  // Demote contests (e.g. Kentucky Oaks/Derby, bridge olympiad, beauty pageants) and human-interest stories
+  const isContestOrHumanInterest =
+    /\b(kentucky oaks|derby|bridge olympiad|chess tournament|spelling bee|beauty pageant|pageant|contest|sweepstakes|lottery|trivia|human interest|curiosities)\b/i.test(
+      core
+    );
+
+  // Banking and finance
+  const isBankingOrFinance =
+    d.includes('financial') ||
+    d.includes('business') ||
+    s.includes('business') ||
+    /\b(bankers?|banking|loans?|repayments?|interest rates?|wall street|securities|bonds?|stocks?|economy|economic|recession|peacetime)\b/i.test(
+      core
+    );
+
+  const isForeignOrPolitical =
+    !isBankingOrFinance &&
+    (d.includes('foreign') ||
+      d.includes('national') ||
+      d.includes('washington') ||
+      s.includes('world') ||
+      s.includes('u.s.') ||
+      /\b(president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|the president\b|white house|congress|senate|foreign|diplomats?|treaty|war|blockade|premier|saigon|laos|vietnam|ghana|cyprus|u\.n\.|united nations|ambassador)\b/i.test(
+        core
+      ));
+
   let score = 50;
 
-  // 1. Highest tier: Front-page (Section A, Page 1) items (90 - 100)
+  // 1. Front-page items
   if (params.isFrontPage) {
-    if (params.category === 'music' || params.category === 'movies-tv-arts' || params.category === 'sports') {
-      score = 98;
-    } else if (params.category === 'news') {
-      score = 94;
-    } else {
+    if (isCivilRightsWarPresidencyCongress) {
+      score = 100;
+    } else if (isForeignOrPolitical) {
+      score = 95;
+    } else if (isBankingOrFinance) {
+      score = 75; // Banking & finance ranked below political & foreign
+    } else if (isLocalOrMetro && !isMajorNationalNews) {
+      score = 55; // Demote Metropolitan and local-desk stories unless major national news
+    } else if (params.category === 'music' || params.category === 'movies-tv-arts' || params.category === 'sports') {
       score = 90;
+    } else {
+      score = 80;
     }
   } else {
-    // 2. High tier: Arts, entertainment, music, TV, film, and sports stories (70 - 85)
-    if (params.category === 'music') {
+    // 2. Inside pages
+    if (isCivilRightsWarPresidencyCongress) {
+      score = 85;
+    } else if (isForeignOrPolitical) {
+      score = 75;
+    } else if (isBankingOrFinance) {
+      score = 45; // Below threshold 50 by default unless major event
+    } else if (isLocalOrMetro && !isMajorNationalNews) {
+      score = 25; // Dropped below min threshold 50
+    } else if (params.category === 'music') {
       score = 85;
     } else if (params.category === 'movies-tv-arts') {
       score = 80;
     } else if (params.category === 'sports') {
-      score = 75;
-    }
-    // 3. Medium tier: National and foreign news (50 - 65)
-    else if (params.category === 'news') {
-      const d = (params.desk || '').toLowerCase();
-      if (d.includes('national') || d.includes('foreign') || d.includes('washington')) {
-        score = 62;
-      } else {
-        score = 55;
-      }
-    }
-    // 4. Low tier: Routine business (25 - 40)
-    else if (params.category === 'business') {
-      score = 35;
-    }
-    // 5. Other / miscellaneous (20 - 30)
-    else {
+      score = 70;
+    } else if (params.category === 'news') {
+      score = 65;
+    } else {
       score = 25;
     }
   }
 
-  // Exact date recency bonus: +2 bonus (capped at 100)
+  // Demote contests and human-interest stories
+  if (isContestOrHumanInterest) {
+    score -= 25;
+  }
+
+  // Demote routine business deals, earnings, personnel moves, contracts, and trade deficit/surplus news by 30 points
+  const isBusinessContext =
+    isBankingOrFinance || d.includes('financial') || d.includes('business') || s.includes('business') || params.category === 'business';
+  const isRoutineBusinessDeal =
+    isBusinessContext &&
+    /\b(contract|contracts|merger|mergers|acquisition|acquisitions|earnings|quarterly|dividend|dividends|stockholders|revenue|revenues|personnel|trade deficit|trade surplus|patents?|venture|shares)\b/i.test(
+      core
+    );
+
+  if (isRoutineBusinessDeal) {
+    score -= 30;
+  }
+
+  // Favor national or world events, major accidents, sports or entertainment news, and big cultural stories (+15)
+  // Evaluated on core text so historical records lacking desk don't trigger false boosts on economic summaries
+  const isMajorCulturalOrWorldEvent =
+    /\b(war|blockade|warships|invasion|battle|treaty|falklands?|cyprus|disarms?|reagan|president|summit|strike|killed|fire|disaster|crash|explosion|championship|super bowl|world series|derby|all-star|grammy|oscar|emmy|tony awards?)\b/i.test(
+      core
+    );
+  if (isMajorCulturalOrWorldEvent) {
+    score += 15;
+  }
+
+  // Boost breaking lead front-page world events (e.g. Falklands warships blockade)
+  if (params.isFrontPage && /\b(war|blockade|warships|invasion|falklands?|cyprus)\b/i.test(core)) {
+    score += 10;
+    // Extra boost if the headline itself names the central breaking action (e.g. blockade or warships or disarms)
+    if (/\b(blockade|warships|invasion|declares war|disarms)\b/i.test(h)) {
+      score += 5;
+    }
+  }
+
+  // Exact date recency bonus: +2 bonus
   if (params.publishedDate && params.targetDate && params.publishedDate === params.targetDate) {
-    score = Math.min(100, score + 2);
+    score += 2;
   }
 
   return score;

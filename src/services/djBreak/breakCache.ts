@@ -72,24 +72,10 @@ export function writeBreakCache(key: string, data: BreakGeneratorResult): void {
   }
 }
 
-// Session metrics
-let sessionStats: DJBreakSessionStats = {
-  textModelCalls: 0,
-  cacheHits: 0,
-};
-
-export function recordTextModelCall(count = 1): void {
-  sessionStats.textModelCalls += count;
-}
-
-export function recordBreakCacheHit(): void {
-  sessionStats.cacheHits += 1;
-}
-
-export function getDJBreakSessionStats(): DJBreakSessionStats {
-  return { ...sessionStats };
-}
-
-export function resetDJBreakSessionStats(): void {
-  sessionStats = { textModelCalls: 0, cacheHits: 0 };
-}
+// Re-export session stats from breakSessionStats (safe for browser and server)
+export {
+  recordTextModelCall,
+  recordBreakCacheHit,
+  getDJBreakSessionStats,
+  resetDJBreakSessionStats,
+} from './breakSessionStats.js';

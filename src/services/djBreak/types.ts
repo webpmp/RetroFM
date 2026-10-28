@@ -95,6 +95,33 @@ export interface BreakGeneratorResult {
 
 export type AIProviderType = 'gemini' | 'lmstudio';
 
+export interface SingleBreakPacketInput {
+  targetDate: string; // YYYY-MM-DD
+  personality?: StationPersonalityId;
+  timeOfDay?: TimeOfDay;
+  format?: RadioFormat;
+  songPlayed?: { title: string; artist: string; primary_artist?: string | null };
+  songNext?: { title: string; artist: string; primary_artist?: string | null };
+  targetSong?: 'prev' | 'next' | 'none';
+  breakType: 'chart_fact' | 'song_credit' | 'observation' | 'intro_only';
+  factPacket: {
+    factText: string;
+    source: string;
+    date: string;
+  };
+  secondsAvailable?: number;
+}
+
+export interface SingleBreakPacketResult {
+  success: boolean;
+  scriptText: string;
+  modelUsed: string;
+  callStartTime: string;
+  callDurationSec: number;
+  error?: string;
+  isUnavailable?: boolean;
+}
+
 export interface ScriptWriterProvider {
   readonly name: string;
   readonly modelName: string;
@@ -125,6 +152,7 @@ export interface ScriptWriterProvider {
     auditUnavailable?: boolean;
     stepTimedOut?: 'step2' | null;
   }>;
+  writeSingleBreakScript(input: SingleBreakPacketInput): Promise<SingleBreakPacketResult>;
 }
 
 export interface DJBreakSessionStats {

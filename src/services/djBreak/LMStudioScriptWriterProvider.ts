@@ -9,9 +9,12 @@ import {
   BreakGeneratorResult,
   GeneratedDJBreak,
   AnachronismCheckResult,
+  SingleBreakPacketInput,
+  SingleBreakPacketResult,
 } from './types.js';
 import { PERSONALITIES } from './GeminiScriptWriterProvider.js';
-import { recordTextModelCall } from './breakCache.js';
+import { recordTextModelCall } from './breakSessionStats.js';
+import { getEnv } from '../envUtil.js';
 
 export interface LMStudioConfig {
   endpoint?: string;
@@ -28,13 +31,219 @@ export class LMStudioScriptWriterProvider implements ScriptWriterProvider {
   constructor(config?: LMStudioConfig) {
     const rawEndpoint =
       config?.endpoint ||
-      process.env.LM_STUDIO_ENDPOINT ||
-      'http://host.docker.internal:1234/v1';
+      getEnv('LM_STUDIO_ENDPOINT') ||
+      'http://localhost:1234/v1';
 
     // Normalize endpoint: ensure it doesn't have trailing slash
     this.endpoint = rawEndpoint.replace(/\/+$/, '');
-    this.modelName = config?.model || process.env.LM_STUDIO_MODEL || '';
+    this.modelName = config?.model || getEnv('LM_STUDIO_MODEL') || '';
     this.timeoutMs = config?.timeoutMs || 60000;
+  }
+
+  /**
+   * Spec A & Step 1: Writes 1 to 2 spoken sentences from exactly ONE verified fact packet using LM Studio.
+   * Specific prompts tailored per break type.
+   */
+  async writeSingleBreakScript(input: SingleBreakPacketInput): Promise<SingleBreakPacketResult> {
+    const persona = PERSONALITIES[input.personality || 'mike'] || PERSONALITIES.mike;
+    const isChartFact = input.breakType === 'chart_fact';
+    const isSongCredit = input.breakType === 'song_credit';
+    const isObservation = input.breakType === 'observation';
+    const isNews = isObservation && (input.factPacket.source.toLowerCase().includes('times') || input.factPacket.factText.toLowerCase().includes('times'));
+
+    let systemPrompt = '';
+    let userPrompt = '';
+
+    if (isNews) {
+      // News Break Prompt: Rotates short news framings, 1 sentence, ~25 words max
+      systemPrompt = `You are ${persona.name}, an authentic Top 40 radio DJ in ${input.targetDate.slice(0, 4)}.
+You glance at the newspaper and deliver a single, plain news sentence.
+
+EXAMPLES:
+Example 1:
+Fact: British warships have initiated an air and sea blockade around the Falkland Islands.
+Script: The Times reports British warships have begun an air and sea blockade around the Falkland Islands.
+
+Example 2:
+Fact: President Reagan met with Republican Congressional leaders to plan budget strategy.
+Script: In the news this morning, President Reagan is meeting with Republican leaders on Capitol Hill over the budget.
+
+RULES:
+1. Write EXACTLY ONE plain spoken sentence (~15 to 25 words max).
+2. Always attribute news to "The Times". Use one of these rotating openers: "The Times reports...", "In the news this morning, The Times reports...", "According to The Times...".
+3. Use ONLY facts and names provided in the packet. Never invent details or outcomes.
+4. Do NOT use the words "yesterday" or "today".
+5. Do NOT include personal opinions, reactions, commentary, or humor.
+6. Do NOT mention upcoming songs or say "coming up".
+7. No exclamation points (!). Use periods only. No hype words or interjections.
+8. Output ONLY the raw spoken words.`.trim();
+
+      userPrompt = `CURRENT BROADCAST DATE: ${input.targetDate}
+NEWS FACT PACKET:
+Source: ${input.factPacket.source} (${input.factPacket.date})
+Fact: "${input.factPacket.factText}"
+
+TASK:
+Write exactly one plain spoken news sentence following the rules.`.trim();
+
+    } else if (isChartFact) {
+      // Chart Fact Prompt: Specific to Billboard Hot 100 performance
+      const isNext = input.targetSong === 'next';
+      const targetSong = isNext ? input.songNext : input.songPlayed;
+
+      systemPrompt = `You are ${persona.name}, an authentic Top 40 radio DJ in ${input.targetDate.slice(0, 4)}.
+You share a Billboard chart fact between songs.
+
+EXAMPLES:
+Example 1:
+Fact: "She Believes In Me" by Kenny Rogers is new on the Hot 100 this week at number 61.
+Script: Kenny Rogers is new on the Hot 100 this week at number 61 with "She Believes In Me."
+
+Example 2:
+Fact: "Heart Of Glass" by Blondie climbs up to number 1, from 3 on the Billboard Hot 100 this week.
+Script: Blondie climbs up to number 1, from 3 this week with "Heart Of Glass."
+
+RULES:
+1. Write 1 or 2 plain spoken sentences only.
+2. Use ONLY facts in the packet. Never invent chart numbers or peaks.
+3. Mention the song title at most ONCE.
+4. Do NOT use the word "debut". New entries are "new on the Hot 100 this week at number N".
+5. Do NOT mention newspapers or "New York Times".
+6. Do NOT use exclamation points (!).
+7. NEVER say "coming up" or "up next".
+8. No hype words (no "fresh", "hot", "amazing", "incredible", "smash", "on fire").
+9. Output ONLY the raw spoken words.`.trim();
+
+      userPrompt = `CURRENT BROADCAST DATE: ${input.targetDate}
+CHART FACT PACKET:
+Source: ${input.factPacket.source}
+Fact: "${input.factPacket.factText}"
+Target Song: "${targetSong?.title || 'Unknown'}" by ${targetSong?.artist || 'Unknown'} (${isNext ? 'starting now' : 'just finished'})
+
+TASK:
+Share the chart fact plainly in 1 or 2 sentences.`.trim();
+
+    } else if (isSongCredit) {
+      // Song Credit Prompt: Writer or producer information
+      const isNext = input.targetSong === 'next';
+      const targetSong = isNext ? input.songNext : input.songPlayed;
+
+      systemPrompt = `You are ${persona.name}, an authentic Top 40 radio DJ in ${input.targetDate.slice(0, 4)}.
+You share a verified songwriter or producer credit for a song.
+
+EXAMPLES:
+Example 1:
+Fact: Written by Audrey Allison, Joe Allison.
+Script: Audrey and Joe Allison wrote this one for Jim Reeves.
+
+Example 2:
+Fact: Produced by Giorgio Moroder.
+Script: Giorgio Moroder produced this track for Donna Summer.
+
+RULES:
+1. Write 1 or 2 plain spoken sentences only.
+2. Use ONLY the writer/producer names provided in the packet.
+3. Mention the song title at most ONCE.
+4. Do NOT mention newspapers or "New York Times".
+5. Do NOT use exclamation points (!).
+6. No hype words or interjections.
+7. Output ONLY the raw spoken words.`.trim();
+
+      userPrompt = `CURRENT BROADCAST DATE: ${input.targetDate}
+CREDIT PACKET:
+Source: ${input.factPacket.source}
+Credit: "${input.factPacket.factText}"
+Song: "${targetSong?.title || 'Unknown'}" by ${targetSong?.artist || 'Unknown'} (${isNext ? 'coming up' : 'just finished'})
+
+TASK:
+State the credit plainly in 1 or 2 sentences.`.trim();
+
+    } else {
+      // Cost of living observation or general fact
+      systemPrompt = `You are ${persona.name}, an authentic Top 40 radio DJ in ${input.targetDate.slice(0, 4)}.
+You share an understated everyday cost-of-living statistic.
+
+EXAMPLES:
+Example 1:
+Fact: Regular gas is running about eighty-six cents a gallon, up from sixty-five cents a year ago.
+Script: Regular gas is running about eighty-six cents a gallon, up from sixty-five cents a year ago.
+
+RULES:
+1. Write exactly 1 plain spoken sentence.
+2. State the numbers and statistic honest and plainly as given in the packet.
+3. Do NOT add personal complaints, reactions, or commentary.
+4. Do NOT mention newspapers or "New York Times".
+5. Do NOT mention upcoming songs or say "coming up".
+6. No exclamation points (!).
+7. Output ONLY the raw spoken words.`.trim();
+
+      userPrompt = `CURRENT BROADCAST DATE: ${input.targetDate}
+STATISTIC PACKET:
+Source: ${input.factPacket.source}
+Fact: "${input.factPacket.factText}"
+
+TASK:
+State the statistic plainly in exactly 1 sentence.`.trim();
+    }
+
+    const startTimeMs = Date.now();
+    const callStartTime = new Date(startTimeMs).toISOString();
+
+    try {
+      recordTextModelCall(1);
+      const { content, modelUsed } = await this.callChatCompletion(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        0.2, // Low temperature
+        120  // Max tokens around 120
+      );
+
+      const durationSec = Number(((Date.now() - startTimeMs) / 1000).toFixed(1));
+      let cleanText = content.trim();
+
+      // Clean outer quotes without breaking leading song title quotes (e.g. '"Hot Stuff" by Donna Summer.')
+      const quoteMatches = cleanText.match(/"/g) || [];
+      if (cleanText.startsWith('"') && cleanText.endsWith('"') && quoteMatches.length >= 2) {
+        if (quoteMatches.length === 2) {
+          cleanText = cleanText.slice(1, -1).trim();
+        } else {
+          const secondQuoteIndex = cleanText.indexOf('"', 1);
+          // If the opening quote does not close immediately around a short leading title (e.g. within 60 chars), strip outer quotes
+          if (secondQuoteIndex === -1 || secondQuoteIndex === cleanText.length - 1) {
+            cleanText = cleanText.slice(1, -1).trim();
+          }
+        }
+      }
+
+      return {
+        success: true,
+        scriptText: cleanText,
+        modelUsed: `lmstudio:${modelUsed}`,
+        callStartTime,
+        callDurationSec: durationSec,
+      };
+    } catch (err: any) {
+      const durationSec = Number(((Date.now() - startTimeMs) / 1000).toFixed(1));
+      const isUnreachable =
+        err?.message?.includes('ECONNREFUSED') ||
+        err?.message?.includes('fetch failed') ||
+        err?.message?.includes('unreachable') ||
+        err?.code === 'ECONNREFUSED';
+
+      return {
+        success: false,
+        scriptText: '',
+        modelUsed: this.modelName || 'lmstudio',
+        callStartTime,
+        callDurationSec: durationSec,
+        isUnavailable: true,
+        error: isUnreachable
+          ? `LM Studio server at ${this.endpoint} is unreachable. Ensure your local LLM server is running.`
+          : err?.message || 'Failed connecting to LM Studio',
+      };
+    }
   }
 
   /**

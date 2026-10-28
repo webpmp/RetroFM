@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -26,6 +27,12 @@ import {
 import { LMStudioScriptWriterProvider } from './src/services/djBreak/LMStudioScriptWriterProvider.js';
 import { globalNewsQueueManager } from './src/services/news/newsQueueManager.js';
 import { readAuditedNewsCache } from './src/services/news/newsQueueCache.js';
+import {
+  decideAndSelectBreak,
+  SongCreditRepository,
+} from './src/services/djBreak/breakDecisionEngine.js';
+import { ChartFactRepository } from './src/services/djBreak/chartFacts.js';
+import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 
 dotenv.config();
 
@@ -749,6 +756,75 @@ async function startServer() {
     }
   });
 
+  // Shared repository singletons for server-side chart and credit queries
+  const chartFactRepo = new ChartFactRepository();
+  const songCreditRepo = new SongCreditRepository();
+
+  // API Route: Server-side DJ Break Decision (Spec A)
+  // Queries SQLite for era-accurate chart facts and verified song credits
+  app.post('/api/dj/break-decision', (req, res) => {
+    try {
+      const {
+        selectedDate,
+        prevSong,
+        nextSong,
+        frequencySetting,
+        usedFactKeys,
+        lastBreakType,
+        newsObservation,
+        economyObservation,
+      } = req.body;
+
+      if (!selectedDate || typeof selectedDate !== 'string') {
+        return res.status(400).json({ error: 'selectedDate is required.' });
+      }
+
+      // Reconstruct state from client session payload
+      const state: BreakSelectionSessionState = {
+        usedFactKeys: new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []),
+        usedNewsTopics: new Set<string>(Array.isArray(req.body?.usedNewsTopics) ? req.body.usedNewsTopics : []),
+        lastBreakType: lastBreakType || null,
+        totalSongChanges: 0,
+        totalBreaksSpoken: 0,
+        recentRhetoricalOpeners: 0,
+        breaksSinceLastNews: typeof req.body?.breaksSinceLastNews === 'number' ? req.body.breaksSinceLastNews : 5,
+        lastIntroTemplateIndex: typeof req.body?.lastIntroTemplateIndex === 'number' ? req.body.lastIntroTemplateIndex : -1,
+      };
+
+      const result = decideAndSelectBreak(
+        {
+          prevSong: prevSong || null,
+          nextSong: nextSong || null,
+          selectedDate,
+          frequencySetting: typeof frequencySetting === 'number' ? frequencySetting : 0.5,
+          newsObservation: newsObservation || null,
+          economyObservation: economyObservation || null,
+          chartRepo: chartFactRepo,
+          creditRepo: songCreditRepo,
+        },
+        state
+      );
+
+      return res.json({
+        decision: result.decision,
+        breakType: result.breakType,
+        candidate: result.candidate,
+        finalSpeech: result.finalSpeech,
+        targetSong: result.targetSong,
+      });
+    } catch (err: any) {
+      console.error('[API /api/dj/break-decision] Error:', err);
+      return res.status(500).json({
+        decision: 'silence',
+        breakType: null,
+        candidate: null,
+        finalSpeech: '',
+        targetSong: 'none',
+        error: err?.message || 'Break decision failed',
+      });
+    }
+  });
+
   // Health check endpoint
   app.get('/api/health', (req, res) => {
     res.json({
@@ -758,6 +834,9 @@ async function startServer() {
     });
   });
 
+  // Create shared HTTP server to host Express and attach Vite HMR WebSocket upgrades
+  const server = http.createServer(app);
+
   // Serve Vite in dev or static dist in production
   if (process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(__dirname, 'dist'))) {
     app.use(express.static(path.resolve(__dirname, 'dist')));
@@ -766,13 +845,16 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: { server },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`[RetroFM Server] Server running at http://0.0.0.0:${PORT}`);
   });
 }

@@ -6,6 +6,7 @@
 import { NewsPacket, auditNewsLine, isSensitive } from '../djBreak/newsAudit.js';
 import { getScriptWriterProvider } from '../djBreak/djBreakService.js';
 import { LMStudioScriptWriterProvider } from '../djBreak/LMStudioScriptWriterProvider.js';
+import { validateBreakOutput } from '../djBreak/breakValidator.js';
 
 export interface NewsLineResult {
   line: string;
@@ -23,24 +24,29 @@ export interface NewsWriterOptions {
 
 /**
  * Builds the news writer prompt for a single packet according to spec.
+ * Plain 1-sentence headline statement with no opinion, reaction, or inference.
  */
 export function buildNewsPrompt(packet: NewsPacket, retryReasons?: string[]): string {
   const kwStr = packet.keywords && packet.keywords.length > 0 ? packet.keywords.join(', ') : '';
   const baseInstruction = `You are a radio DJ on ${packet.date}, glancing at the day's newspaper between records.
-Write 1 or 2 short spoken sentences (15 to 35 words) giving a light, human reaction to this headline, in the present tense.
-Do not read the headline word for word.
-Make clear who or what the story is about, using the names and terms from the headline, abstract, or keywords.
-Use only information in the headline, abstract, and keywords: do not invent names, places, numbers, causes, or outcomes, and say nothing about what happened afterwards.
-Do not start with any greeting or lead-in (do not say "good morning", "folks", "listeners", "here's the news", etc.), do not mention the time of day, and do not name the next song.
-Output only the spoken sentences.`;
+Frame the news script as "From this morning's New York Times: ..." in exactly one plain spoken sentence.
+Do NOT use the words "yesterday" or "today".
+Do NOT include any reactions, opinion, inference, or commentary.
+Make clear who or what the story is about.
+Use ONLY names and places present in the headline or abstract; do not invent new names, numbers, or outcomes.
+Do NOT include interjections (no "wow", "whoa", "hey", "oh", "well", "yikes").
+Do NOT include speculation phrasing (no "looks like", "seems", "probably", "getting ready", "sounds like").
+Do NOT include exclamation points (!). Use a period only.
+Do NOT start with any greeting (do not say "good morning", "folks", "listeners", etc.), and do not mention the next song.
+Output ONLY the single plain spoken sentence beginning with "From this morning's New York Times: ".`;
 
-  let prompt = `${baseInstruction}\n\nHEADLINE: "${packet.headline}"\nABSTRACT: "${packet.abstract || ''}"`;
+  let prompt = `${baseInstruction}\n\nHEADLINE: "${packet.headline}"\nABSTRACT / LEAD: "${packet.abstract || ''}"`;
   if (kwStr) {
     prompt += `\nKEYWORDS: "${kwStr}"`;
   }
 
   if (retryReasons && retryReasons.length > 0) {
-    prompt += `\n\nIMPORTANT CORRECTION: Your previous attempt was rejected for these reasons: ${retryReasons.join('; ')}. Fix these issues and ensure no invented names, places, numbers, future hindsight, greetings, or hype phrases are included. Output only the 1 or 2 spoken sentences.`;
+    prompt += `\n\nIMPORTANT CORRECTION: Your previous attempt was rejected for these reasons: ${retryReasons.join('; ')}. Fix these issues. Frame as "From this morning's New York Times: ..." in exactly one plain sentence with no "yesterday", no "today", no reactions, and no invented details.`;
   }
 
   return prompt;
@@ -150,7 +156,15 @@ export async function writeAndAuditNewsLine(
   }
 
   const audit1 = auditNewsLine(line1, packet);
-  if (audit1.ok) {
+  const val1 = validateBreakOutput(line1, {
+    selectedDate: packet.date,
+    factPacket: {
+      factText: `${packet.headline}. ${packet.abstract || ''}`,
+      source: 'New York Times Historical Archive',
+      date: packet.date,
+    },
+  });
+  if (audit1.ok && val1.valid) {
     console.log(`[News] date=${packet.date} packet="${packet.headline}" line="${line1}" result=ok reasons=none`);
     return {
       line: line1,
@@ -161,10 +175,15 @@ export async function writeAndAuditNewsLine(
     };
   }
 
-  // Retry once with failure reasons added to the prompt
-  console.log(`[News] date=${packet.date} packet="${packet.headline}" attempt 1 failed line="${line1}" reasons=${audit1.reasons.join(', ')}. Retrying once...`);
+  const reasons1 = [...audit1.reasons];
+  if (!val1.valid && val1.rejectedReason) {
+    reasons1.push(val1.rejectedReason);
+  }
 
-  const prompt2 = buildNewsPrompt(packet, audit1.reasons);
+  // Retry once with failure reasons added to the prompt
+  console.log(`[News] date=${packet.date} packet="${packet.headline}" attempt 1 failed line="${line1}" reasons=${reasons1.join(', ')}. Retrying once...`);
+
+  const prompt2 = buildNewsPrompt(packet, reasons1);
   let line2 = '';
   try {
     line2 = (await callWriterForNews(prompt2, options)).trim();
@@ -178,7 +197,15 @@ export async function writeAndAuditNewsLine(
   }
 
   const audit2 = auditNewsLine(line2, packet);
-  if (audit2.ok) {
+  const val2 = validateBreakOutput(line2, {
+    selectedDate: packet.date,
+    factPacket: {
+      factText: `${packet.headline}. ${packet.abstract || ''}`,
+      source: 'New York Times Historical Archive',
+      date: packet.date,
+    },
+  });
+  if (audit2.ok && val2.valid) {
     console.log(`[News] date=${packet.date} packet="${packet.headline}" line="${line2}" result=ok reasons=none (passed on retry)`);
     return {
       line: line2,
@@ -189,12 +216,17 @@ export async function writeAndAuditNewsLine(
     };
   }
 
-  console.log(`[News] date=${packet.date} packet="${packet.headline}" line="${line2}" result=rejected reasons=${audit2.reasons.join(', ')}`);
+  const reasons2 = [...audit2.reasons];
+  if (!val2.valid && val2.rejectedReason) {
+    reasons2.push(val2.rejectedReason);
+  }
+
+  console.log(`[News] date=${packet.date} packet="${packet.headline}" line="${line2}" result=rejected reasons=${reasons2.join(', ')}`);
   return {
     line: line2,
     packet,
     result: 'rejected',
-    reasons: audit2.reasons,
+    reasons: reasons2,
     attempts: 2,
   };
 }

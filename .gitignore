@@ -16,3 +16,6 @@ docker-compose.yml
 public/data/retrofm_library*.json
 public/data/weekly_top.json
 public/data/prices.json
+
+song_facts_50_sample.json
+song_credits_60_sample.json

@@ -57,6 +57,7 @@ const samplePrices: PricesFile = {
       start: '1978-01-01',
       end: '1980-01-01',
       obs: [
+        ['1978-03-01', 6.8],
         ['1979-03-01', 5.8],
         ['1979-04-01', 25.0],
         ['1979-05-01', 50.0], // on selected month - MUST NOT BE USED
@@ -67,7 +68,7 @@ const samplePrices: PricesFile = {
       start: '1978-01-01',
       end: '1980-01-01',
       obs: [
-        ['1979-04-20', 10.25],
+        ['1979-04-20', 15.25],
         ['1979-05-01', 22.0], // on selected month - MUST NOT BE USED
         ['1979-05-10', 25.0], // after selected month - MUST NOT BE USED
       ],
@@ -119,10 +120,10 @@ assert.ok(unLine, 'Unemployment line should be generated');
 assert.ok(unLine.text.includes('five point eight percent'), `Unemployment line must use March 1979 data. Got: "${unLine.text}"`);
 assert.ok(!unLine.text.includes('twenty-five') && !unLine.text.includes('fifty'), 'Unemployment line must not use April or May data');
 
-// 5. Verify mortgage rate used latest before date (1979-04-20: 10.25 -> "ten and a quarter"), NOT May 1979 (22%)
+// 5. Verify mortgage rate used latest before date (1979-04-20: 15.25 -> "fifteen and a quarter"), NOT May 1979 (22%)
 const mgLine = allLines.find((l) => l.kind === 'mortgage');
 assert.ok(mgLine, 'Mortgage line should be generated');
-assert.ok(mgLine.text.includes('ten and a quarter'), `Mortgage line must use April 1979 data. Got: "${mgLine.text}"`);
+assert.ok(mgLine.text.includes('fifteen and a quarter'), `Mortgage line must use April 1979 data. Got: "${mgLine.text}"`);
 assert.ok(!mgLine.text.includes('twenty-two'), 'Mortgage line must not use May 1979 data');
 
 // 6. Verify economyLine randomly picking with recent kinds

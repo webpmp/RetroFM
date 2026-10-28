@@ -30,30 +30,21 @@ import { FactItem } from '../news/types.js';
 const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
 const FALLBACK_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_FALLBACK;
 
-export const defaultGeminiWriter: GeminiScriptWriterProvider = new GeminiScriptWriterProvider(
-  process.env.GEMINI_API_KEY,
-  DEFAULT_TEXT_MODEL,
-  FALLBACK_TEXT_MODEL
-);
+export {
+  getDefaultGeminiWriter,
+  getScriptWriterProvider,
+} from './scriptWriterFactory.js';
+import { getDefaultGeminiWriter, getScriptWriterProvider } from './scriptWriterFactory.js';
+
+export const defaultGeminiWriter = new Proxy({} as GeminiScriptWriterProvider, {
+  get(_target, prop) {
+    const instance = getDefaultGeminiWriter();
+    const val = (instance as any)[prop];
+    return typeof val === 'function' ? val.bind(instance) : val;
+  },
+});
 
 export const activeScriptWriter = defaultGeminiWriter;
-
-/**
- * Returns the appropriate ScriptWriterProvider based on provider type and options.
- */
-export function getScriptWriterProvider(options?: {
-  provider?: 'gemini' | 'lmstudio';
-  endpoint?: string;
-  model?: string;
-}): ScriptWriterProvider {
-  if (options?.provider === 'lmstudio') {
-    return new LMStudioScriptWriterProvider({
-      endpoint: options.endpoint,
-      model: options.model,
-    });
-  }
-  return defaultGeminiWriter;
-}
 
 /**
  * Step 1 Service:

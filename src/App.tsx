@@ -63,6 +63,14 @@ import {
   type TopEntry,
 } from './services/djBreak/djVariety.js';
 import { economyLine, type PricesFile } from './services/djBreak/costOfLiving.js';
+import {
+  newBreakSelectionSessionState,
+  BreakSelectionSessionState,
+  BreakDecisionResponsePayload,
+} from './services/djBreak/breakDecisionTypes.js';
+import { getScriptWriterProvider } from './services/djBreak/scriptWriterFactory.js';
+import { getEnv } from './services/envUtil.js';
+import { validateBreakOutput } from './services/djBreak/breakValidator.js';
 import { shapeDelivery } from './services/djBreak/djDelivery.js';
 import { clientNewsQueue, ClientNewsStatus } from './services/news/clientNewsQueue.js';
 import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
@@ -450,6 +458,7 @@ export default function App() {
   });
   const djStateRef = useRef<DjState>(newDjState());
   const varietyStateRef = useRef<VarietyState>(newVarietyState());
+  const specABreakStateRef = useRef<BreakSelectionSessionState>(newBreakSelectionSessionState());
   const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
   const jinglesDataRef = useRef<Jingle[]>([]);
   const pricesDataRef = useRef<PricesFile | null>(null);
@@ -4097,6 +4106,143 @@ export default function App() {
         : null;
       const economyItem: { text: string } | null = ecoLine ? { text: ecoLine.text } : null;
 
+      // Spec A Decision Engine: evaluate candidate break before LLM or template via server endpoint
+      const freqMap: Record<'every' | 'often' | 'sometimes' | 'rarely', number> = {
+        every: 1.0,
+        often: 0.67,
+        sometimes: 0.5, // Spec A default ~1 break per 2 songs
+        rarely: 0.2,
+      };
+      const freqSetting = freqMap[djTalkFrequency] ?? 0.5;
+
+      let specAResult: BreakDecisionResponsePayload;
+      try {
+        const res = await fetch('/api/dj/break-decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selectedDate: date,
+            prevSong: prev ? { title: prev.title, artist: prev.artist, id: prev.id, first_chart_date: prevSongObj?.first_chart_date } : null,
+            nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: nextSongObj?.first_chart_date } : null,
+            frequencySetting: freqSetting,
+            usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
+            lastBreakType: specABreakStateRef.current.lastBreakType,
+            breaksSinceLastNews: specABreakStateRef.current.breaksSinceLastNews ?? 5,
+            usedNewsTopics: Array.from(specABreakStateRef.current.usedNewsTopics || []),
+            lastIntroTemplateIndex: specABreakStateRef.current.lastIntroTemplateIndex ?? -1,
+            newsObservation: newsItem ? { text: newsItem.text, date } : null,
+            economyObservation: economyItem ? { text: economyItem.text, date } : null,
+          }),
+        });
+        if (res.ok) {
+          specAResult = await res.json();
+        } else {
+          throw new Error(`Server returned ${res.status}`);
+        }
+      } catch (err) {
+        console.warn('[DJ] Failed to fetch server break decision, falling back to silence:', err);
+        specAResult = {
+          decision: 'silence',
+          breakType: null,
+          candidate: null,
+          finalSpeech: '',
+          targetSong: 'none',
+        };
+      }
+
+      // Update client-side session state
+      specABreakStateRef.current.totalSongChanges++;
+      if (specAResult.decision === 'speak' && specAResult.candidate) {
+        specABreakStateRef.current.usedFactKeys.add(specAResult.candidate.factKey);
+        specABreakStateRef.current.lastBreakType = specAResult.candidate.type;
+        specABreakStateRef.current.totalBreaksSpoken++;
+        if (specAResult.candidate.type === 'observation' && specAResult.candidate.factKey.startsWith('news:')) {
+          specABreakStateRef.current.breaksSinceLastNews = 0;
+          const topic = (specAResult.candidate as any).topic;
+          if (topic && topic !== 'general') {
+            if (!specABreakStateRef.current.usedNewsTopics) {
+              specABreakStateRef.current.usedNewsTopics = new Set<string>();
+            }
+            specABreakStateRef.current.usedNewsTopics.add(topic);
+          }
+        } else {
+          specABreakStateRef.current.breaksSinceLastNews = (specABreakStateRef.current.breaksSinceLastNews ?? 0) + 1;
+        }
+      }
+
+      // If silence was chosen, enter silent break immediately
+      if (specAResult.decision === 'silence') {
+        console.log('[DJ] Spec A engine selected silence');
+        preparedBreakRef.current = {
+          id: currentSongId,
+          audioData: null,
+          durationSec: 0,
+          text: '',
+          slot: 'before',
+          kind: 'silent',
+          timing: 'land',
+          pendingVarietyState: varietyStateRef.current,
+          triggerTimeRemaining: 1.5,
+          duckTriggerTimeRemaining: 2.0,
+        };
+        return;
+      }
+
+      // If AI mode is active and we have an observation break (news or economy), ask the active provider to write spoken sentences from it.
+      // Note: song_credit, chart_fact, and intro_only breaks use rotating code templates and do not call the LLM.
+      let candidateSpokenText = specAResult.finalSpeech;
+      const candidateObj = specAResult.candidate;
+      const isLlmEligibleType = candidateObj && candidateObj.type === 'observation';
+      if (djMode === 'ai' && isLlmEligibleType && candidateObj) {
+        const aiProvider = ((typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio') || 'gemini';
+        const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || getEnv('LM_STUDIO_ENDPOINT') || 'http://localhost:1234/v1';
+        const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || getEnv('LM_STUDIO_MODEL') || undefined;
+
+        const writer = getScriptWriterProvider({
+          provider: aiProvider,
+          endpoint: lmEndpoint,
+          model: lmModel,
+        });
+
+        try {
+          const aiScriptRes = await writer.writeSingleBreakScript({
+            targetDate: date,
+            personality: 'mike',
+            songPlayed: prev ? { title: prev.title, artist: prev.artist } : undefined,
+            songNext: next ? { title: next.title, artist: next.artist } : undefined,
+            targetSong: specAResult.targetSong,
+            breakType: candidateObj.type,
+            factPacket: {
+              factText: candidateObj.factText,
+              source: candidateObj.source,
+              date: candidateObj.date,
+            },
+          });
+          if (aiScriptRes.success && aiScriptRes.scriptText) {
+            // Run strict validation check on LLM output
+            const val = validateBreakOutput(aiScriptRes.scriptText, {
+              selectedDate: date,
+              factPacket: {
+                factText: candidateObj.factText,
+                source: candidateObj.source,
+                date: candidateObj.date,
+              },
+              songPlayed: prev,
+              songNext: next,
+            });
+            if (val.valid) {
+              candidateSpokenText = val.sanitizedText;
+            } else {
+              console.log(`[DJ] LLM output rejected (${val.rejectedReason}) -> using verified candidate script`);
+            }
+          } else if (aiScriptRes.error) {
+            console.warn(`[DJ] ${aiProvider.toUpperCase()} error: ${aiScriptRes.error}`);
+          }
+        } catch (llmErr: any) {
+          console.warn(`[DJ] Failed calling ${aiProvider.toUpperCase()} for single break script:`, llmErr?.message);
+        }
+      }
+
       const res = buildVarietyBreak(
         {
           prev,
@@ -4116,6 +4262,12 @@ export default function App() {
         Math.random,
         TALK_PRESETS[djTalkFrequency]
       );
+
+      // Override with Spec A candidate spoken text
+      res.text = candidateSpokenText;
+      if (specAResult.breakType) {
+        res.kind = specAResult.breakType as any;
+      }
 
       const timing = res.timing || 'land';
       const maxSeconds = res.maxSeconds;

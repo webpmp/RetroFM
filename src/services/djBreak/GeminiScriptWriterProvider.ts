@@ -11,8 +11,11 @@ import {
   GeneratedDJBreak,
   StationPersonality,
   AnachronismCheckResult,
+  SingleBreakPacketInput,
+  SingleBreakPacketResult,
 } from './types.js';
-import { recordTextModelCall } from './breakCache.js';
+import { recordTextModelCall } from './breakSessionStats.js';
+import { getEnv } from '../envUtil.js';
 
 export const PERSONALITIES: Record<'mike' | 'lisa', StationPersonality> = {
   mike: {
@@ -42,7 +45,7 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
   private ai: GoogleGenAI;
 
   constructor(apiKey?: string, modelName = 'gemini-3.8-flash', fallbackModelName?: string) {
-    const key = apiKey || process.env.GEMINI_API_KEY;
+    const key = apiKey || getEnv('GEMINI_API_KEY');
     if (!key) {
       console.warn('[GeminiScriptWriterProvider] Warning: GEMINI_API_KEY is not defined in environment.');
     }
@@ -567,6 +570,170 @@ Respond strictly with JSON schema:
         callStartTime: startTimeIso,
         callDurationSec: durationSec,
         error: errorMsg,
+      };
+    }
+  }
+
+  /**
+   * Spec A: Writes 1 to 2 spoken sentences from exactly ONE verified fact packet.
+   * Specific prompts tailored per break type.
+   */
+  async writeSingleBreakScript(input: SingleBreakPacketInput): Promise<SingleBreakPacketResult> {
+    const persona = PERSONALITIES[input.personality || 'mike'] || PERSONALITIES.mike;
+    const isChartFact = input.breakType === 'chart_fact';
+    const isSongCredit = input.breakType === 'song_credit';
+    const isObservation = input.breakType === 'observation';
+    const isNews = isObservation && (input.factPacket.source.toLowerCase().includes('times') || input.factPacket.factText.toLowerCase().includes('times'));
+
+    let prompt = '';
+
+    if (isNews) {
+      prompt = `
+ROLE & TASK:
+${persona.promptPersona}
+You are on the air on an authentic Top 40 radio station on ${input.targetDate}.
+You glance at the morning newspaper between records.
+
+NEWS FACT PACKET:
+Source: ${input.factPacket.source} (${input.factPacket.date})
+Fact: "${input.factPacket.factText}"
+
+CRITICAL RULES:
+1. Write EXACTLY ONE plain spoken sentence (~15 to 25 words max).
+2. Always attribute news to "The Times". Use one of these rotating openers: "The Times reports...", "In the news this morning, The Times reports...", "According to The Times...".
+3. Use ONLY facts and names provided in the packet. Never invent details or outcomes.
+4. Do NOT use the words "yesterday" or "today".
+5. Do NOT include personal opinions, reactions, commentary, or humor.
+6. Do NOT mention upcoming songs or say "coming up".
+7. No exclamation points (!). Use periods only. No hype words or interjections.
+8. Output ONLY the raw spoken radio script.
+`.trim();
+
+    } else if (isChartFact) {
+      const isNext = input.targetSong === 'next';
+      const targetSong = isNext ? input.songNext : input.songPlayed;
+
+      prompt = `
+ROLE & TASK:
+${persona.promptPersona}
+You are on the air on an authentic Top 40 radio station on ${input.targetDate}.
+You share a Billboard chart fact between songs.
+
+CHART FACT PACKET:
+Source: ${input.factPacket.source}
+Fact: "${input.factPacket.factText}"
+Target Song: "${targetSong?.title || 'Unknown'}" by ${targetSong?.artist || 'Unknown'} (${isNext ? 'starting now' : 'just finished'})
+
+CRITICAL RULES:
+1. Write 1 or 2 plain spoken sentences only.
+2. Use ONLY facts in the packet. Never invent chart numbers or peaks.
+3. Mention the song title at most ONCE.
+4. Do NOT use the word "debut". New entries are "new on the Hot 100 this week at number N".
+5. Do NOT mention newspapers or "New York Times".
+6. Do NOT use exclamation points (!).
+7. NEVER say "coming up" or "up next".
+8. No hype words (no "fresh", "hot", "amazing", "incredible", "smash", "on fire").
+9. Output ONLY the raw spoken radio script.
+`.trim();
+
+    } else if (isSongCredit) {
+      const isNext = input.targetSong === 'next';
+      const targetSong = isNext ? input.songNext : input.songPlayed;
+
+      prompt = `
+ROLE & TASK:
+${persona.promptPersona}
+You are on the air on an authentic Top 40 radio station on ${input.targetDate}.
+You share a verified songwriter or producer credit for a song.
+
+CREDIT PACKET:
+Source: ${input.factPacket.source}
+Credit: "${input.factPacket.factText}"
+Song: "${targetSong?.title || 'Unknown'}" by ${targetSong?.artist || 'Unknown'} (${isNext ? 'coming up' : 'just finished'})
+
+CRITICAL RULES:
+1. Write 1 or 2 plain spoken sentences only.
+2. Use ONLY the writer/producer names provided in the packet.
+3. Mention the song title at most ONCE.
+4. Do NOT mention newspapers or "New York Times".
+5. Do NOT use exclamation points (!).
+6. No hype words or interjections.
+7. Output ONLY the raw spoken radio script.
+`.trim();
+
+    } else {
+      prompt = `
+ROLE & TASK:
+${persona.promptPersona}
+You are on the air on an authentic Top 40 radio station on ${input.targetDate}.
+You share an understated everyday cost-of-living statistic.
+
+STATISTIC PACKET:
+Source: ${input.factPacket.source}
+Fact: "${input.factPacket.factText}"
+
+CRITICAL RULES:
+1. Write exactly 1 plain spoken sentence.
+2. State the numbers and statistic honest and plainly as given in the packet.
+3. Do NOT add personal complaints, reactions, or commentary.
+4. Do NOT mention newspapers or "New York Times".
+5. Do NOT mention upcoming songs or say "coming up".
+6. No exclamation points (!).
+7. Output ONLY the raw spoken radio script.
+`.trim();
+    }
+
+    try {
+      const { result, modelUsed, callStartTime, durationSec } = await this.executeWithRetryAndFallback(
+        'Writing single break script from 1 fact packet',
+        async (activeModel) => {
+          const response = await this.safeGenerateContent({
+            model: activeModel,
+            contents: prompt,
+            config: {
+              temperature: 0.7,
+              maxOutputTokens: 250,
+              thinkingConfig: {
+                thinkingBudget: 0,
+              },
+            },
+          });
+          let text = (response.text || '').trim();
+          const quoteMatches = text.match(/"/g) || [];
+          if (text.startsWith('"') && text.endsWith('"') && quoteMatches.length >= 2) {
+            if (quoteMatches.length === 2) {
+              text = text.slice(1, -1).trim();
+            } else {
+              const secondQuoteIndex = text.indexOf('"', 1);
+              if (secondQuoteIndex === -1 || secondQuoteIndex === text.length - 1) {
+                text = text.slice(1, -1).trim();
+              }
+            }
+          }
+          return text;
+        },
+        30000
+      );
+
+      return {
+        success: true,
+        scriptText: result,
+        modelUsed,
+        callStartTime,
+        callDurationSec: durationSec,
+      };
+    } catch (err: any) {
+      const isUnavailable = this.isUnavailableError(err);
+      return {
+        success: false,
+        scriptText: '',
+        modelUsed: this.modelName,
+        callStartTime: new Date().toISOString(),
+        callDurationSec: 0,
+        isUnavailable,
+        error: isUnavailable
+          ? 'Gemini server is currently unreachable or overloaded'
+          : err?.message || 'Failed generating single break script',
       };
     }
   }

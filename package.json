@@ -17,6 +17,7 @@
     "bump-extension": "tsx scripts/bump-extension.ts --bump",
     "sync-extension": "tsx scripts/bump-extension.ts",
     "test:kokoro": "tsx scripts/test-kokoro.ts",
+    "test:imports": "tsx scripts/check-browser-imports.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

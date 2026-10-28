@@ -340,14 +340,20 @@ export function selectNewsPackets(
         publishedDate: art.pubDate,
         targetDate,
         desk: art.desk,
+        section: art.section,
+        headline: art.headline,
+        abstract: art.abstract,
+        keywords: art.keywords,
       });
 
-      // Prioritize front-page (A1) and high word-count items
-      if (natResult.isFrontPage) {
-        score += 50;
+      // Enforce minimum score threshold: items below 50 are dropped from DJ pool
+      if (score < 50) {
+        continue;
       }
+
+      // Small secondary tie-breakers for word count
       if (art.wordCount && art.wordCount > 500) {
-        score += Math.min(20, Math.floor(art.wordCount / 100));
+        score += Math.min(10, Math.floor(art.wordCount / 200));
       }
 
       result.push({ packet, score });
