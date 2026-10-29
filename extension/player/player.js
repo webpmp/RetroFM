@@ -993,7 +993,17 @@ const BUTTONS={rewind:true,forward:true,record:true};
 
 // display panel expand/collapse
 const pan=$('panel');
-function setOpen(o){pan.classList.toggle('collapsed',!o);$('tgl').setAttribute('aria-expanded',o);emit('display',{open:o});try{localStorage.setItem('rfm-open',o?'1':'0')}catch(e){}}
+const TGL_GLOW_DEF='<defs><filter id="tglGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="0.6" result="b1"/><feGaussianBlur stdDeviation="1.6" result="b2"/><feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+const TGL_MINUS_ICON=TGL_GLOW_DEF+'<rect x="1" y="4.2" width="8" height="1.6" rx="0.8" fill="#8dffb0" filter="url(#tglGlow)"/>';
+const TGL_PLUS_ICON=TGL_MINUS_ICON+'<rect x="4.2" y="1" width="1.6" height="8" rx="0.8" fill="#8dffb0" filter="url(#tglGlow)"/>';
+function setOpen(o){
+  pan.classList.toggle('collapsed',!o);
+  $('tgl').setAttribute('aria-expanded',o);
+  const icon=$('tglIcon');
+  if(icon)icon.innerHTML=o?TGL_MINUS_ICON:TGL_PLUS_ICON;
+  emit('display',{open:o});
+  try{localStorage.setItem('rfm-open',o?'1':'0')}catch(e){}
+}
 $('tgl').onclick=()=>setOpen(pan.classList.contains('collapsed'));
 try{if(localStorage.getItem('rfm-open')==='0')setOpen(false)}catch(e){}
 
@@ -1018,10 +1028,133 @@ function setSongYear(y){}
 const flip=()=>{if(!logoDec)return;dark=!dark;paintLogo();emit('theme',{dark})};
 $('logoBar').onclick=flip;$('logoBar').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 document.addEventListener('retrofm:song',e=>{const d=e.detail||{};if(d.title)setSong(d);if(d.year)setSongYear(d.year)});
-window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag})};
+window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag}),animateTuningToFrequency,cancelTuningAnimation,getTuningAnimationState:()=>tuningAnimState};
 
 // tuning: dial = FM frequency, locks onto the selected decade's genre stations
 const MIN=87.5,SPAN=20.5;let lastKey='';
+// Coordinated analog tuner needle & digital frequency transition state
+let tuningAnimRaf = 0;
+let tuningAnimState = null;
+
+function cancelTuningAnimation(applyCurrentState = false) {
+  if (tuningAnimRaf) {
+    cancelAnimationFrame(tuningAnimRaf);
+    tuningAnimRaf = 0;
+  }
+  if (tuningAnimState && applyCurrentState) {
+    applyTuningVisuals(tuningAnimState.currentF, tuningAnimState.currentTun);
+  }
+  tuningAnimState = null;
+}
+
+function applyTuningVisuals(fVal, tunVal) {
+  const roundedF = Math.round(fVal * 10) / 10;
+  const fClamped = Math.max(MIN, Math.min(MIN + SPAN, roundedF));
+  const normalizedTun = typeof tunVal === 'number'
+    ? clamp(tunVal, 0, 1)
+    : clamp((fClamped - MIN) / SPAN, 0, 1);
+
+  // Update needle and tuning knob without triggering playback / events
+  const x = fx(MIN + normalizedTun * SPAN);
+  const tnEl = $('tn');
+  if (tnEl) {
+    tnEl.setAttribute('x1', x);
+    tnEl.setAttribute('x2', x);
+  }
+  const kTunEl = $('kTun');
+  if (kTunEl) {
+    kTunEl.style.transform = 'rotate(' + (-135 + normalizedTun * 270 - 40) + 'deg)';
+  }
+
+  // Update digital frequency readout (avoid redundant re-renders)
+  const yrEl = $('year');
+  if (yrEl) {
+    const fStr = fClamped.toFixed(1);
+    if (yrEl.dataset.curF !== fStr) {
+      yrEl.dataset.curF = fStr;
+      yrEl.innerHTML = render7SegFreq(fStr);
+    }
+  }
+}
+
+function animateTuningToFrequency(targetFreq, fromTun) {
+  const destinationFreq = Math.round(Math.max(MIN, Math.min(MIN + SPAN, targetFreq)) * 10) / 10;
+  const destinationTun = (destinationFreq - MIN) / SPAN;
+
+  // Determine starting point: use explicit fromTun if passed, or in-flight animation state, or fallback to S.tun
+  let startingTun;
+  if (typeof fromTun === 'number' && Number.isFinite(fromTun)) {
+    startingTun = clamp(fromTun, 0, 1);
+  } else if (tuningAnimState) {
+    startingTun = clamp(tuningAnimState.currentTun, 0, 1);
+  } else {
+    startingTun = clamp(S.tun, 0, 1);
+  }
+  let startingFreq = Math.round((MIN + startingTun * SPAN) * 10) / 10;
+
+  cancelTuningAnimation(false);
+
+  // If already at target frequency, ensure exact alignment and return
+  if (Math.abs(startingFreq - destinationFreq) < 0.001) {
+    applyTuningVisuals(destinationFreq, destinationTun);
+    return;
+  }
+
+  // Respect user preference for reduced motion
+  const prefersReducedMotion = typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (prefersReducedMotion) {
+    applyTuningVisuals(destinationFreq, destinationTun);
+    return;
+  }
+
+  // Duration scales with tuning distance: 550ms base up to 750ms for wide spans
+  const spanRatio = Math.abs(destinationFreq - startingFreq) / SPAN;
+  const animDuration = Math.round(550 + spanRatio * 200);
+  const animStartTime = performance.now();
+
+  tuningAnimState = {
+    startF: startingFreq,
+    destF: destinationFreq,
+    startTun: startingTun,
+    destTun: destinationTun,
+    currentF: startingFreq,
+    currentTun: startingTun,
+    startTime: animStartTime,
+    duration: animDuration
+  };
+
+  // Responsive initial movement with smooth, controlled deceleration at the station
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+  const stepAnim = now => {
+    if (!tuningAnimState) return;
+    const elapsed = now - tuningAnimState.startTime;
+    const rawProgress = Math.min(1, Math.max(0, elapsed / tuningAnimState.duration));
+    const easedProgress = easeOutCubic(rawProgress);
+
+    const curTun = tuningAnimState.startTun + (tuningAnimState.destTun - tuningAnimState.startTun) * easedProgress;
+    const curF = tuningAnimState.startF + (tuningAnimState.destF - tuningAnimState.startF) * easedProgress;
+
+    tuningAnimState.currentTun = curTun;
+    tuningAnimState.currentF = curF;
+
+    if (rawProgress >= 1) {
+      applyTuningVisuals(tuningAnimState.destF, tuningAnimState.destTun);
+      tuningAnimState = null;
+      tuningAnimRaf = 0;
+    } else {
+      applyTuningVisuals(curF, curTun);
+      tuningAnimRaf = requestAnimationFrame(stepAnim);
+    }
+  };
+
+  // Immediate first frame reflects the starting visual state
+  applyTuningVisuals(startingFreq, startingTun);
+  tuningAnimRaf = requestAnimationFrame(stepAnim);
+}
 // Seven-segment display mapping: A, B, C, D, E, F, G
 const SEG_MAP = {
   '0': ['a','b','c','d','e','f'],
@@ -1052,14 +1185,22 @@ function render7SegFreq(fStr){
   h += '<span class="seg-unit" aria-hidden="true"><span class="seg-unit-fm">FM</span><span class="seg-unit-mhz">MHz</span></span></span>';
   return h;
 }
-function tune(){
+function tune(skipVisuals = false){
+ if (!skipVisuals) cancelTuningAnimation(false);
  const f=Math.round((MIN+S.tun*SPAN)*10)/10;S.tun=(f-MIN)/SPAN;
- $('kTun').style.transform='rotate('+(-135+S.tun*270-40)+'deg)';
- const x=fx(MIN+S.tun*SPAN);$('tn').setAttribute('x1',x);$('tn').setAttribute('x2',x);
+ if (!skipVisuals) {
+   $('kTun').style.transform='rotate('+(-135+S.tun*270-40)+'deg)';
+   const x=fx(MIN+S.tun*SPAN);$('tn').setAttribute('x1',x);$('tn').setAttribute('x2',x);
+   const yrEl=$('year');
+   if(yrEl){yrEl.dataset.curF=f.toFixed(1);yrEl.innerHTML=render7SegFreq(f.toFixed(1));}
+ }
  let best=null;
  const stations=ST[S.dec]||[];
  stations.forEach(s=>{const d=Math.abs(s[1]-f);if(d<0.05)best=s});
- $('year').innerHTML=render7SegFreq(f.toFixed(1));
+ if (!skipVisuals) {
+   const yrEl=$('year');
+   if(yrEl){yrEl.dataset.curF=f.toFixed(1);yrEl.innerHTML=render7SegFreq(f.toFixed(1));}
+ }
  S.locked=!!best;
  const sdotEl=$('sdot');if(sdotEl)sdotEl.style.display=best?'':'none';
  const giEl=$('gi');if(giEl)giEl.textContent=best?'':'Between stations';
@@ -1110,7 +1251,13 @@ function tune(){
 function paintChips(d){
  const chipsEl=$('chips');if(!chipsEl)return;chipsEl.innerHTML='';
  [...(ST[d]||[])].sort((a,b)=>a[1]-b[1]).forEach(s=>{const b=document.createElement('button');b.className='chip';b.dataset.g=s[0];b.textContent=s[0];b.title=s[1].toFixed(1)+' FM';
-  b.onclick=()=>{staticController.ensureContext();S.tun=(s[1]-MIN)/SPAN;tune()};chipsEl.appendChild(b)});
+  b.onclick=()=>{
+    staticController.ensureContext();
+    const prevTun = tuningAnimState ? tuningAnimState.currentTun : S.tun;
+    S.tun=(s[1]-MIN)/SPAN;
+    tune(true);
+    animateTuningToFrequency(s[1], prevTun);
+  };chipsEl.appendChild(b)});
  updateGenrePills();
 }
 function setDec(d){S.dec=d;lastKey='';
@@ -1355,7 +1502,7 @@ function setSong(d){
   renderSong();
 }
 window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});
-window.addEventListener('beforeunload',()=>{clearStereoTimers();staticController.dispose();});
+window.addEventListener('beforeunload',()=>{cancelTuningAnimation();clearStereoTimers();staticController.dispose();});
 $('sdot').onclick=()=>{
   if(songDisplayMode==='song_info'){
     songDisplayMode='elapsed_time';
