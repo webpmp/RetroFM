@@ -1274,15 +1274,158 @@ function marks(){$('stn').innerHTML=ST[S.dec].map(s=>'<circle cx="'+fx(s[1]).toF
 // Live mode: real songs received from RetroFM session
 const DEMO=false;
 // song info on the display: title and artist alternate with 1.2s fade and 3s hold
-// songDisplayMode: 'song_info' (1) -> 'elapsed_time' (2) -> 'hidden' (3)
+// songDisplayMode: 'song_info' (1) -> 'elapsed_time' (2) -> 'spectrum' (3) -> 'hidden' (4)
 // By default, Artist Name and Song Title is the default display mode on entering the green display.
 let songDisplayMode = 'song_info';
 try {
   const savedMode = localStorage.getItem('rfm-song-display-mode');
-  if (savedMode === 'song_info' || savedMode === 'elapsed_time' || savedMode === 'hidden') {
+  if (savedMode === 'song_info' || savedMode === 'elapsed_time' || savedMode === 'spectrum' || savedMode === 'hidden') {
     songDisplayMode = savedMode;
   }
 } catch (e) {}
+
+// Audio Spectrum Analyzer State & Calibration
+const SA_BANDS_COUNT = 10;
+const SA_BLOCKS_PER_COLUMN = 8;
+const SA_PEAK_HOLD_MS = 900;
+const SA_PEAK_DROP_INTERVAL_MS = 90;
+
+let saRafId = 0;
+let saRunning = false;
+let saDomBuilt = false;
+let saBlockElements = []; // [bandIndex][blockIndex]
+let saPeakBlockIndices = new Array(SA_BANDS_COUNT).fill(0);
+let saPeakTimes = new Array(SA_BANDS_COUNT).fill(0);
+let saPeakLastDropTimes = new Array(SA_BANDS_COUNT).fill(0);
+let saSmoothedLevels = new Array(SA_BANDS_COUNT).fill(0);
+let saActiveBlocks = new Array(SA_BANDS_COUNT).fill(0);
+let latestSpectrumBands = null;
+let lastSpectrumUpdateTime = 0;
+
+function ensureSpectrumAnalyzerDom() {
+  const wrap = $('saWrap');
+  if (!wrap || saDomBuilt) return;
+  wrap.innerHTML = '';
+  saBlockElements = [];
+  for (let c = 0; c < SA_BANDS_COUNT; c++) {
+    const colEl = document.createElement('div');
+    colEl.className = 'sa-col';
+    colEl.dataset.col = String(c);
+    const colBlocks = [];
+    for (let b = 0; b < SA_BLOCKS_PER_COLUMN; b++) {
+      const blk = document.createElement('div');
+      blk.className = 'sa-blk';
+      colEl.appendChild(blk);
+      colBlocks.push(blk);
+    }
+    wrap.appendChild(colEl);
+    saBlockElements.push(colBlocks);
+  }
+  saDomBuilt = true;
+}
+
+function updateSpectrumAnalyzerFrame() {
+  if (songDisplayMode !== 'spectrum') {
+    saRunning = false;
+    saRafId = 0;
+    return;
+  }
+
+  ensureSpectrumAnalyzerDom();
+  const now = Date.now();
+  const isPlaying = S.state === 'playing' && isYtPlaybackActive;
+  const isDataFresh = (now - lastSpectrumUpdateTime) < 400;
+  const isSilentOrStopped = !isPlaying || !isDataFresh;
+
+  let hasVisibleActivity = false;
+
+  for (let c = 0; c < SA_BANDS_COUNT; c++) {
+    let target = 0;
+    if (!isSilentOrStopped && latestSpectrumBands && typeof latestSpectrumBands[c] === 'number') {
+      target = Math.max(0, Math.min(1, latestSpectrumBands[c]));
+    }
+
+    // Vintage hardware ballistics: fast attack (0.5), slightly damped release (0.16)
+    if (target > saSmoothedLevels[c]) {
+      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * 0.52;
+    } else {
+      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * 0.16;
+    }
+    if (saSmoothedLevels[c] < 0.015) {
+      saSmoothedLevels[c] = 0;
+    }
+
+    // Discrete block count (0 to SA_BLOCKS_PER_COLUMN)
+    let litBlocks = Math.round(saSmoothedLevels[c] * SA_BLOCKS_PER_COLUMN);
+    litBlocks = Math.max(0, Math.min(SA_BLOCKS_PER_COLUMN, litBlocks));
+    saActiveBlocks[c] = litBlocks;
+
+    // Peak-hold indicator behavior:
+    // 1. When column rises above peak, peak immediately jumps to column height
+    if (litBlocks > saPeakBlockIndices[c]) {
+      saPeakBlockIndices[c] = litBlocks;
+      saPeakTimes[c] = now;
+      saPeakLastDropTimes[c] = now;
+    } else if (saPeakBlockIndices[c] > 0) {
+      // 2. Hold at peak for SA_PEAK_HOLD_MS (900ms)
+      if (now - saPeakTimes[c] > SA_PEAK_HOLD_MS) {
+        // 3. Step down gradually toward column height every SA_PEAK_DROP_INTERVAL_MS
+        if (now - saPeakLastDropTimes[c] >= SA_PEAK_DROP_INTERVAL_MS) {
+          saPeakBlockIndices[c] = Math.max(litBlocks, saPeakBlockIndices[c] - 1);
+          saPeakLastDropTimes[c] = now;
+        }
+      }
+    }
+
+    const currentPeak = saPeakBlockIndices[c];
+    if (litBlocks > 0 || currentPeak > 0) {
+      hasVisibleActivity = true;
+    }
+
+    // Render 8 discrete blocks in column
+    const blocks = saBlockElements[c];
+    if (blocks && blocks.length === SA_BLOCKS_PER_COLUMN) {
+      for (let b = 0; b < SA_BLOCKS_PER_COLUMN; b++) {
+        const blk = blocks[b];
+        const isColumnLit = b < litBlocks;
+        const isPeakLit = (b + 1 === currentPeak) && (currentPeak > litBlocks);
+
+        if (isPeakLit) {
+          blk.className = 'sa-blk peak';
+        } else if (isColumnLit) {
+          blk.className = 'sa-blk on';
+        } else {
+          blk.className = 'sa-blk';
+        }
+      }
+    }
+  }
+
+  // Continue RAF loop while playing or until all columns and peaks settle to 0
+  if (isPlaying || hasVisibleActivity) {
+    saRunning = true;
+    saRafId = requestAnimationFrame(updateSpectrumAnalyzerFrame);
+  } else {
+    saRunning = false;
+    saRafId = 0;
+  }
+}
+
+function startSpectrumAnalyzerLoop() {
+  if (songDisplayMode !== 'spectrum') return;
+  if (!saRunning) {
+    saRunning = true;
+    saRafId = requestAnimationFrame(updateSpectrumAnalyzerFrame);
+  }
+}
+
+function stopSpectrumAnalyzerLoop() {
+  if (saRafId) {
+    cancelAnimationFrame(saRafId);
+    saRafId = 0;
+  }
+  saRunning = false;
+}
 
 let playbackProgress = { currentTime: 0, duration: 0, videoId: null };
 
@@ -1320,31 +1463,63 @@ function clearSongTimers(){
   if(sFadeTimer){clearTimeout(sFadeTimer);sFadeTimer=0;}
 }
 
+const SA_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1" y="8.5" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="1" y="10.8" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="4" y="4" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="4" y="6.2" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="4" y="8.5" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="4" y="10.8" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="7" y="1.8" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="7" y="4" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="7" y="6.2" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="7" y="8.5" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="7" y="10.8" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="10" y="6.2" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="10" y="8.5" width="2" height="1.6" rx="0.3" fill="currentColor"/><rect x="10" y="10.8" width="2" height="1.6" rx="0.3" fill="currentColor"/></svg>';
+
 function renderSong(){
   const el=$('sg');
   const sdotEl=$('sdot');
+  const saWrapEl=$('saWrap');
   clearSongTimers();
   el.className='';
   el.style.opacity='1';
   el.title='';
 
   if(sdotEl){
-    sdotEl.classList.remove('mode-hidden');
+    sdotEl.classList.remove('mode-hidden', 'mode-spectrum');
     if(songDisplayMode==='song_info'){
       sdotEl.textContent='\u266B';
       sdotEl.title='Song Information (click for elapsed time)';
       sdotEl.setAttribute('aria-label','Song information mode: showing title and artist');
+      sdotEl.setAttribute('aria-pressed','true');
     }else if(songDisplayMode==='elapsed_time'){
       sdotEl.textContent='\u23F1';
-      sdotEl.title='Elapsed Time (click to hide)';
+      sdotEl.title='Elapsed Time (click for audio spectrum analyzer)';
       sdotEl.setAttribute('aria-label','Elapsed time mode: showing playback position');
+      sdotEl.setAttribute('aria-pressed','true');
+    }else if(songDisplayMode==='spectrum'){
+      sdotEl.classList.add('mode-spectrum');
+      sdotEl.innerHTML=SA_ICON_SVG;
+      sdotEl.title='Audio Spectrum Analyzer (click to hide display)';
+      sdotEl.setAttribute('aria-label','Audio Spectrum Analyzer');
+      sdotEl.setAttribute('aria-pressed','true');
     }else{
       sdotEl.textContent='\u2022';
       sdotEl.classList.add('mode-hidden');
       sdotEl.title='Display Hidden (click for song information)';
       sdotEl.setAttribute('aria-label','Display hidden mode: click to show song information');
+      sdotEl.setAttribute('aria-pressed','false');
     }
   }
+
+  if(songDisplayMode==='spectrum'){
+    el.style.display='none';
+    el.textContent='';
+    if(saWrapEl){
+      saWrapEl.classList.remove('sa-hidden');
+      saWrapEl.setAttribute('aria-hidden','false');
+    }
+    ensureSpectrumAnalyzerDom();
+    startSpectrumAnalyzerLoop();
+    return;
+  }
+
+  // Non-spectrum views
+  stopSpectrumAnalyzerLoop();
+  if(saWrapEl){
+    saWrapEl.classList.add('sa-hidden');
+    saWrapEl.setAttribute('aria-hidden','true');
+  }
+  el.style.display='';
 
   if(songDisplayMode==='hidden'){
     el.textContent='';
@@ -1501,12 +1676,14 @@ function setSong(d){
   song = nextSong;
   renderSong();
 }
-window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});
+window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();stopSpectrumAnalyzerLoop();});
 window.addEventListener('beforeunload',()=>{cancelTuningAnimation();clearStereoTimers();staticController.dispose();});
 $('sdot').onclick=()=>{
   if(songDisplayMode==='song_info'){
     songDisplayMode='elapsed_time';
   }else if(songDisplayMode==='elapsed_time'){
+    songDisplayMode='spectrum';
+  }else if(songDisplayMode==='spectrum'){
     songDisplayMode='hidden';
   }else{
     songDisplayMode='song_info';
@@ -1780,6 +1957,13 @@ function onVuAudioLevelsReceived(payload) {
   latestAudioLeft = Math.max(0, Math.min(2, rawL));
   latestAudioRight = Math.max(0, Math.min(2, rawR));
   lastAudioUpdateTime = Date.now();
+  if (Array.isArray(payload.bands) && payload.bands.length > 0) {
+    latestSpectrumBands = payload.bands;
+    lastSpectrumUpdateTime = Date.now();
+    if (songDisplayMode === 'spectrum' && !saRunning) {
+      startSpectrumAnalyzerLoop();
+    }
+  }
   if (!vuRunning) {
     vuRunning = true;
     requestAnimationFrame(vu);

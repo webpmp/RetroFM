@@ -111,6 +111,8 @@
   let rightAnalyserNode = null;
   let leftTimeData = null;
   let rightTimeData = null;
+  let leftFreqData = null;
+  let rightFreqData = null;
   let vuSamplingInterval = null;
   let lastNonZeroSentTime = 0;
   let consecutiveSilenceCount = 0;
@@ -159,11 +161,13 @@
         leftAnalyserNode.fftSize = 512;
         leftAnalyserNode.smoothingTimeConstant = 0.2;
         leftTimeData = new Float32Array(leftAnalyserNode.fftSize);
+        leftFreqData = new Uint8Array(leftAnalyserNode.frequencyBinCount);
 
         rightAnalyserNode = stereoAudioCtx.createAnalyser();
         rightAnalyserNode.fftSize = 512;
         rightAnalyserNode.smoothingTimeConstant = 0.2;
         rightTimeData = new Float32Array(rightAnalyserNode.fftSize);
+        rightFreqData = new Uint8Array(rightAnalyserNode.frequencyBinCount);
       } catch (e) {
         reportError(e, 'createAnalyser');
       }
@@ -222,6 +226,57 @@
     }
   }
 
+  // 10 log-spaced frequency bands across 256 FFT bins (at 44.1/48kHz, bin ~86-93Hz)
+  // Covers ~30Hz to ~16kHz: sub-bass, bass, low-mid, mid, upper-mid, presence, brilliance
+  const SPECTRUM_BAND_RANGES = [
+    [0, 1],     // ~0 - 180 Hz (deep sub & bass)
+    [2, 3],     // ~180 - 360 Hz (punch & bass)
+    [4, 7],     // ~360 - 720 Hz (low midrange)
+    [8, 12],    // ~720 - 1.2 kHz (midrange / vocal body)
+    [13, 20],   // ~1.2 - 2.0 kHz (midrange / presence)
+    [21, 32],   // ~2.0 - 3.2 kHz (upper midrange / attack)
+    [33, 50],   // ~3.2 - 5.0 kHz (presence / percussion snap)
+    [51, 80],   // ~5.0 - 8.0 kHz (high-mid / brightness)
+    [81, 130],  // ~8.0 - 13 kHz (treble / cymbals)
+    [131, 210]  // ~13 - 20 kHz (air / top end shimmer)
+  ];
+
+  function calculateFrequencyBands(leftAnalyser, rightAnalyser) {
+    if (!leftAnalyser || !rightAnalyser || !leftFreqData || !rightFreqData) {
+      return null;
+    }
+    try {
+      leftAnalyser.getByteFrequencyData(leftFreqData);
+      rightAnalyser.getByteFrequencyData(rightFreqData);
+
+      const bands = [];
+      const numBands = SPECTRUM_BAND_RANGES.length;
+      for (let b = 0; b < numBands; b++) {
+        const [startBin, endBin] = SPECTRUM_BAND_RANGES[b];
+        let maxVal = 0;
+        let count = 0;
+        let sum = 0;
+        for (let i = startBin; i <= endBin && i < leftFreqData.length; i++) {
+          const valL = leftFreqData[i];
+          const valR = rightFreqData[i];
+          const combined = (valL + valR) * 0.5;
+          sum += combined;
+          if (combined > maxVal) maxVal = combined;
+          count++;
+        }
+        // Balanced weighting: combine average and peak in bin range, normalized to 0..1
+        const avg = count > 0 ? (sum / count) : 0;
+        const energy = (avg * 0.6 + maxVal * 0.4) / 255;
+        // Mild noise gate per band (< 0.02 is noise floor)
+        const clean = energy > 0.02 ? (energy - 0.02) / 0.98 : 0;
+        bands.push(Number(Math.min(1, Math.max(0, clean)).toFixed(3)));
+      }
+      return bands;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function startVuSamplingLoop() {
     if (vuSamplingInterval) return;
     // Sample audio levels approximately 30 times per second (~33ms)
@@ -243,13 +298,14 @@
       // Send zero levels to settle meters if we previously had non-zero values
       if (consecutiveSilenceCount < 5) {
         consecutiveSilenceCount++;
-        postVuLevels(0, 0, false);
+        postVuLevels(0, 0, false, null);
       }
       return;
     }
 
     const rawL = calculateRms(leftAnalyserNode, leftTimeData);
     const rawR = calculateRms(rightAnalyserNode, rightTimeData);
+    const bands = calculateFrequencyBands(leftAnalyserNode, rightAnalyserNode);
 
     // Noise floor & silence threshold:
     // When music is paused, stopped, between tracks, or in silent passages, RMS drops to near zero (< 0.001)
@@ -262,24 +318,28 @@
       // Once silence has been confirmed for 3+ consecutive frames (~100ms),
       // keep sending zero for a few updates so the meters finish decaying to 0
       if (consecutiveSilenceCount <= 5) {
-        postVuLevels(0, 0, true);
+        postVuLevels(0, 0, true, bands);
       }
     } else {
       consecutiveSilenceCount = 0;
       lastNonZeroSentTime = Date.now();
-      postVuLevels(cleanL, cleanR, true);
+      postVuLevels(cleanL, cleanR, true, bands);
     }
   }
 
-  function postVuLevels(leftLevel, rightLevel, isActive) {
+  function postVuLevels(leftLevel, rightLevel, isActive, bands) {
     try {
-      window.postMessage({
+      const msg = {
         type: 'RETROFM_VU_LEVELS_MSG',
         l: Number(leftLevel.toFixed(4)),
         r: Number(rightLevel.toFixed(4)),
         active: Boolean(isActive),
         ts: Date.now()
-      }, '*');
+      };
+      if (Array.isArray(bands) && bands.length > 0) {
+        msg.bands = bands;
+      }
+      window.postMessage(msg, '*');
     } catch (e) {
       reportError(e, 'postVuLevels');
     }

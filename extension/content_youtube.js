@@ -193,14 +193,18 @@ if (!window.__retroFmContentLoaded) {
       return;
     }
     try {
+      const payload = {
+        l: Math.max(0, Math.min(2, data.l)),
+        r: Math.max(0, Math.min(2, data.r)),
+        active: Boolean(data.active),
+        ts: typeof data.ts === 'number' ? data.ts : Date.now()
+      };
+      if (Array.isArray(data.bands)) {
+        payload.bands = data.bands;
+      }
       chrome.runtime.sendMessage({
         type: 'VU_AUDIO_LEVELS',
-        payload: {
-          l: Math.max(0, Math.min(2, data.l)),
-          r: Math.max(0, Math.min(2, data.r)),
-          active: Boolean(data.active),
-          ts: typeof data.ts === 'number' ? data.ts : Date.now()
-        }
+        payload
       }, () => {
         if (chrome.runtime?.lastError) {}
       });

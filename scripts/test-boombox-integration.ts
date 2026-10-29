@@ -5761,6 +5761,66 @@ console.log('\n--- Test Suite 65: STEREO Icon Horizontal Position Offsets (Colla
   console.log('✓ 65. STEREO Icon Horizontal Position Offsets (Collapsed +25px / Expanded +20px) verified.');
 }
 
+// --- Test Suite 66: Audio Spectrum Analyzer (Third Display Mode in Green LCD) ---
+console.log('\n--- Test Suite 66: Audio Spectrum Analyzer (Third Display Mode in Green LCD) ---');
+{
+  const bbHtml = fs.readFileSync(path.join(__dirname, '../extension/player/index.html'), 'utf-8');
+  const bbCss = fs.readFileSync(path.join(__dirname, '../extension/player/player.css'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const ytMw = fs.readFileSync(path.join(__dirname, '../extension/player/yt_main_world.js'), 'utf-8');
+  const ytContent = fs.readFileSync(path.join(__dirname, '../extension/content_youtube.js'), 'utf-8');
+
+  // 1. Controls & DOM Layout: single cycling #sdot button in sequence, no separate #saBtn
+  assert(bbHtml.includes('id="saWrap"'), 'index.html contains #saWrap spectrum container');
+  assert(!bbHtml.includes('id="saBtn"'), 'index.html excludes separate #saBtn button so icon remains in #sdot sequence');
+  assert(bbJs.includes("SA_ICON_SVG = '<svg width=\"14\" height=\"14\""), 'player.js defines segmented spectrum analyzer SVG icon');
+  assert(bbJs.includes("sdotEl.innerHTML=SA_ICON_SVG"), 'player.js injects spectrum analyzer icon into #sdot during spectrum mode');
+  assert(bbJs.includes("sdotEl.setAttribute('aria-label','Audio Spectrum Analyzer')"), '#sdot has accessible label "Audio Spectrum Analyzer" when in spectrum mode');
+
+  // 2. CSS Styling & Layout: expanded width per column (15px), gap (6px), and right-alignment
+  assert(bbCss.includes('.sa-col{'), 'player.css defines .sa-col column layout');
+  assert(bbCss.includes('.sa-blk{'), 'player.css defines .sa-blk block styling with ladder gaps');
+  assert(bbCss.includes('.sa-blk.on{'), 'player.css defines .sa-blk.on for illuminated column blocks');
+  assert(bbCss.includes('.sa-blk.peak{'), 'player.css defines .sa-blk.peak for floating peak-hold indicators');
+  assert(bbCss.includes('width:15px'), 'player.css expands column/block width to 15px to fill available width');
+  assert(bbCss.includes('gap:6px'), 'player.css sets column gap to 6px across the 10 bands');
+  assert(bbCss.includes('#saWrap{') && bbCss.includes('justify-content:flex-end'), 'player.css right-aligns #saWrap to match text and sit close to #sdot');
+
+  // 3. Audio Pipeline (YouTube main world -> content script -> background -> player)
+  assert(ytMw.includes('calculateFrequencyBands'), 'yt_main_world computes real-time frequency bands');
+  assert(ytMw.includes('SPECTRUM_BAND_RANGES'), 'yt_main_world maps FFT bins to 10 frequency ranges');
+  assert(ytMw.includes('leftAnalyserNode.frequencyBinCount'), 'yt_main_world allocates frequency data buffers');
+  assert(ytContent.includes('payload.bands = data.bands'), 'content_youtube forwards frequency bands in payload');
+  assert(bbJs.includes('latestSpectrumBands = payload.bands'), 'player.js stores incoming real-time spectrum bands');
+
+  // 4. State Machine & Display Modes: cyclic 4-state sequence
+  assert(bbJs.includes("songDisplayMode === 'spectrum'"), 'player.js supports spectrum display mode');
+  assert(bbJs.includes("SA_BLOCKS_PER_COLUMN = 8"), 'player.js configures 8 vertical blocks per band');
+  assert(bbJs.includes("SA_PEAK_HOLD_MS = 900"), 'player.js configures vintage peak-hold duration');
+  assert(bbJs.includes('saPeakBlockIndices'), 'player.js tracks peak-hold indicator indices independently per column');
+  assert(bbJs.includes('stopSpectrumAnalyzerLoop()'), 'player.js stops animation loop when exiting spectrum mode');
+
+  // 5. Test cyclic 4-mode transition logic
+  let mode = 'song_info';
+  const cycle = () => {
+    if (mode === 'song_info') mode = 'elapsed_time';
+    else if (mode === 'elapsed_time') mode = 'spectrum';
+    else if (mode === 'spectrum') mode = 'hidden';
+    else mode = 'song_info';
+  };
+  assert(mode === 'song_info', 'Initial mode is song_info');
+  cycle();
+  assert(mode === 'elapsed_time', 'First click advances to elapsed_time');
+  cycle();
+  assert(mode === 'spectrum', 'Second click advances to spectrum');
+  cycle();
+  assert(mode === 'hidden', 'Third click advances to hidden (blank)');
+  cycle();
+  assert(mode === 'song_info', 'Fourth click returns to song_info');
+
+  console.log('✓ 66. Audio Spectrum Analyzer (Third Display Mode in Green LCD) verified.');
+}
+
 // --- Summary ---
 console.log('\n================================================================================');
 console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
