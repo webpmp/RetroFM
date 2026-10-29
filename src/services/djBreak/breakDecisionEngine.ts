@@ -22,7 +22,15 @@
  *    - Song intro appears only on intro_only breaks, or when the fact is about the next song.
  */
 
-import { ChartFact, ChartFactRepository, computeChartFacts, SongIdentifier } from './chartFacts.js';
+import {
+  ChartFact,
+  ChartFactRepository,
+  computeChartFacts,
+  computeNationalNumberOneFact,
+  SongIdentifier,
+  spokenOrdinal,
+  spokenOrdinalWithArticle,
+} from './chartFacts.js';
 import { validateBreakOutput, ValidationContext } from './breakValidator.js';
 import path from 'path';
 import fs from 'fs';
@@ -289,26 +297,10 @@ export function getNextSongIntro(title: string, artist: string, lastIndex: numbe
   };
 }
 
-/**
- * Converts a positive integer into a spoken ordinal ("first", "second", "seventh", etc.)
- */
-export function spokenOrdinal(n: number): string {
-  const ordinals: Record<number, string> = {
-    1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth',
-    6: 'sixth', 7: 'seventh', 8: 'eighth', 9: 'ninth', 10: 'tenth',
-    11: 'eleventh', 12: 'twelfth', 13: 'thirteenth', 14: 'fourteenth', 15: 'fifteenth',
-    16: 'sixteenth', 17: 'seventeenth', 18: 'eighteenth', 19: 'nineteenth', 20: 'twentieth'
-  };
-  if (ordinals[n]) return ordinals[n];
-  const tens: Record<number, string> = { 2: 'twenty', 3: 'thirty', 4: 'forty', 5: 'fifty' };
-  const t = Math.floor(n / 10);
-  const u = n % 10;
-  if (tens[t]) {
-    if (u === 0) return `${tens[t].slice(0, -1)}ieth`;
-    return `${tens[t]}-${ordinals[u] || u}`;
-  }
-  return `${n}th`;
-}
+export {
+  spokenOrdinal,
+  spokenOrdinalWithArticle,
+};
 export function formatNamesList(names: string[]): string {
   if (names.length === 0) return '';
   if (names.length === 1) return names[0];
@@ -358,12 +350,13 @@ export function parseCreditToNaturalSentence(factText: string, adaptationInfo?: 
     }
   }
 
-  // List at most two producers
+  // Requirement: List at most three writers and at most two producers
+  const spokenWriters = writers.slice(0, 3);
   const spokenProducers = producers.slice(0, 2);
 
   const clauses: string[] = [];
-  if (writers.length > 0) {
-    clauses.push(`written by ${formatNamesList(writers)}`);
+  if (spokenWriters.length > 0) {
+    clauses.push(`written by ${formatNamesList(spokenWriters)}`);
   }
   if (spokenProducers.length > 0) {
     clauses.push(`produced by ${formatNamesList(spokenProducers)}`);
@@ -428,10 +421,11 @@ export function formatSongCreditScript(
     }
   }
 
-  // Requirement: List at most two producers in spoken credit scripts
+  // Requirement: List at most three writers and at most two producers in spoken credit scripts
+  const spokenWriters = writers.slice(0, 3);
   const spokenProducers = producers.slice(0, 2);
 
-  const writersStr = writers.length > 0 ? formatNamesList(writers) : '';
+  const writersStr = spokenWriters.length > 0 ? formatNamesList(spokenWriters) : '';
   const producersStr = spokenProducers.length > 0 ? formatNamesList(spokenProducers) : '';
 
   let prevVariants: string[] = [];
@@ -569,7 +563,10 @@ export function formatChartFactScript(
   const artist = f.artist || '';
   const rank = f.rank || 0;
   const lastRank = f.lastRank || 0;
-  const weeksAtOne = f.weeksAtOne || 2;
+  const weeksAtOne = f.weeksAtOne || 1;
+  const weeksInTopTen = f.weeksInTopTen || 2;
+  const climbWeeks = f.climbWeeks || 1;
+  const prevNumberOne = f.prevNumberOne;
 
   let variants: string[] = [];
   switch (kind) {
@@ -593,39 +590,112 @@ export function formatChartFactScript(
         `A first top ten appearance this week for "${title}" by ${artist}, landing at number ${rank}.`,
       ];
       break;
-    case 'reached_number_one':
+    case 'weeks_in_top_ten': {
+      const artOrdinal = spokenOrdinalWithArticle(weeksInTopTen);
+      const ordinal = spokenOrdinal(weeksInTopTen);
       variants = [
-        `"${title}" by ${artist} hits number one in the nation this week.`,
-        `Taking the top spot on the Billboard chart this week, "${title}" by ${artist} reaches number one.`,
-        `"${title}" by ${artist} moves all the way to number one this week.`,
-        `Reaching the summit of the Hot 100 this week, "${title}" by ${artist} is number one.`,
-        `At the very top of the chart this week, "${title}" by ${artist} takes number one.`,
-        `"${title}" from ${artist} captures the number one position in the country this week.`,
-      ];
-      break;
-    case 'weeks_at_number_one': {
-      const ordinal = spokenOrdinal(weeksAtOne);
-      variants = [
-        `"${title}" by ${artist} spends a ${ordinal} week at number one on the Hot 100.`,
-        `Holding strong at number one for a ${ordinal} week, "${title}" by ${artist}.`,
-        `"${title}" by ${artist} stays on top of the Billboard chart for week number ${weeksAtOne}.`,
-        `Remaining at number one in the nation this week, "${title}" by ${artist} marks ${weeksAtOne} weeks on top.`,
-        `For the ${ordinal} straight week, "${title}" by ${artist} holds the number one spot.`,
-        `"${title}" from ${artist} continues at number one this week, now at ${weeksAtOne} weeks.`,
+        `"${title}" by ${artist} spends ${artOrdinal} week in the top ten.`,
+        `Marking its ${ordinal} week in the top ten this week, "${title}" by ${artist}.`,
+        `In the top ten for ${artOrdinal} week now, "${title}" from ${artist}.`,
+        `"${title}" by ${artist} holds in the top ten this week for ${artOrdinal} week.`,
+        `${artOrdinal.charAt(0).toUpperCase() + artOrdinal.slice(1)} week in the national top ten for "${title}" by ${artist}.`,
+        `"${title}" from ${artist} continues inside the top ten, now in its ${ordinal} week.`,
       ];
       break;
     }
-    case 'climb':
-    default:
-      variants = [
-        `"${title}" by ${artist} is climbing up to number ${rank}, from ${lastRank} this week.`,
-        `Moving up the charts this week, "${title}" by ${artist} jumps from ${lastRank} to number ${rank}.`,
-        `On the climb this week, "${title}" by ${artist} rises from ${lastRank} up to number ${rank}.`,
-        `"${title}" from ${artist} moves up the Hot 100 to number ${rank}, after sitting at ${lastRank}.`,
-        `Making a jump this week, "${title}" by ${artist} moves up from ${lastRank} to number ${rank}.`,
-        `Advancing on the chart this week, "${title}" by ${artist} steps up to number ${rank}, from ${lastRank}.`,
-      ];
+    case 'reached_number_one': {
+      if (prevNumberOne && prevNumberOne.title && prevNumberOne.artist) {
+        variants = [
+          `"${title}" by ${artist} reaches number one on the Billboard Hot 100 this week, taking over the top spot from "${prevNumberOne.title}" by ${prevNumberOne.artist}.`,
+          `Taking over number one from "${prevNumberOne.title}" by ${prevNumberOne.artist}, "${title}" by ${artist} hits the top spot this week.`,
+          `"${title}" by ${artist} claims number one on the Hot 100 this week, replacing "${prevNumberOne.title}" by ${prevNumberOne.artist}.`,
+          `Moving into the top spot on the Billboard chart this week, "${title}" by ${artist} takes over from "${prevNumberOne.title}" by ${prevNumberOne.artist}.`,
+          `"${title}" by ${artist} captures number one in the nation this week, succeeding "${prevNumberOne.title}" by ${prevNumberOne.artist}.`,
+          `At the top of the chart this week, "${title}" by ${artist} takes number one from "${prevNumberOne.title}" by ${prevNumberOne.artist}.`,
+        ];
+      } else {
+        variants = [
+          `"${title}" by ${artist} hits number one in the nation this week.`,
+          `Taking the top spot on the Billboard chart this week, "${title}" by ${artist} reaches number one.`,
+          `"${title}" by ${artist} moves all the way to number one this week.`,
+          `Reaching the summit of the Hot 100 this week, "${title}" by ${artist} is number one.`,
+          `At the very top of the chart this week, "${title}" by ${artist} takes number one.`,
+          `"${title}" from ${artist} captures the number one position in the country this week.`,
+        ];
+      }
       break;
+    }
+    case 'weeks_at_number_one': {
+      if (weeksAtOne === 1) {
+        variants = [
+          `"${title}" by ${artist} reaches number one this week.`,
+          `Taking the top spot on the Billboard chart this week, "${title}" by ${artist} reaches number one.`,
+          `"${title}" by ${artist} moves all the way to number one this week.`,
+          `Reaching the summit of the Hot 100 this week, "${title}" by ${artist} is number one.`,
+          `At the very top of the chart this week, "${title}" by ${artist} takes number one.`,
+          `"${title}" from ${artist} captures the number one position in the country this week.`,
+        ];
+      } else {
+        const ordinal = spokenOrdinal(weeksAtOne);
+        const artOrdinal = spokenOrdinalWithArticle(weeksAtOne);
+        variants = [
+          `"${title}" by ${artist} spends ${artOrdinal} week at number one on the Hot 100.`,
+          `Holding strong at number one for ${artOrdinal} week, "${title}" by ${artist}.`,
+          `"${title}" by ${artist} stays on top of the Billboard chart for week number ${weeksAtOne}.`,
+          `Remaining at number one in the nation this week, "${title}" by ${artist} marks ${weeksAtOne} weeks on top.`,
+          `For the ${ordinal} straight week, "${title}" by ${artist} holds the number one spot.`,
+          `"${title}" from ${artist} continues at number one this week, now at ${weeksAtOne} weeks.`,
+        ];
+      }
+      break;
+    }
+    case 'number_one_this_week': {
+      if (weeksAtOne === 1) {
+        variants = [
+          `Holding the number one spot in the nation, "${title}" by ${artist} reaches number one this week.`,
+          `At the top of the charts this week, "${title}" by ${artist} reaches number one in the country.`,
+          `The number one song in America this week is "${title}" by ${artist}, reaching number one this week.`,
+          `Sitting at number one across the nation this week, "${title}" by ${artist} reaches the summit.`,
+          `America's number one song this week: "${title}" by ${artist}, arriving at number one this week.`,
+          `Leading the Billboard Hot 100 this week, "${title}" by ${artist} reaches number one in the nation.`,
+        ];
+      } else {
+        const ordinal = spokenOrdinal(weeksAtOne);
+        const artOrdinal = spokenOrdinalWithArticle(weeksAtOne);
+        variants = [
+          `Holding the number one spot in the nation this week, "${title}" by ${artist} marks its ${ordinal} week at the top of the Hot 100.`,
+          `At the top of the charts this week, "${title}" by ${artist} is number one in the country for ${artOrdinal} week.`,
+          `The number one song in America this week is "${title}" by ${artist}, celebrating its ${ordinal} week on top.`,
+          `Sitting at number one across the nation this week, "${title}" by ${artist} enters ${artOrdinal} week at the summit.`,
+          `America's number one song this week: "${title}" by ${artist}, in its ${ordinal} week at the peak.`,
+          `Leading the Billboard Hot 100 this week, "${title}" by ${artist} marks week number ${weeksAtOne} at number one.`,
+        ];
+      }
+      break;
+    }
+    case 'climb':
+    default: {
+      if (climbWeeks === 2) {
+        variants = [
+          `"${title}" by ${artist} has jumped from ${lastRank} up to number ${rank} over the last two weeks.`,
+          `Over the last two weeks, "${title}" by ${artist} has surged from ${lastRank} to number ${rank}.`,
+          `Making a big two-week move, "${title}" by ${artist} jumps up to number ${rank} from ${lastRank}.`,
+          `"${title}" from ${artist} climbs from ${lastRank} up to number ${rank} over the past two weeks.`,
+          `Rising quickly over the last two weeks, "${title}" by ${artist} leaps from ${lastRank} to number ${rank}.`,
+          `"${title}" by ${artist} steps up to number ${rank} this week, climbing from ${lastRank} two weeks back.`,
+        ];
+      } else {
+        variants = [
+          `"${title}" by ${artist} is climbing up to number ${rank}, from ${lastRank} this week.`,
+          `Moving up the charts this week, "${title}" by ${artist} jumps from ${lastRank} to number ${rank}.`,
+          `On the climb this week, "${title}" by ${artist} rises from ${lastRank} up to number ${rank}.`,
+          `"${title}" from ${artist} moves up the Hot 100 to number ${rank}, after sitting at ${lastRank}.`,
+          `Making a jump this week, "${title}" by ${artist} moves up from ${lastRank} to number ${rank}.`,
+          `Advancing on the chart this week, "${title}" by ${artist} steps up to number ${rank}, from ${lastRank}.`,
+        ];
+      }
+      break;
+    }
   }
 
   let nextIdx = Math.floor(rng() * variants.length);
@@ -678,8 +748,12 @@ export function decideAndSelectBreak(
   const candidates: BreakCandidate[] = [];
 
   // A. Chart facts for song played (prev) and song next
+  // Single break rule: At most one spoken break per song across ALL types.
   const checkChart = (s: EngineSongInput | null, target: 'prev' | 'next') => {
     if (!s) return;
+    if (state.songsWithSpokenBreak && ((s.id && state.songsWithSpokenBreak.has(s.id)) || (s.title && state.songsWithSpokenBreak.has(s.title)))) {
+      return;
+    }
     const facts = computeChartFacts(s, input.selectedDate, chartRepo);
     for (const f of facts) {
       const factKey = `chart:${s.title}:${f.kind}:${f.rank}:${f.date}`;
@@ -697,6 +771,29 @@ export function decideAndSelectBreak(
   };
   checkChart(input.prevSong, 'prev');
   checkChart(input.nextSong, 'next');
+
+  // A2. Station-level chart story: National number one this week
+  // Deduplicate against song-level #1 facts for prev/next song
+  const nationalNo1 = computeNationalNumberOneFact(input.selectedDate, chartRepo);
+  if (nationalNo1) {
+    const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const natNorm = norm(nationalNo1.title);
+    const prevMatches = input.prevSong && norm(input.prevSong.title) === natNorm;
+    const nextMatches = input.nextSong && norm(input.nextSong.title) === natNorm;
+    if (!prevMatches && !nextMatches) {
+      const factKey = `chart:national_no1:${nationalNo1.title}:${nationalNo1.weeksAtOne}:${nationalNo1.date}`;
+      candidates.push({
+        type: 'chart_fact',
+        factKey,
+        factText: nationalNo1.factText,
+        source: nationalNo1.source,
+        date: nationalNo1.date,
+        targetSong: 'none',
+        interestScore: nationalNo1.interestScore, // 95
+        chartFact: nationalNo1,
+      } as any);
+    }
+  }
 
   // B. Song credit (writer, composer, lyricist, producer from song_facts)
   // Hook rule: Use a credit only when the writer differs from the performer,
@@ -770,21 +867,7 @@ export function decideAndSelectBreak(
   checkCredits(input.prevSong, 'prev');
   checkCredits(input.nextSong, 'next');
 
-  // C. Cost-of-living or news observation
-  if (input.economyObservation?.text) {
-    // Deduplicate cost-of-living lines by statistic key (e.g. economy:unemployment, economy:gasoline, economy:mortgage)
-    // so each statistic is used at most once per session
-    const statKey = input.economyObservation.kind || input.economyObservation.text.slice(0, 30);
-    const factKey = `economy:${statKey}`;
-    candidates.push({
-      type: 'observation',
-      factKey,
-      factText: input.economyObservation.text,
-      source: 'RetroFM Cost of Living Archive',
-      date: input.economyObservation.date || input.selectedDate,
-      targetSong: 'none',
-    });
-  }
+  // C. News observation (economy observations removed by product decision)
   if (input.newsObservation?.text) {
     // Unique headline key so a headline is NEVER reused within a session
     const headline = input.newsObservation.headline || input.newsObservation.text.split('.')[0] || input.newsObservation.text.slice(0, 50);
@@ -794,8 +877,8 @@ export function decideAndSelectBreak(
     const topic = input.newsObservation.topic || 'general';
     const isTopicUsed = topic !== 'general' && (state.usedNewsTopics?.has(topic) ?? false);
 
-    // Rate limit: at most one news break in every 5 breaks (breaksSinceLastNews >= 5)
-    const canDoNews = (state.breaksSinceLastNews ?? 5) >= 5 && !isTopicUsed;
+    // Rate limit: at most one news break in every 4 breaks (breaksSinceLastNews >= 4)
+    const canDoNews = (state.breaksSinceLastNews ?? 4) >= 4 && !isTopicUsed;
     if (canDoNews) {
       candidates.push({
         type: 'observation',
@@ -810,10 +893,16 @@ export function decideAndSelectBreak(
     }
   }
 
-  // D. Short song intro only (offered with baseline interest score 40 so substantive facts take priority)
-  // Requirement 7: Cap intro_only breaks so spoken breaks do not flood playback, maintaining ~0.5 overall frequency
+  // D. Short song intro only (offered with baseline interest score 25 so substantive facts take priority)
+  // Plain intros are capped to at most one in five breaks (~20%) when rich segment content is available.
   // Single break rule: At most one spoken break per song (intro or credit, not both).
-  if (input.nextSong) {
+  const plainCount = state.totalBreaksSpoken > 0 && (state as any).plainIntroCount !== undefined
+    ? (state as any).plainIntroCount
+    : 0;
+  const plainRatio = state.totalBreaksSpoken > 0 ? plainCount / state.totalBreaksSpoken : 0;
+  const allowIntroOnly = state.totalBreaksSpoken < 2 || plainRatio < 0.20;
+
+  if (input.nextSong && allowIntroOnly) {
     const isSongSpoken = state.songsWithSpokenBreak && (
       (input.nextSong.id && state.songsWithSpokenBreak.has(input.nextSong.id)) ||
       (input.nextSong.title && state.songsWithSpokenBreak.has(input.nextSong.title))
@@ -829,7 +918,7 @@ export function decideAndSelectBreak(
         source: 'Station Playlist',
         date: input.selectedDate,
         targetSong: 'next',
-        interestScore: 40,
+        interestScore: 25,
         templateIndex: introObj.index,
       } as any);
     }
@@ -942,18 +1031,21 @@ export function decideAndSelectBreak(
   state.usedFactKeys.add(chosen.factKey);
   state.lastBreakType = chosen.type;
   state.totalBreaksSpoken++;
+  if (chosen.type === 'intro_only') {
+    (state as any).plainIntroCount = ((state as any).plainIntroCount || 0) + 1;
+  }
   if (/did you know|you remember this one/i.test(speech)) {
     state.recentRhetoricalOpeners++;
   }
 
-  // Track songs that received a spoken break (intro or credit)
+  // Track songs that received a spoken break (intro, credit, or chart fact for that song)
   if (!state.songsWithSpokenBreak) {
     state.songsWithSpokenBreak = new Set<string>();
   }
   if (chosen.type === 'intro_only' && input.nextSong) {
     if (input.nextSong.id) state.songsWithSpokenBreak.add(input.nextSong.id);
     if (input.nextSong.title) state.songsWithSpokenBreak.add(input.nextSong.title);
-  } else if (chosen.type === 'song_credit') {
+  } else if (chosen.type === 'song_credit' || (chosen.type === 'chart_fact' && chosen.targetSong !== 'none')) {
     const s = chosen.targetSong === 'prev' ? input.prevSong : input.nextSong;
     if (s) {
       if (s.id) state.songsWithSpokenBreak.add(s.id);

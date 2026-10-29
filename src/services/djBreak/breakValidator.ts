@@ -19,10 +19,276 @@
  * 5. A rejected break becomes SILENCE, never a retry loop.
  */
 
+export function escapeRegex(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export interface FactPacketData {
   factText: string;
   source: string;
   date: string;
+}
+
+export interface SegmentValidationContext {
+  selectedDate: string; // YYYY-MM-DD
+  factPacket: {
+    facts: Array<{ text: string; source?: string; date?: string }>;
+    targetSongTitle?: string;
+    targetSongArtist?: string;
+  };
+}
+
+/**
+ * Loosened validator for rich 30-60 second DJ segments (80-150 words):
+ * 1. Every year, number, and proper name must appear in the packet or target song metadata.
+ * 2. No date/year after the broadcast date.
+ * 3. No first-person feelings, nostalgia, or personal memories (e.g. "I love", "my favorite", "takes me back").
+ * 4. No banned hype words or artificial transitions ("smash hit", "absolute banger", "stay tuned", "coming up next").
+ * 5. Does NOT require every content word to match the packet (allows natural conversational connective tissue).
+ */
+export function validateSegmentBreakOutput(
+  scriptText: string,
+  context: SegmentValidationContext
+): ValidationResult {
+  if (!scriptText || typeof scriptText !== 'string') {
+    return {
+      valid: false,
+      rejectedReason: 'Empty script text',
+      sanitizedText: '',
+    };
+  }
+
+  const trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
+
+  // 1. Length check: Scaled to fact packet size (~20-25 words per fact, max +35% padding)
+  const factCount = Math.max(1, (context.factPacket.facts || []).length);
+  const minExpectedWords = Math.max(25, factCount * 18);
+  const maxExpectedWords = Math.round(factCount * 25 * 1.35) + 15;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+
+  if (words.length > maxExpectedWords) {
+    return {
+      valid: false,
+      rejectedReason: `Segment padded / too long: ${words.length} words (packet with ${factCount} facts supports at most ~${maxExpectedWords} words)`,
+      sanitizedText: '',
+    };
+  }
+
+  // 1b. Weekday check: Validate spoken weekday against calendar date
+  const [y, m, d] = context.selectedDate.split('-').map(Number);
+  const calDate = new Date(Date.UTC(y, m - 1, d));
+  const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const expectedWeekday = WEEKDAY_NAMES[calDate.getUTCDay()];
+  const otherWeekdays = WEEKDAY_NAMES.filter((w) => w !== expectedWeekday);
+
+  for (const other of otherWeekdays) {
+    const wdRegex = new RegExp(`\\b${other}\\b`, 'i');
+    const match = trimmed.match(wdRegex);
+    if (match) {
+      return {
+        valid: false,
+        rejectedReason: `Wrong weekday: found "${match[0]}" but broadcast date ${context.selectedDate} is a ${expectedWeekday}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 2. First-person feelings, nostalgia, or personal memories check
+  // Strip all song titles and artist names before personal-feeling check (e.g. "P.S. I Love You")
+  let textForFeelingCheck = trimmed;
+  if (context.factPacket.targetSongTitle) {
+    textForFeelingCheck = textForFeelingCheck.replace(new RegExp(escapeRegex(context.factPacket.targetSongTitle), 'gi'), ' ');
+  }
+  for (const f of context.factPacket.facts || []) {
+    const quotedTitles = f.text.match(/"([^"]+)"/g);
+    if (quotedTitles) {
+      for (const qt of quotedTitles) {
+        textForFeelingCheck = textForFeelingCheck.replace(new RegExp(escapeRegex(qt.replace(/"/g, '')), 'gi'), ' ');
+      }
+    }
+  }
+
+  const PERSONAL_FEELING_PATTERNS = [
+    /\b(?:one of my favorites?|my (?:absolute )?favorite)\b/i,
+    /\b(?:i (?:always )?loved?|i really love|i just love)\b/i,
+    /\b(?:takes? me back|brings? back memories)\b/i,
+    /\b(?:i remember when|i recall when)\b/i,
+    /\b(?:gets me every time|can't get enough)\b/i,
+    /\b(?:i was thinking|my personal opinion)\b/i,
+  ];
+  for (const pat of PERSONAL_FEELING_PATTERNS) {
+    if (pat.test(textForFeelingCheck)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains personal feeling or memory: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3. Check banned hype words & cliches (removed "fire", "war" and similar legitimate words)
+  const BANNED_HYPE = [
+    /\b(?:absolute banger|banger|total bop)\b/i,
+    /\b(?:smash hit|chart topper|chart-topper)\b/i,
+    /\b(?:iconic|legendary|masterpiece)\b/i,
+    /\b(?:epic|insane|mind-blowing)\b/i,
+    /\b(?:total vibe|good vibes)\b/i,
+  ];
+  for (const pat of BANNED_HYPE) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains banned hype word: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3b. Check unconverted relative time words from newspaper reporting
+  // Note: "this week" is legitimate for radio DJs referring to the weekly chart ("Hot 100 this week");
+  // unconverted news-report relative time terms are "last night", "yesterday", "this morning", "today", "tomorrow".
+  const RELATIVE_TIME_WORDS = [
+    /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i,
+  ];
+  for (const pat of RELATIVE_TIME_WORDS) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains unconverted relative time word: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3c. Check evaluative language, journalistic opinion, and subjective adjectives
+  const EVALUATIVE_WORDS = [
+    /\b(?:unexpected grace|scandals?|publicity stunts?|bizarre|controversial|notorious)\b/i,
+  ];
+  for (const pat of EVALUATIVE_WORDS) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains evaluative or opinion language: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3d. Check exclamation points
+  if (trimmed.includes('!')) {
+    return {
+      valid: false,
+      rejectedReason: 'Contains exclamation mark (!)',
+      sanitizedText: '',
+    };
+  }
+
+  // 3e. Check banned transitions and openers (strictly bans "diving into", "coming up", etc.)
+  const BANNED_SEGMENT_TRANSITIONS = [
+    /\b(?:coming up|up next|right after this|dive into|diving into|stay tuned)\b/i,
+    /\b(?:alright folks|here we go|welcome back|hey there)\b/i,
+  ];
+  for (const pat of BANNED_SEGMENT_TRANSITIONS) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains banned transition or opener: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3f. Check invented station frequency or format (only "RetroFM" is permitted)
+  if (/\b(?:\d{2,3}(?:\.\d)?\s*fm|\d{2,3}[a-z]+|top 40)\b/i.test(trimmed)) {
+    return {
+      valid: false,
+      rejectedReason: 'Contains invented station frequency, call letters, or format (only "RetroFM" is permitted)',
+      sanitizedText: '',
+    };
+  }
+
+  // 4. Check stage directions or bracketed cues
+  if (/\[.*?\]|\(.*?\)/.test(trimmed)) {
+    // Strip permissible parenthetical year if clean, else reject if stage cue
+    if (/\[(?:music|applause|intro|pause|break)\]/i.test(trimmed) || /\((?:laughs|pause|sighs)\)/i.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: 'Contains bracketed or parenthetical stage directions',
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 5. Year constraint: No date or year after the broadcast date
+  const targetYear = parseInt(context.selectedDate.slice(0, 4), 10);
+  const yearsInText = extractYears(trimmed);
+  for (const y of yearsInText) {
+    if (y > targetYear) {
+      return {
+        valid: false,
+        rejectedReason: `Contains future year ${y} after broadcast date ${context.selectedDate}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 6. Grounding: Build permissible corpus from packet facts, song metadata, and artist metadata
+  const packetFactTexts = context.factPacket.facts.map((f) => `${f.text} ${f.source || ''}`).join(' ');
+  const corpus = [
+    packetFactTexts,
+    context.factPacket.targetSongTitle || '',
+    context.factPacket.targetSongArtist || '',
+    context.selectedDate,
+    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'first', 'second', 'third', 'fourth', 'fifth',
+    'billboard', 'hot 100', 'top 40', 'radio', 'times', 'news',
+    'us', 'u.s.', 'usa', 'u.s.a.', 'uk', 'u.k.', 'britain', 'british', 'america', 'american', 'england', 'english'
+  ].join(' ').toLowerCase();
+
+  // 6a. Verify numbers
+  const numbersInText = extractNumbers(trimmed);
+  for (const num of numbersInText) {
+    if (!corpus.includes(num.toLowerCase())) {
+      const numVal = parseInt(num, 10);
+      const wordMap: Record<number, string> = {
+        1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten'
+      };
+      if (!wordMap[numVal] || !corpus.includes(wordMap[numVal])) {
+        return {
+          valid: false,
+          rejectedReason: `Unverified number "${num}" not present in fact packet`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
+  // 6b. Verify proper names
+  const properNames = extractProperNames(trimmed);
+  for (const name of properNames) {
+    const nameLower = name.toLowerCase();
+    // Allow standard radio phrasing words that might be capitalized at beginning of sentences
+    const commonRadioWords = new Set([
+      'the', 'this', 'that', 'here', 'now', 'well', 'and', 'right', 'so', 'from', 'stay', 'coming', 'next',
+      'billboard', 'hot', 'rock', 'music', 'album', 'single', 'song', 'chart', 'times', 'records', 'studio',
+      'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
+    ]);
+    if (commonRadioWords.has(nameLower)) continue;
+
+    if (!corpus.includes(nameLower)) {
+      return {
+        valid: false,
+        rejectedReason: `Unverified proper name "${name}" not found in fact packet`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    sanitizedText: trimmed,
+  };
 }
 
 export interface SongMetadataContext {
@@ -278,11 +544,16 @@ export function validateBreakOutput(
   const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // Strip verified song titles for checks where title phrases shouldn't false-flag
+  // Also strip any quoted song titles appearing in the script (e.g. from chart facts or national number one facts)
+  const quotedTitles = Array.from(trimmed.matchAll(/"([^"]+)"/g)).map((m) => escapeRegExp(m[1]));
   const nextTitleEsc = context.songNext?.title ? escapeRegExp(context.songNext.title) : '___none___';
   const prevTitleEsc = context.songPlayed?.title ? escapeRegExp(context.songPlayed.title) : '___none___';
-  const textWithoutTitles = trimmed
+  let textWithoutTitles = trimmed
     .replace(new RegExp(nextTitleEsc, 'gi'), '')
     .replace(new RegExp(prevTitleEsc, 'gi'), '');
+  for (const qt of quotedTitles) {
+    textWithoutTitles = textWithoutTitles.replace(new RegExp(qt, 'gi'), '');
+  }
 
   // 0a. Check speaker label (a name followed by a colon, e.g. "DJ:", "Mike:", "Announcer:", "Host:")
   // Ignore standard journalistic attribution openers like "From this morning's New York Times:" or "In the news:"
@@ -423,8 +694,8 @@ export function validateBreakOutput(
         sanitizedText: '',
       };
     }
-    // Reject non-words like consonant clusters
-    if (/^[bcdfghjklmnpqrstvwxyz]{5,}$/.test(tok)) {
+    // Reject non-words like consonant clusters (ignoring English words with vowel y like rhythm)
+    if (/^[bcdfghjklmnpqrstvwxyz]{5,}$/.test(tok) && !/rhythm/i.test(tok)) {
       return {
         valid: false,
         rejectedReason: `Contains non-word "${tok}"`,
@@ -433,10 +704,8 @@ export function validateBreakOutput(
     }
   }
 
-  // 1. Check exclamation marks (except when part of verified song title like "Hello, Dolly!")
-  const cleanOfTitles = trimmed
-    .replace(new RegExp(context.songNext?.title || '___none___', 'gi'), '')
-    .replace(new RegExp(context.songPlayed?.title || '___none___', 'gi'), '');
+  // 1. Check exclamation marks (except when part of verified song title or quoted title like "Do Me!")
+  const cleanOfTitles = textWithoutTitles;
   if (cleanOfTitles.includes('!')) {
     return {
       valid: false,
@@ -469,7 +738,7 @@ export function validateBreakOutput(
 
   // 3b. Check interjections (e.g. "Wow", "Whoa", "Hey", "Oh", "Yikes")
   for (const interjection of INTERJECTIONS) {
-    if (interjection.test(trimmed)) {
+    if (interjection.test(textWithoutTitles)) {
       return {
         valid: false,
         rejectedReason: `Contains interjection: ${interjection}`,
@@ -484,6 +753,34 @@ export function validateBreakOutput(
       return {
         valid: false,
         rejectedReason: `Contains speculation phrasing: ${speculation}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3c2. Check unconverted relative time words
+  const REL_WORDS = [
+    /\b(?:last night|yesterday|this morning|today|this week|tomorrow)\b/i,
+  ];
+  for (const rel of REL_WORDS) {
+    if (rel.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains unconverted relative time word: ${rel}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3c3. Check evaluative language, journalistic opinion, and subjective adjectives
+  const EVAL_WORDS = [
+    /\b(?:unexpected grace|scandals?|publicity stunts?|bizarre|controversial|notorious)\b/i,
+  ];
+  for (const ev of EVAL_WORDS) {
+    if (ev.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains evaluative or opinion language: ${ev}`,
         sanitizedText: '',
       };
     }
@@ -681,6 +978,7 @@ export function validateBreakOutput(
     // Add common number word mappings (1-100) if numbers appear in words in factText
     'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
     'first', 'second', 'third', 'fourth', 'fifth', 'top ten', 'hot 100', 'billboard', 'retrof',
+    'america', 'american', 'country', 'nation', 'summit', 'peak',
     'new york times', 'new york', 'york', 'times', 'news', 'president', 'senator', 'governor', 'premier', 'secretary'
   ].join(' ').toLowerCase();
 

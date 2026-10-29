@@ -27,7 +27,7 @@ assert.ok(repo.isAvailable(), 'Chart repository must be available with SQLite co
 // --------------------------------------------------------------------------------
 console.log('Test 1: Chart facts computation for 1979-05-01');
 
-// 1A: Heart of Glass climbed to #1 this week (1979-04-28 chart week)
+// 1A: Heart of Glass reached #1 this week (1979-04-28 chart week) and spent 4 weeks in top 10
 const blondieFacts = computeChartFacts(
   { title: 'Heart Of Glass', artist: 'Blondie' },
   '1979-05-01',
@@ -36,15 +36,29 @@ const blondieFacts = computeChartFacts(
 console.log('Blondie facts:', blondieFacts);
 const reachedOne = blondieFacts.find((f) => f.kind === 'reached_number_one');
 const weeksAtOne = blondieFacts.find((f) => f.kind === 'weeks_at_number_one');
-const climb = blondieFacts.find((f) => f.kind === 'climb');
+const weeksInTopTen = blondieFacts.find((f) => f.kind === 'weeks_in_top_ten');
 
 assert.ok(reachedOne, 'Must detect reached_number_one for Heart of Glass on 1979-05-01');
 assert.strictEqual(reachedOne?.rank, 1);
 assert.strictEqual(reachedOne?.lastRank, 3);
+assert.ok(reachedOne?.prevNumberOne?.title, 'Must include previous number one title');
 assert.ok(weeksAtOne, 'Must detect weeks_at_number_one');
 assert.strictEqual(weeksAtOne?.weeksAtOne, 1);
-assert.ok(climb, 'Must detect climb from 3 to 1');
-console.log('✓ PASS: Heart Of Glass #1 facts computed accurately for 1979-05-01.\n');
+assert.ok(weeksInTopTen, 'Must detect weeks_in_top_ten');
+assert.strictEqual(weeksInTopTen?.weeksInTopTen, 4);
+
+// Test climb on 8+ places jump (Hot Number by Foxy climbed from 72 to 35 over last 2 weeks)
+const foxyFacts = computeChartFacts(
+  { title: 'Hot Number', artist: 'Foxy' },
+  '1979-05-01',
+  repo
+);
+const climb = foxyFacts.find((f) => f.kind === 'climb');
+assert.ok(climb, 'Must detect climb of 8 or more places for Hot Number');
+assert.strictEqual(climb?.rank, 35);
+assert.strictEqual(climb?.lastRank, 72);
+assert.strictEqual(climb?.climbWeeks, 2);
+console.log('✓ PASS: Heart Of Glass #1 facts and Foxy climb facts computed accurately for 1979-05-01.\n');
 
 // 1B: Debut test on 1979-05-01 (She Believes In Me debuted at 61)
 const rogersFacts = computeChartFacts(
@@ -175,13 +189,16 @@ console.log('✓ PASS: Same break type is never chosen back-to-back.\n');
 // --------------------------------------------------------------------------------
 console.log('Test 4: Output validator rejection rules');
 
-// 4A: Reject banned favorite phrases
+// 4A: Reject banned favorite phrases or first-person pronouns
 const rejectedFavorite = validateBreakOutput("Here's one of my favorites from Wings.", {
   selectedDate: '1979-05-01',
   factPacket: { factText: 'Test', source: 'Test', date: '1979-05-01' },
 });
 assert.strictEqual(rejectedFavorite.valid, false);
-assert.ok(rejectedFavorite.rejectedReason?.includes('banned subjective phrase'));
+assert.ok(
+  rejectedFavorite.rejectedReason?.includes('banned subjective phrase') ||
+  rejectedFavorite.rejectedReason?.includes('first-person')
+);
 
 // 4B: Reject future year (e.g. 1985 in a 1979 broadcast)
 const rejectedYear = validateBreakOutput("Wings will go on to release an album in 1985.", {
@@ -246,6 +263,8 @@ const introState = newBreakSelectionSessionState();
 introState.lastBreakType = 'intro_only';
 
 // Candidate collector should allow another intro_only when no high-interest chart facts exist
+// Mark national #1 as already used in this session to test consecutive intro_only behavior
+introState.usedFactKeys.add('chart:national_no1:Heart Of Glass:1:1979-04-28');
 const unchartTrack = { title: 'Unknown Song', artist: 'Nobody' };
 const introRun = decideAndSelectBreak({
   prevSong: null,

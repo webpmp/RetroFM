@@ -283,12 +283,11 @@ export class NewsQueueManager {
   }
 
   /**
-   * Returns the next unused line from the queue, or null if none available.
-   * Does NOT mark it used yet (marked used only when the break actually plays).
+   * Retired as spoken line source: returns null so all spoken news lines
+   * must come through the rich segment planner and writer.
    */
   public getNextNewsLine(): NewsQueueItem | null {
-    const item = this.queue.find((q) => !q.used && !this.sessionUsedLineTexts.has(q.text.trim().toLowerCase()));
-    return item || null;
+    return null;
   }
 
   /**

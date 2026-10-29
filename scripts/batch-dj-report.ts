@@ -15,7 +15,6 @@ import {
   newBreakSelectionSessionState,
 } from '../src/services/djBreak/breakDecisionEngine.js';
 import { ChartFactRepository } from '../src/services/djBreak/chartFacts.js';
-import { economyLines, PricesFile } from '../src/services/djBreak/costOfLiving.js';
 import { LMStudioScriptWriterProvider } from '../src/services/djBreak/LMStudioScriptWriterProvider.js';
 import { validateBreakOutput } from '../src/services/djBreak/breakValidator.js';
 import {
@@ -78,8 +77,37 @@ function toSentenceCase(str: string): string {
   }).join('');
 }
 
+function fixNewsEntities(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\bu\.?\s*s\.?\b/gi, 'U.S.')
+    .replace(/\bu\.?\s*n\.?\b/gi, 'U.N.')
+    .replace(/\bu\.?\s*k\.?\b/gi, 'U.K.')
+    .replace(/\bg\.?\s*o\.?\s*p\.?\b/gi, 'G.O.P.')
+    .replace(/\bk\.?\s*g\.?\s*b\.?\b/gi, 'K.G.B.')
+    .replace(/\bn\.?\s*a\.?\s*a\.?\s*c\.?\s*p\.?\b/gi, 'N.A.A.C.P.')
+    .replace(/\bvietnamese\b/gi, 'Vietnamese')
+    .replace(/\balaskan\b/gi, 'Alaskan')
+    .replace(/\bair force\b/gi, 'Air Force')
+    .replace(/\bb-52\b/gi, 'B-52')
+    .replace(/\bsoviet\b/gi, 'Soviet')
+    .replace(/\bamerican\b/gi, 'American')
+    .replace(/\bbritish\b/gi, 'British')
+    .replace(/\bfalklands?\b/gi, 'Falkland')
+    .replace(/\brussian\b/gi, 'Russian')
+    .replace(/\bchinese\b/gi, 'Chinese')
+    .replace(/\bpeking\b/gi, 'Peking')
+    .replace(/\beastern\b/gi, 'Eastern')
+    .replace(/\bwestern\b/gi, 'Western')
+    .replace(/\bgreater\b/gi, 'Greater');
+}
+
 function headlineHasSubjectAndVerb(headline: string): boolean {
   const firstSeg = headline.split(';')[0].trim();
+  // Skip feature-style participle fragments like "watching intently as a war is born 6,000 miles away"
+  if (/^[A-Za-z]+ing\b/i.test(firstSeg) && !/\b(is|was|are|were|has|have|had)\s+[A-Za-z]+ing\b/i.test(firstSeg)) {
+    return false;
+  }
   const words = firstSeg.split(/\s+/).filter(Boolean);
   if (words.length < 3) return false;
   const verbRegex = /\b(is|was|are|were|has|have|had|will|would|can|could|said|says|say|probes|ordered|orders|approves|calls|called|agrees|met|meets|confers|announced|announces|reported|reports|killed|won|wins|lost|faces|opens|signed|signs|urged|urges|held|voted|votes|passed|passes|plans|planned|agreed|defends|accused|charged|struck|denied|denies|ruled|rules|resigned|resigns|began|begins|begin|ended|ends|disarms|bars|quit|quits|halts|setting|shifts|tells|warns|seizes|claims|claimed|abandons|welcomes|boycotts|boycott|expected|needed|needs|need|remain|remains|takes|take|standing|stands|upholds|rises|rise|drops|drop|fears|fear|kills|dies|seeks|seek|draws)\b/i;
@@ -172,14 +200,6 @@ async function runBatch() {
   const homedir = process.env.HOME || '/root';
   const dbPath = path.join(homedir, 'retrofm', 'library.sqlite');
   const db = new DatabaseSync(dbPath);
-
-  let pricesData: PricesFile | null = null;
-  const pricesPath = path.join(process.cwd(), 'data', 'prices.json');
-  if (fs.existsSync(pricesPath)) {
-    try {
-      pricesData = JSON.parse(fs.readFileSync(pricesPath, 'utf8'));
-    } catch {}
-  }
 
   const writer = new LMStudioScriptWriterProvider({
     endpoint: LMSTUDIO_ENDPOINT,
@@ -347,21 +367,6 @@ async function runBatch() {
         first_chart_date: next.first_chart_date,
       };
 
-      let economyObservation: { text: string; date: string; kind?: string } | null = null;
-      if (pricesData) {
-        const lines = economyLines(pricesData, date);
-        if (lines.length > 0) {
-          const unusedLine = lines.find((l) => !sessionState.usedFactKeys.has(`economy:${l.kind}`));
-          if (unusedLine) {
-            economyObservation = {
-              text: unusedLine.text,
-              kind: unusedLine.kind,
-              date,
-            };
-          }
-        }
-      }
-
       let newsObservation: { text: string; date: string; headline?: string; topic?: string } | null = null;
       if (newsCandidates.length > 0) {
         const unusedNews = newsCandidates.find((c) => !sessionState.usedFactKeys.has(`news:${c.headline.trim().toLowerCase()}`));
@@ -391,7 +396,6 @@ async function runBatch() {
           nextSong: nextInput,
           selectedDate: date,
           frequencySetting: FREQUENCY,
-          economyObservation,
           newsObservation,
           chartRepo,
           creditRepo,
@@ -449,7 +453,7 @@ async function runBatch() {
             });
 
             if (val.valid) {
-              finalScript = val.sanitizedText;
+              finalScript = fixNewsEntities(val.sanitizedText);
             } else {
               report.rejections.push({
                 headline: fullHeadline || 'Unknown',
@@ -466,11 +470,11 @@ async function runBatch() {
               let fallbackCandidate = '';
 
               if (cleanLeadFallback) {
-                fallbackCandidate = `The Times reports: ${cleanLeadFallback}`;
+                fallbackCandidate = `The Times reports: ${fixNewsEntities(cleanLeadFallback)}`;
               } else if (hasNamed && fullHeadline) {
                 const capHeadline = capitalizeProperNounsFromLead(fullHeadline, fullLead);
                 if (capHeadline) {
-                  fallbackCandidate = `The Times reports ${capHeadline}.`;
+                  fallbackCandidate = `The Times reports ${fixNewsEntities(capHeadline)}.`;
                 }
               }
 
@@ -489,7 +493,7 @@ async function runBatch() {
                   songNext: next,
                 });
                 if (fallbackVal.valid) {
-                  finalScript = fallbackVal.sanitizedText;
+                  finalScript = fixNewsEntities(fallbackVal.sanitizedText);
                   report.fallbacksUsed.push({
                     headline: fullHeadline || '',
                     script: finalScript,

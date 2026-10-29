@@ -772,7 +772,6 @@ async function startServer() {
         usedFactKeys,
         lastBreakType,
         newsObservation,
-        economyObservation,
       } = req.body;
 
       if (!selectedDate || typeof selectedDate !== 'string') {
@@ -787,7 +786,7 @@ async function startServer() {
         totalSongChanges: 0,
         totalBreaksSpoken: 0,
         recentRhetoricalOpeners: 0,
-        breaksSinceLastNews: typeof req.body?.breaksSinceLastNews === 'number' ? req.body.breaksSinceLastNews : 5,
+        breaksSinceLastNews: typeof req.body?.breaksSinceLastNews === 'number' ? req.body.breaksSinceLastNews : 4,
         lastIntroTemplateIndex: typeof req.body?.lastIntroTemplateIndex === 'number' ? req.body.lastIntroTemplateIndex : -1,
       };
 
@@ -798,7 +797,6 @@ async function startServer() {
           selectedDate,
           frequencySetting: typeof frequencySetting === 'number' ? frequencySetting : 0.5,
           newsObservation: newsObservation || null,
-          economyObservation: economyObservation || null,
           chartRepo: chartFactRepo,
           creditRepo: songCreditRepo,
         },

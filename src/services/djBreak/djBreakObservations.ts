@@ -42,10 +42,10 @@ export const newDjState = (seed: number = Math.floor(Math.random() * 1e9)): DjSt
  *  more than maxSilentBreaks song changes in a row. The very first break of a session always speaks. */
 export interface TalkOptions { talkChance: number; maxSilentBreaks: number }
 export const TALK_PRESETS: Record<"every" | "often" | "sometimes" | "rarely", TalkOptions> = {
-  every:     { talkChance: 1.0,  maxSilentBreaks: 0 },  // every song change
-  often:     { talkChance: 0.67, maxSilentBreaks: 2 },  // roughly 2 of every 3 song changes
-  sometimes: { talkChance: 0.35, maxSilentBreaks: 4 },  // roughly every 3rd song change
-  rarely:    { talkChance: 0.2,  maxSilentBreaks: 6 },  // roughly every 5th song change
+  every:     { talkChance: 1.0,  maxSilentBreaks: 0 },  // every song change (100%)
+  often:     { talkChance: 0.70, maxSilentBreaks: 2 },  // ~70%
+  sometimes: { talkChance: 0.40, maxSilentBreaks: 4 },  // ~40%
+  rarely:    { talkChance: 0.15, maxSilentBreaks: 8 },  // ~15%
 };
 
 /** How much the DJ says about a song: one sentence, sometimes two or three, or usually two or three. */

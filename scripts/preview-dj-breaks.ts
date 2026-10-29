@@ -24,7 +24,6 @@ import {
   SongCreditRepository,
   EngineSongInput,
 } from '../src/services/djBreak/breakDecisionEngine.js';
-import { economyLines, type PricesFile } from '../src/services/djBreak/costOfLiving.js';
 import { getScriptWriterProvider } from '../src/services/djBreak/djBreakService.js';
 import { validateBreakOutput } from '../src/services/djBreak/breakValidator.js';
 import { evaluateNYTNationalFocus, categorizeNYTArticle, computeDJInterestScore } from '../src/services/news/nationalFocusFilter.js';
@@ -430,15 +429,6 @@ async function run() {
     model: model || reportedModelId,
   });
 
-  // Load prices.json for era-authentic cost of living observation
-  let pricesData: PricesFile | null = null;
-  const pricesPath = path.join(process.cwd(), 'public', 'data', 'prices.json');
-  if (fs.existsSync(pricesPath)) {
-    try {
-      pricesData = JSON.parse(fs.readFileSync(pricesPath, 'utf8'));
-    } catch {}
-  }
-
   // Load NYT archive news candidates for this date
   const ym = date.slice(0, 7);
   const archivePath = path.join(process.cwd(), 'cache', 'nyt', `${ym}.json`);
@@ -597,23 +587,6 @@ async function run() {
 
     console.log(`[Song Change ${i + 1}] Transition: ${prev ? `"${prev.title}"` : '(Session Start)'} -> "${next.title}"`);
 
-    // Calculate genuine economy observation from prices.json for this exact date
-    let economyObservation: { text: string; date: string; kind?: string } | null = null;
-    if (pricesData) {
-      const lines = economyLines(pricesData, date);
-      if (lines.length > 0) {
-        // Pick one available line that has not been used in this session by kind
-        const unusedLine = lines.find((l) => !sessionState.usedFactKeys.has(`economy:${l.kind}`));
-        if (unusedLine) {
-          economyObservation = {
-            text: unusedLine.text,
-            kind: unusedLine.kind,
-            date,
-          };
-        }
-      }
-    }
-
     // Historical news observation from candidate list if available (never repeat headline or topic in session)
     let newsObservation: { text: string; date: string; headline?: string; topic?: string } | null = null;
     if (newsCandidates.length > 0) {
@@ -657,7 +630,6 @@ async function run() {
         nextSong: nextInput,
         selectedDate: date,
         frequencySetting: frequency,
-        economyObservation,
         newsObservation,
         chartRepo,
         creditRepo,

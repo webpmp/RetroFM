@@ -120,6 +120,24 @@ export interface SingleBreakPacketResult {
   callDurationSec: number;
   error?: string;
   isUnavailable?: boolean;
+  rawResponse?: string;
+}
+
+export interface FactRewriteResult {
+  factIndex: number;
+  originalFact: string;
+  rewrittenSentence: string;
+  source?: string;
+  auditStatus?: 'SUPPORTED' | 'UNSUPPORTED';
+  auditReason?: string;
+}
+
+export interface SegmentBreakScriptResult extends SingleBreakPacketResult {
+  perSentenceRewrites?: FactRewriteResult[];
+  unsupportedClaims?: string[];
+  openerUsed?: string;
+  connectorUsed?: string;
+  closerUsed?: string;
 }
 
 export interface ScriptWriterProvider {
@@ -153,6 +171,19 @@ export interface ScriptWriterProvider {
     stepTimedOut?: 'step2' | null;
   }>;
   writeSingleBreakScript(input: SingleBreakPacketInput): Promise<SingleBreakPacketResult>;
+  writeSegmentBreakScript?(input: SegmentBreakScriptInput): Promise<SegmentBreakScriptResult>;
+}
+
+export interface SegmentBreakScriptInput {
+  targetDate: string; // YYYY-MM-DD
+  personality?: 'mike' | 'sarah' | 'charlie';
+  topic: string;
+  topicTitle: string;
+  targetSongTitle?: string;
+  targetSongArtist?: string;
+  facts: Array<{ text: string; source?: string; date?: string }>;
+  failureReason?: string;
+  exactPrompt?: string;
 }
 
 export interface DJBreakSessionStats {

@@ -801,4 +801,241 @@ CRITICAL RULES:
       stepTimedOut: step2.stepTimedOut,
     };
   }
+
+  /**
+   * Generates a rich spoken radio talk segment using the full monologue prompt architecture:
+   * 1. Provides a verified Fact Sheet, code-chosen hook, 3 short voice exemplars, and strict style rules
+   *    (short spoken sentences, direct address, varied rhythm, strictly no connector words, no opinion/hindsight, no outside facts).
+   * 2. Gemini writes the whole segment monologue.
+   * 3. Real claim verification: splits script into sentences, audits each against the fact sheet, and drops any unsupported sentences.
+   */
+  async writeSegmentBreakScript(input: import('./types.js').SegmentBreakScriptInput): Promise<import('./types.js').SegmentBreakScriptResult> {
+    const persona = PERSONALITIES[(input.personality as 'mike' | 'lisa') || 'mike'] || PERSONALITIES.mike;
+
+    const [y, m, d] = input.targetDate.split('-').map(Number);
+    const dateObj = new Date(Date.UTC(y, m - 1, d));
+    const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const weekday = WEEKDAY_NAMES[dateObj.getUTCDay()];
+    const month = MONTH_NAMES[dateObj.getUTCMonth()];
+    const fullDateSpoken = `${weekday}, ${month} ${d}, ${y}`;
+
+    const startTime = Date.now();
+    const factItems = input.facts || [];
+    if (factItems.length === 0) {
+      return {
+        success: false,
+        scriptText: '',
+        modelUsed: this.modelName,
+        callStartTime: new Date(startTime).toISOString(),
+        callDurationSec: 0,
+        error: 'No facts provided in packet',
+      };
+    }
+
+    const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
+
+    // Code-chosen hook matched strictly to content type (at least 50% have NO opener)
+    const seed = Math.abs(input.topicTitle.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0));
+    let hook = '';
+    const useOpener = (seed % 2) === 0;
+
+    if (useOpener) {
+      if (input.topic === 'next_song_story') {
+        const SONG_OPENERS = [
+          'Looking into the story behind this next sound,',
+          'Turning to the story behind the tracks,',
+          'Checking our music ledger for this record,',
+        ];
+        hook = SONG_OPENERS[seed % SONG_OPENERS.length];
+      } else if (input.topic === 'music_news') {
+        const MUSIC_NEWS_OPENERS = [
+          'In the music news this week,',
+          'Turning to what is happening across the music world,',
+          'Checking the latest news from the music scene,',
+        ];
+        hook = MUSIC_NEWS_OPENERS[seed % MUSIC_NEWS_OPENERS.length];
+      } else if (input.topic === 'major_news') {
+        const NEWS_OPENERS = [
+          'The Times reports this week,',
+          'Taking a look at what is making headlines across the country,',
+          'From the front pages of The Times,',
+        ];
+        hook = NEWS_OPENERS[seed % NEWS_OPENERS.length];
+      } else if (input.topic === 'sports') {
+        const SPORTS_OPENERS = [
+          'In sports action from over the weekend,',
+          'Checking the sports wire across the leagues,',
+        ];
+        hook = SPORTS_OPENERS[seed % SPORTS_OPENERS.length];
+      }
+    }
+
+    const songHandoff = input.targetSongTitle && input.targetSongArtist
+      ? `Now on RetroFM, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`
+      : '';
+
+    const promptStep1 = `ROLE & INSTRUCTIONS:
+You are ${persona.name}, a genuine Top 40 radio DJ broadcasting on ${fullDateSpoken}.
+You deliver a natural, engaging spoken radio segment between records.
+
+AUTHENTIC RADIO VOICE EXEMPLARS:
+Exemplar 1:
+"Checking in on the Hot 100, Kenny Rogers climbs into the top forty this week with 'She Believes In Me.' He recorded the track in Nashville with producer Larry Butler earlier this spring. Right now, let's hear Kenny Rogers."
+
+Exemplar 2:
+"The Times reports twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze. Staying with the music, here is 'Rosanna' by Toto."
+
+Exemplar 3:
+"Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit. Spinning now on RetroFM, Mary Wells."
+
+STRICT STYLE RULES:
+1. Short spoken sentences with direct address and varied rhythm. Talk straight to the listener.
+2. ABSOLUTELY NO CONNECTOR WORDS. Never use: "Furthermore", "Meanwhile", "In addition", "At the same time", "On that note", "Along with that", "Adding to that", "Beyond that".
+3. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
+4. No hindsight language (never say what a song "went on to do" or "later became").
+5. If the hook is given, open with it; otherwise jump right into the first fact.
+6. End with the upcoming song handoff: "${songHandoff}".
+7. Fix punctuation: never capitalize after a comma unless it is a proper name.
+
+FACT SHEET:
+${factLines}
+${input.targetSongTitle ? `Target Song: "${input.targetSongTitle}" by ${input.targetSongArtist || 'Unknown'}` : ''}
+${hook ? `CHOSEN HOOK: "${hook}"` : `CHOSEN HOOK: None (start immediately with the facts)`}
+
+TASK:
+Write the complete spoken radio segment monologue following all rules. Output ONLY the words spoken on air.`;
+
+    let rawDraft = '';
+    let modelUsedStep1 = this.modelName;
+
+    try {
+      const { result, modelUsed } = await this.executeWithRetryAndFallback(
+        'Step 1: monologue generation',
+        async (activeModel) => {
+          const response = await this.safeGenerateContent({
+            model: activeModel,
+            contents: promptStep1,
+            config: {
+              temperature: 0.3,
+              maxOutputTokens: 350,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          });
+          return (response.text || '').trim();
+        },
+        30000
+      );
+      rawDraft = result || '';
+      modelUsedStep1 = modelUsed;
+    } catch (err: any) {
+      console.warn('[Gemini] Step 1 monologue generation failed:', err);
+    }
+
+    if (!rawDraft) {
+      rawDraft = `${hook ? hook + ' ' : ''}${factItems.map(f => f.text).join(' ')} ${songHandoff}`.trim();
+    }
+
+    // Fix comma capitalization bug
+    const cleanedDraft = rawDraft
+      .replace(/,\s+([A-Z][a-z]+)/g, (m, word) => {
+        const commonLower = ['The', 'This', 'That', 'It', 'He', 'She', 'They', 'We', 'A', 'An', 'In', 'On', 'At', 'With', 'And', 'Featuring', 'Holding', 'Adding'];
+        if (commonLower.includes(word)) {
+          return `, ${word.toLowerCase()}`;
+        }
+        return m;
+      })
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    // Step 2: Real claim verification per sentence
+    const sentences = cleanedDraft
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 5);
+
+    const claimsToCheck: Array<{ sentence: string; index: number }> = [];
+    sentences.forEach((s, idx) => {
+      if (s.includes('Now on RetroFM') || s.includes('Spinning now') || s.includes('let\'s hear')) return;
+      claimsToCheck.push({ sentence: s, index: idx });
+    });
+
+    const auditPrompt = claimsToCheck.map((c, i) => `Claim ${i + 1}: ${c.sentence}`).join('\n');
+
+    const promptStep2 = `You are a strict radio broadcast fact verifier.
+Verify each numbered claim sentence against the fact sheet.
+
+CRITICAL RULES:
+1. If a claim contains ANY detail, adjective, title, praise, or characterization (such as "pioneering", "legendary", "iconic", "virtuoso", studio name, location, number of stories, or drum name) that is NOT explicitly stated in the fact sheet, you MUST output:
+[Claim N]: UNSUPPORTED: <reason>
+2. General cultural knowledge, external facts, or historical inferences outside the fact sheet are STRICTLY FORBIDDEN.
+3. If every detail in the claim is explicitly supported by a fact, output:
+[Claim N]: SUPPORTED (Fact <id>)
+
+FACT SHEET:
+${factLines}
+
+CLAIMS TO VERIFY:
+${auditPrompt}
+
+VERDICTS:`;
+
+    const unsupportedClaims: string[] = [];
+    const droppedSentenceIndexes = new Set<number>();
+
+    if (claimsToCheck.length > 0) {
+      try {
+        const { result } = await this.executeWithRetryAndFallback(
+          'Step 2: claim verification',
+          async (activeModel) => {
+            const response = await this.safeGenerateContent({
+              model: activeModel,
+              contents: promptStep2,
+              config: {
+                temperature: 0.0,
+                maxOutputTokens: 500,
+                thinkingConfig: { thinkingBudget: 0 },
+              },
+            });
+            return (response.text || '').trim();
+          },
+          30000
+        );
+
+        const auditLines = (result || '').split('\n').filter(Boolean);
+        for (const al of auditLines) {
+          const match = al.match(/\[Claim\s*(\d+)\]:\s*UNSUPPORTED:\s*(.+)/i);
+          if (match) {
+            const claimIdx = parseInt(match[1], 10) - 1;
+            if (claimsToCheck[claimIdx]) {
+              unsupportedClaims.push(al);
+              droppedSentenceIndexes.add(claimsToCheck[claimIdx].index);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Gemini] Step 2 claim verification failed:', err);
+      }
+    }
+
+    const finalSentences = sentences.filter((_, idx) => !droppedSentenceIndexes.has(idx));
+    let finalScript = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+    if (songHandoff && !finalScript.includes(input.targetSongTitle || '')) {
+      finalScript = `${finalScript} ${songHandoff}`.trim();
+    }
+
+    const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
+    return {
+      success: true,
+      scriptText: finalScript,
+      modelUsed: `gemini:${modelUsedStep1}`,
+      callStartTime: new Date(startTime).toISOString(),
+      callDurationSec: durationSec,
+      rawResponse: `--- PROMPT ---\n${promptStep1}\n\n--- RAW OUTPUT ---\n${rawDraft}\n\n--- AUDIT ---\n${unsupportedClaims.join('\n') || 'None'}`,
+      unsupportedClaims,
+      openerUsed: hook || 'None',
+      closerUsed: songHandoff,
+    };
+  }
 }

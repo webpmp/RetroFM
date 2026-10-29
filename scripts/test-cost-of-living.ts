@@ -131,5 +131,21 @@ const line1 = economyLine(samplePrices, selectedDate, () => 0, ['gasoline']);
 assert.ok(line1 !== null, 'economyLine should return a line');
 assert.notStrictEqual(line1?.kind, 'gasoline', 'economyLine should avoid recent kinds if possible');
 
+// 7. Verify DJ Decision Engine never emits economy observations (product decision)
+import { decideAndSelectBreak, newBreakSelectionSessionState } from '../src/services/djBreak/breakDecisionEngine.js';
+const sessionState = newBreakSelectionSessionState();
+const djDecision = decideAndSelectBreak({
+  prevSong: null,
+  nextSong: { title: 'Unknown Song', artist: 'Nobody' },
+  selectedDate: '1979-05-01',
+  frequencySetting: 1.0,
+  economyObservation: { text: 'Gasoline is 86 cents', date: '1979-05-01' },
+} as any, sessionState);
+assert.notStrictEqual(djDecision.candidate?.type, 'observation', 'Engine must not emit economy observations');
+if (djDecision.candidate) {
+  assert.ok(!djDecision.candidate.factKey.startsWith('economy:'), 'Engine candidate must never be an economy fact');
+}
+console.log('✓ PASS: DJ Decision Engine strictly ignores economy observations.');
+
 console.log('\n✓ PASS: For date 1979-05-01, the returned line never uses data dated on or after the selected month.');
 console.log('================================================================================');

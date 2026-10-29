@@ -49,7 +49,7 @@ export function newBreakSelectionSessionState(): BreakSelectionSessionState {
     totalSongChanges: 0,
     totalBreaksSpoken: 0,
     recentRhetoricalOpeners: 0,
-    breaksSinceLastNews: 5, // eligible immediately on first break
+    breaksSinceLastNews: 4, // eligible immediately on first break (cap is at most 1 in 4)
     lastIntroTemplateIndex: -1,
   };
 }

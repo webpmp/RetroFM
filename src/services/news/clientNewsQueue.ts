@@ -192,11 +192,11 @@ export class ClientNewsQueue {
   }
 
   /**
-   * Returns next unused line or null. Does NOT mark it used.
+   * Retired as spoken line source: returns null so all spoken news lines
+   * must come through the rich segment planner and writer.
    */
   public getNextNewsLine(): ClientNewsItem | null {
-    const item = this.queue.find((q) => !q.used && !this.sessionUsedIds.has(q.text));
-    return item || null;
+    return null;
   }
 
   /**

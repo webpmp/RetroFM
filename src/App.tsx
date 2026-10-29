@@ -62,7 +62,6 @@ import {
   type Jingle,
   type TopEntry,
 } from './services/djBreak/djVariety.js';
-import { economyLine, type PricesFile } from './services/djBreak/costOfLiving.js';
 import {
   newBreakSelectionSessionState,
   BreakSelectionSessionState,
@@ -461,8 +460,6 @@ export default function App() {
   const specABreakStateRef = useRef<BreakSelectionSessionState>(newBreakSelectionSessionState());
   const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
   const jinglesDataRef = useRef<Jingle[]>([]);
-  const pricesDataRef = useRef<PricesFile | null>(null);
-  const recentEconomyKindsRef = useRef<string[]>([]);
   const pendingJingleRef = useRef<Jingle | null>(null);
   const activeJingleRef = useRef<Jingle | null>(null);
   const jingleEndedHandlerRef = useRef<(() => void) | null>(null);
@@ -1036,18 +1033,6 @@ export default function App() {
       })
       .catch(() => {
         jinglesDataRef.current = [];
-      });
-
-    fetch('/data/prices.json')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: PricesFile | null) => {
-        pricesDataRef.current = data;
-        if (data && data.series) {
-          logMessage(`[DJ Variety] Loaded prices.json (${Object.keys(data.series).length} series).`);
-        }
-      })
-      .catch(() => {
-        pricesDataRef.current = null;
       });
   }, []);
 
@@ -1773,6 +1758,76 @@ export default function App() {
             initDjAudioSystem();
             setLastBoomBoxCommand({ action: 'STARTUP_AUDIO_INIT', result: 'SUCCESS', time: timeStr });
             break;
+          case 'END_OF_SONG_TRIGGER': {
+            const triggerReason = action.reason || 'silence';
+            const triggerLevel = typeof action.level === 'number' ? action.level.toFixed(4) : 'unknown';
+            const triggerCur = typeof action.currentTime === 'number' ? action.currentTime.toFixed(1) : 'unknown';
+            const triggerRem = typeof action.remaining === 'number' ? action.remaining.toFixed(1) : 'unknown';
+            logMessage(`[End-Of-Song Trigger] Reason: ${triggerReason} | Level: ${triggerLevel} | Time: ${triggerCur}s | Rem: ${triggerRem}s`);
+
+            // 1. Immediately pause current playback so silence/outtro does not linger
+            await handlePauseMusicRef.current();
+
+            // 2. Preload next video in background YouTube tab while DJ talks
+            const nextPick = nextSongRef.current;
+            if (nextPick?.song?.streaming?.youtube?.id) {
+              const nextVid = nextPick.song.streaming.youtube.id;
+              const nextTitle = nextPick.song.title;
+              logMessage(`[Preload] Preloading next song in background while DJ talks: "${nextTitle}" (${nextVid})`);
+              prepareSong(nextVid, nextTitle).catch((err) => {
+                logMessage(`[Preload Error] Failed to preload next song "${nextTitle}": ${err?.message || err}`);
+              });
+            }
+
+            // 3. Immediately trigger prepared DJ break if present
+            const prep = preparedBreakRef.current;
+            const currentSongId = currentSongPickRef.current?.song?.id || playbackStatusRef.current?.videoId;
+            if (prep && prep.text && currentSongId && breakTriggeredForSongIdRef.current !== currentSongId) {
+              breakTriggeredForSongIdRef.current = currentSongId;
+              const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+
+              if (prep.audioData) {
+                if (prep.pendingVarietyState) {
+                  varietyStateRef.current = prep.pendingVarietyState;
+                }
+                if (prep.pendingState) {
+                  djStateRef.current = prep.pendingState;
+                }
+                if (prep.kind === 'news' && prep.newsText) {
+                  clientNewsQueue.markLineUsed(prep.newsText);
+                }
+                setLastDjBreak({
+                  text: prep.text,
+                  slot: prep.slot,
+                  kind: prep.kind,
+                  detail: prep.detail,
+                  timing: prep.timing,
+                  wordCount: prep.wordCount,
+                  spokenSeconds: prep.durationSec,
+                  deliverySettings: prep.deliverySettings,
+                });
+                logMessage(`[DJ] Immediately starting speech for end-of-song trigger (${triggerReason}, visibility: ${vis})`);
+
+                playDJSpeech(prep.text, {
+                  duckMusic: false,
+                  alreadyDucked: true,
+                  forceGenerate: false,
+                  preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
+                  preparedDuration: prep.durationSec,
+                }).catch((err) => {
+                  console.warn('[DJ] Error during end-of-song speech playback:', err);
+                });
+              } else {
+                logMessage(`[DJ] Break audio was not ready at end-of-song trigger (${triggerReason})`);
+              }
+              preparedBreakRef.current = null;
+            } else if (!prep) {
+              logMessage(`[DJ] No prepared break active for end-of-song trigger (${triggerReason})`);
+            }
+
+            setLastBoomBoxCommand({ action: `END_OF_SONG_TRIGGER (${triggerReason})`, result: 'SUCCESS', time: timeStr });
+            break;
+          }
           default:
             setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS', time: timeStr });
             break;
@@ -1865,9 +1920,9 @@ export default function App() {
           if (dur > 0 && curTime > 0) {
             const remaining = dur - curTime;
 
-            // Phase 1: Prepare ahead ~20-30s before end
+            // Phase 1: Prepare ahead ~45-55s before end (ensures break audio is ready before the 45s silence detection window)
             if (
-              remaining <= 30 &&
+              remaining <= 55 &&
               remaining >= 5 &&
               !preparedBreakRef.current &&
               !isPreparingBreakRef.current &&
@@ -1945,9 +2000,6 @@ export default function App() {
                     }
                     if (prep.kind === 'news' && prep.newsText) {
                       clientNewsQueue.markLineUsed(prep.newsText);
-                    }
-                    if (prep.kind === 'economy' && prep.economyKind) {
-                      recentEconomyKindsRef.current = [...recentEconomyKindsRef.current, prep.economyKind].slice(-4);
                     }
                     setLastDjBreak({
                       text: prep.text,
@@ -4100,20 +4152,14 @@ export default function App() {
       const nextNewsItem = clientNewsQueue.getNextNewsLine();
       const newsItem: { text: string } | null = nextNewsItem ? { text: nextNewsItem.text } : null;
 
-      // Economy line from cost-of-living data if available
-      const ecoLine = pricesDataRef.current
-        ? economyLine(pricesDataRef.current, date, Math.random, recentEconomyKindsRef.current)
-        : null;
-      const economyItem: { text: string } | null = ecoLine ? { text: ecoLine.text } : null;
-
       // Spec A Decision Engine: evaluate candidate break before LLM or template via server endpoint
       const freqMap: Record<'every' | 'often' | 'sometimes' | 'rarely', number> = {
         every: 1.0,
-        often: 0.67,
-        sometimes: 0.5, // Spec A default ~1 break per 2 songs
-        rarely: 0.2,
+        often: 0.70,
+        sometimes: 0.40,
+        rarely: 0.15,
       };
-      const freqSetting = freqMap[djTalkFrequency] ?? 0.5;
+      const freqSetting = freqMap[djTalkFrequency] ?? 0.40;
 
       let specAResult: BreakDecisionResponsePayload;
       try {
@@ -4127,11 +4173,10 @@ export default function App() {
             frequencySetting: freqSetting,
             usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
             lastBreakType: specABreakStateRef.current.lastBreakType,
-            breaksSinceLastNews: specABreakStateRef.current.breaksSinceLastNews ?? 5,
+            breaksSinceLastNews: specABreakStateRef.current.breaksSinceLastNews ?? 4,
             usedNewsTopics: Array.from(specABreakStateRef.current.usedNewsTopics || []),
             lastIntroTemplateIndex: specABreakStateRef.current.lastIntroTemplateIndex ?? -1,
             newsObservation: newsItem ? { text: newsItem.text, date } : null,
-            economyObservation: economyItem ? { text: economyItem.text, date } : null,
           }),
         });
         if (res.ok) {
@@ -4255,7 +4300,6 @@ export default function App() {
           topOfWeek,
           jingles: jinglesDataRef.current,
           news: newsItem,
-          economy: economyItem,
           length: djTalkLength,
         },
         varietyStateRef.current,
@@ -4410,7 +4454,6 @@ export default function App() {
         triggerTimeRemaining,
         duckTriggerTimeRemaining,
         newsText: res.kind === 'news' && nextNewsItem ? nextNewsItem.text : null,
-        economyKind: res.kind === 'economy' && ecoLine ? ecoLine.kind : null,
       };
 
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
@@ -4464,9 +4507,6 @@ export default function App() {
     }
 
     const nextNewsItem = clientNewsQueue.getNextNewsLine();
-    const ecoLine = pricesDataRef.current
-      ? economyLine(pricesDataRef.current, date, Math.random, recentEconomyKindsRef.current)
-      : null;
     const res = buildVarietyBreak(
       {
         prev: prevSong,
@@ -4479,7 +4519,6 @@ export default function App() {
         topOfWeek,
         jingles: jinglesDataRef.current,
         news: nextNewsItem ? { text: nextNewsItem.text } : null,
-        economy: ecoLine ? { text: ecoLine.text } : null,
         length: djTalkLength,
       },
       varietyStateRef.current,
@@ -4489,9 +4528,6 @@ export default function App() {
     varietyStateRef.current = res.state;
     if (res.kind === 'news' && nextNewsItem) {
       clientNewsQueue.markLineUsed(nextNewsItem.text);
-    }
-    if (res.kind === 'economy' && ecoLine) {
-      recentEconomyKindsRef.current = [...recentEconomyKindsRef.current, ecoLine.kind].slice(-4);
     }
 
     let spokenText = res.text;

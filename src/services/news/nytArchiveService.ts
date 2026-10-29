@@ -272,7 +272,7 @@ export function selectNewsPackets(
       const abstract = art.abstract;
       if (!headline && !abstract) continue;
 
-      // Drop obituaries, letters, op-eds, reviews, and ads
+      // Drop obituaries, letters, op-eds, reviews, essays, news analysis, and ads
       const type = art.typeOfMaterial.toLowerCase();
       const hLower = headline.toLowerCase();
       const deskLower = art.desk.toLowerCase();
@@ -289,7 +289,10 @@ export function selectNewsPackets(
 
       if (/letter/i.test(type) || /\bletters to the editor\b/i.test(hLower)) continue;
       if (/op-ed|editorial/i.test(type) || /\b(op-ed|editorial)\b/i.test(deskLower)) continue;
-      if (/review/i.test(type) || deskLower.includes('book review')) continue;
+      if (/review/i.test(type) || deskLower.includes('book review') || /\breview\b/i.test(hLower)) continue;
+      if (/essay/i.test(type) || /\bessays?\b/i.test(hLower)) continue;
+      if (/analysis/i.test(type) || /\bnews analysis\b/i.test(hLower)) continue;
+      if (/\bcritic['’]s\s+notebook\b/i.test(hLower) || /\bweek\s+in\s+review\b/i.test(hLower)) continue;
       if (/advertis/i.test(type) || /^advertising:/i.test(headline) || deskLower.includes('advertising')) continue;
 
       const packet: NewsPacket = {

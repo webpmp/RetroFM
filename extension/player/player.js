@@ -1028,7 +1028,7 @@ function setSongYear(y){}
 const flip=()=>{if(!logoDec)return;dark=!dark;paintLogo();emit('theme',{dark})};
 $('logoBar').onclick=flip;$('logoBar').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 document.addEventListener('retrofm:song',e=>{const d=e.detail||{};if(d.title)setSong(d);if(d.year)setSongYear(d.year)});
-window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag}),animateTuningToFrequency,cancelTuningAnimation,getTuningAnimationState:()=>tuningAnimState};
+window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag}),animateTuningToFrequency,cancelTuningAnimation,getTuningAnimationState:()=>tuningAnimState,getCurrentLevel:()=>getCurrentLevel()};
 
 // tuning: dial = FM frequency, locks onto the selected decade's genre stations
 const MIN=87.5,SPAN=20.5;let lastKey='';
@@ -1663,6 +1663,116 @@ tune();refresh();dIn.focus();
 let nl = 0, nr = 0, vuRunning = false;
 let latestAudioLeft = 0, latestAudioRight = 0, lastAudioUpdateTime = 0;
 
+// Named End-of-Song Silence Detection & Overrun Calibration Constants
+const DEBUG_SILENCE = false;
+const SILENCE_THRESHOLD = 0.008;          // Raw RMS threshold (calibrated above silence/noise floor 0.0015 and below quiet audio 0.015+)
+const SILENCE_HOLD_TIME_MS = 2000;        // Required duration of continuous silence before triggering (2s)
+const SILENCE_WINDOW_SEC = 45;            // Only detect silence within final 45 seconds of video
+const BACKUP_DURATION_OVERRUN_SEC = 15;   // Overrun backup: triggers if video exceeds library duration by > 15s
+const BACKUP_SILENCE_DELAY_SEC = 5;       // Overrun backup delay: triggers if quiet after expected end + 5s
+
+// Shared raw, unsmoothed level function (does NOT read needle deflection/ballistics/peak-hold/decay)
+function getCurrentLevel() {
+  if (Date.now() - lastAudioUpdateTime > 400 || S.state !== 'playing' || !isYtPlaybackActive) {
+    return 0;
+  }
+  return Math.max(latestAudioLeft, latestAudioRight);
+}
+
+// Silence detector state machine
+let currentLibraryDurationSec = 0;
+let silenceStartTime = 0;
+let silenceTriggerFiredForVideoId = null;
+let lastSilenceTriggerReason = 'none';
+
+function checkSilenceDetector() {
+  const isPlaying = S.state === 'playing' && isYtPlaybackActive;
+  const vid = playbackProgress.videoId;
+  const cur = playbackProgress.currentTime || 0;
+  const dur = playbackProgress.duration || 0;
+  const rem = dur > 0 ? (dur - cur) : 0;
+  const lvl = getCurrentLevel();
+
+  // If a new video started, reset the trigger guard and timer
+  if (vid && vid !== silenceTriggerFiredForVideoId && silenceTriggerFiredForVideoId !== null) {
+    silenceTriggerFiredForVideoId = null;
+    lastSilenceTriggerReason = 'none';
+    silenceStartTime = 0;
+  }
+
+  // Not playing or no valid duration or videoId: reset silence hold
+  if (!isPlaying || !vid || dur <= 0 || isJingle) {
+    silenceStartTime = 0;
+    if (DEBUG_SILENCE) {
+      console.debug(`[SilenceDetector] Lvl: ${lvl.toFixed(4)} | Win: OFF | Trig: ${lastSilenceTriggerReason}`);
+    }
+    return;
+  }
+
+  let windowState = 'IDLE';
+
+  // Primary Silence Detection: Active only within final 45 seconds
+  if (rem <= SILENCE_WINDOW_SEC && rem > 0.5) {
+    windowState = `ACTIVE (${rem.toFixed(1)}s)`;
+    if (lvl < SILENCE_THRESHOLD) {
+      if (silenceStartTime === 0) {
+        silenceStartTime = Date.now();
+      } else if (Date.now() - silenceStartTime >= SILENCE_HOLD_TIME_MS) {
+        if (silenceTriggerFiredForVideoId !== vid) {
+          silenceTriggerFiredForVideoId = vid;
+          lastSilenceTriggerReason = 'silence';
+          trace('SILENCE_DETECTOR_TRIGGERED', { reason: 'silence', level: lvl, currentTime: cur, remaining: rem, videoId: vid });
+          sendBoomBoxAction('PAUSE');
+          sendBoomBoxAction('END_OF_SONG_TRIGGER', {
+            reason: 'silence',
+            level: lvl,
+            currentTime: cur,
+            remaining: rem,
+            videoId: vid,
+          });
+        }
+      }
+    } else {
+      silenceStartTime = 0;
+    }
+  } else {
+    // Outside final 45s window: do not run primary detector
+    silenceStartTime = 0;
+  }
+
+  // Backup Duration Overrun Detection:
+  // If video is > 15s longer than library duration_sec and audio is below threshold after expected_end + 5s
+  if (currentLibraryDurationSec > 0 && dur > (currentLibraryDurationSec + BACKUP_DURATION_OVERRUN_SEC)) {
+    if (cur >= (currentLibraryDurationSec + BACKUP_SILENCE_DELAY_SEC)) {
+      if (windowState === 'IDLE') {
+        windowState = `OVERRUN (exp: ${currentLibraryDurationSec}s)`;
+      }
+      if (lvl < SILENCE_THRESHOLD && silenceTriggerFiredForVideoId !== vid) {
+        silenceTriggerFiredForVideoId = vid;
+        lastSilenceTriggerReason = 'duration_backup';
+        trace('SILENCE_DETECTOR_TRIGGERED', { reason: 'duration_backup', level: lvl, currentTime: cur, expectedEnd: currentLibraryDurationSec, videoId: vid });
+        sendBoomBoxAction('PAUSE');
+        sendBoomBoxAction('END_OF_SONG_TRIGGER', {
+          reason: 'duration_backup',
+          level: lvl,
+          currentTime: cur,
+          remaining: rem,
+          expectedEnd: currentLibraryDurationSec,
+          videoId: vid,
+        });
+      }
+    }
+  }
+
+  if (DEBUG_SILENCE) {
+    const holdSec = silenceStartTime > 0 ? ((Date.now() - silenceStartTime) / 1000).toFixed(1) : '0.0';
+    console.debug(`[SilenceDetector] Lvl: ${lvl.toFixed(4)} | Win: ${windowState} (h: ${holdSec}s) | Trig: ${lastSilenceTriggerReason}`);
+  }
+}
+
+// Independent detector loop (~100ms timer): keeps running even when panel collapsed or tab in background
+setInterval(checkSilenceDetector, 100);
+
 function onVuAudioLevelsReceived(payload) {
   if (!payload) return;
   const rawL = typeof payload.l === 'number' && isFinite(payload.l) ? payload.l : 0;
@@ -2043,12 +2153,15 @@ function applyRadioState(state) {
       }
       if (typeof state.currentSong.durationSec === 'number' && state.currentSong.durationSec > 0) {
         playbackProgress.duration = state.currentSong.durationSec;
+        currentLibraryDurationSec = state.currentSong.durationSec;
       } else if (typeof state.currentSong.duration === 'string') {
         const parts = state.currentSong.duration.split(':').map(Number);
         if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
           playbackProgress.duration = parts[0] * 60 + parts[1];
+          currentLibraryDurationSec = playbackProgress.duration;
         } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
           playbackProgress.duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          currentLibraryDurationSec = playbackProgress.duration;
         }
       }
       setSong(state.currentSong);

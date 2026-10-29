@@ -18,8 +18,10 @@ export type ChartFactKind =
   | 'debut'
   | 'climb'
   | 'first_top_ten'
+  | 'weeks_in_top_ten'
   | 'reached_number_one'
-  | 'weeks_at_number_one';
+  | 'weeks_at_number_one'
+  | 'number_one_this_week';
 
 export interface ChartFact {
   kind: ChartFactKind;
@@ -29,6 +31,9 @@ export interface ChartFact {
   rank: number;
   lastRank?: number;
   weeksAtOne?: number;
+  weeksInTopTen?: number;
+  climbWeeks?: number;
+  prevNumberOne?: { title: string; artist: string };
   title: string;
   artist: string;
   interestScore: number;
@@ -58,6 +63,35 @@ export function normalizeChartText(s: string): string {
  */
 export function primaryPerformer(performer: string): string {
   return (performer || '').split(/\s+featuring\s+|\s+with\s+|\s+and\s+/i)[0].trim();
+}
+
+/**
+ * Returns a spoken ordinal with grammatically correct indefinite article ("a first", "an eighth", "an eleventh").
+ */
+export function spokenOrdinalWithArticle(n: number): string {
+  const ord = spokenOrdinal(n);
+  const article = /^[aeiou]/i.test(ord) ? 'an' : 'a';
+  return `${article} ${ord}`;
+}
+export function spokenOrdinal(n: number): string {
+  const ordinals: Record<number, string> = {
+    1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth',
+    6: 'sixth', 7: 'seventh', 8: 'eighth', 9: 'ninth', 10: 'tenth',
+    11: 'eleventh', 12: 'twelfth', 13: 'thirteenth', 14: 'fourteenth', 15: 'fifteenth',
+    16: 'sixteenth', 17: 'seventeenth', 18: 'eighteenth', 19: 'nineteenth', 20: 'twentieth',
+    21: 'twenty-first', 22: 'twenty-second', 23: 'twenty-third', 24: 'twenty-fourth', 25: 'twenty-fifth',
+    26: 'twenty-sixth', 27: 'twenty-seventh', 28: 'twenty-eighth', 29: 'twenty-ninth', 30: 'thirtieth',
+    40: 'fortieth', 50: 'fiftieth',
+  };
+  if (ordinals[n]) return ordinals[n];
+  if (n > 20 && n < 100) {
+    const tens = Math.floor(n / 10) * 10;
+    const units = n % 10;
+    const tensWords: Record<number, string> = { 20: 'twenty', 30: 'thirty', 40: 'forty', 50: 'fifty', 60: 'sixty', 70: 'seventy', 80: 'eighty', 90: 'ninety' };
+    if (units === 0 && ordinals[tens]) return ordinals[tens];
+    if (tensWords[tens] && ordinals[units]) return `${tensWords[tens]}-${ordinals[units]}`;
+  }
+  return `${n}th`;
 }
 
 interface ChartRow {
@@ -122,6 +156,43 @@ export class ChartFactRepository {
       return row?.d || null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Gets the #1 song for a specific chart week.
+   */
+  public getNumberOneOnWeek(chartWeek: string): { title: string; performer: string } | null {
+    if (!this.db || !chartWeek) return null;
+    try {
+      const query = 'SELECT title, performer FROM weekly_chart WHERE chart_date = ? AND rank = 1';
+      const row = this.db.prepare ? this.db.prepare(query).get(chartWeek) : this.db.query(query).get(chartWeek);
+      if (row && row.title && row.performer) {
+        return { title: row.title, performer: row.performer };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Computes the cumulative weeks at #1 for a song up to chartWeek.
+   */
+  public getWeeksAtNumberOne(title: string, performer: string, chartWeek: string): number {
+    if (!this.db || !title || !chartWeek) return 0;
+    try {
+      const normTitle = normalizeChartText(title);
+      const query = 'SELECT chart_date, performer FROM weekly_chart WHERE title = ? AND rank = 1 AND chart_date <= ?';
+      const rows = this.db.prepare ? this.db.prepare(query).all(title, chartWeek) : this.db.query(query).all(title, chartWeek);
+      if (!rows || rows.length === 0) {
+        const likeQuery = 'SELECT chart_date, performer, title FROM weekly_chart WHERE rank = 1 AND chart_date <= ?';
+        const allOnes = this.db.prepare ? this.db.prepare(likeQuery).all(chartWeek) : this.db.query(likeQuery).all(chartWeek);
+        return allOnes.filter((r: any) => normalizeChartText(r.title) === normTitle).length;
+      }
+      return rows.length;
+    } catch {
+      return 0;
     }
   }
 
@@ -205,6 +276,10 @@ export function computeChartFacts(
   const prevEntry = prevChartWeek ? history.find((h) => h.chart_date === prevChartWeek) : null;
   const prevRank = prevEntry?.rank;
 
+  const twoWeeksAgoChartWeek = prevChartWeek ? repo.getPreviousChartWeek(prevChartWeek) : null;
+  const twoWeeksAgoEntry = twoWeeksAgoChartWeek ? history.find((h) => h.chart_date === twoWeeksAgoChartWeek) : null;
+  const twoWeeksAgoRank = twoWeeksAgoEntry?.rank;
+
   const spokenArtist = cleanDuetArtist(song.primary_artist || song.artist);
   const facts: ChartFact[] = [];
   const source = 'Billboard Hot 100';
@@ -225,23 +300,44 @@ export function computeChartFacts(
     });
   }
 
-  // 2. Climb: Rank now versus previous existing chart week
-  // Interest rule: Only report a climb of 8 or more places, plus the existing debut, first top-10, number 1 and weeks-at-number-1 facts.
-  if (prevRank !== undefined && currentRank < prevRank) {
-    const jump = prevRank - currentRank;
-    if (jump >= 8) {
-      facts.push({
+  // 2. Climb: Biggest climb over the last two weeks (8 or more places), or 1-week jump of 8 or more places
+  let climbFact: ChartFact | null = null;
+  if (twoWeeksAgoRank !== undefined && currentRank < twoWeeksAgoRank) {
+    const jump2 = twoWeeksAgoRank - currentRank;
+    if (jump2 >= 8) {
+      climbFact = {
+        kind: 'climb',
+        factText: `"${song.title}" by ${spokenArtist} has jumped from ${twoWeeksAgoRank} up to number ${currentRank} over the last two weeks.`,
+        source,
+        date: currentChartWeek,
+        rank: currentRank,
+        lastRank: twoWeeksAgoRank,
+        climbWeeks: 2,
+        title: song.title,
+        artist: spokenArtist,
+        interestScore: jump2 >= 15 ? 65 : 45,
+      };
+    }
+  }
+  if (!climbFact && prevRank !== undefined && currentRank < prevRank) {
+    const jump1 = prevRank - currentRank;
+    if (jump1 >= 8) {
+      climbFact = {
         kind: 'climb',
         factText: `"${song.title}" by ${spokenArtist} is climbing up to number ${currentRank}, from ${prevRank} this week.`,
         source,
         date: currentChartWeek,
         rank: currentRank,
         lastRank: prevRank,
+        climbWeeks: 1,
         title: song.title,
         artist: spokenArtist,
-        interestScore: jump >= 15 ? 60 : 40,
-      });
+        interestScore: jump1 >= 15 ? 60 : 40,
+      };
     }
+  }
+  if (climbFact) {
+    facts.push(climbFact);
   }
 
   // 3. First week in the top 10
@@ -262,15 +358,44 @@ export function computeChartFacts(
     }
   }
 
-  // 4. Reached number 1
+  // 3b. Multi-week chart story: Weeks in the top 10 so far (cumulative weeks in top 10 >= 2)
+  if (currentRank <= 10) {
+    const weeksInTopTenSoFar = history.filter((h) => h.rank <= 10 && h.chart_date <= currentChartWeek).length;
+    if (weeksInTopTenSoFar >= 2) {
+      const artOrdinal = spokenOrdinalWithArticle(weeksInTopTenSoFar);
+      facts.push({
+        kind: 'weeks_in_top_ten',
+        factText: `"${song.title}" by ${spokenArtist} spends ${artOrdinal} week in the top ten.`,
+        source,
+        date: currentChartWeek,
+        rank: currentRank,
+        weeksInTopTen: weeksInTopTenSoFar,
+        title: song.title,
+        artist: spokenArtist,
+        interestScore: 85,
+      });
+    }
+  }
+
+  // 4. Reached number 1 / First week at number one
   if (currentRank === 1 && prevRank !== 1) {
+    let prevNo1 = prevChartWeek ? repo.getNumberOneOnWeek(prevChartWeek) : null;
+    let takingOverPhrase = '';
+    let prevNo1Info: { title: string; artist: string } | undefined = undefined;
+    if (prevNo1 && prevNo1.title && prevNo1.title.toLowerCase() !== song.title.toLowerCase()) {
+      const spokenPrevArtist = cleanDuetArtist(prevNo1.performer);
+      takingOverPhrase = `, taking over the top spot from "${prevNo1.title}" by ${spokenPrevArtist}`;
+      prevNo1Info = { title: prevNo1.title, artist: spokenPrevArtist };
+    }
+
     facts.push({
       kind: 'reached_number_one',
-      factText: `"${song.title}" by ${spokenArtist} climbs to number one on the Billboard Hot 100 this week${prevRank ? `, up from ${prevRank}` : ''}.`,
+      factText: `"${song.title}" by ${spokenArtist} reaches number one on the Billboard Hot 100 this week${takingOverPhrase}.`,
       source,
       date: currentChartWeek,
       rank: 1,
       lastRank: prevRank,
+      prevNumberOne: prevNo1Info,
       title: song.title,
       artist: spokenArtist,
       interestScore: 110, // reaching #1 beats plain climbs
@@ -282,7 +407,9 @@ export function computeChartFacts(
   if (currentRank === 1 && weeksAtOneSoFar >= 1) {
     facts.push({
       kind: 'weeks_at_number_one',
-      factText: `"${song.title}" by ${spokenArtist} is number one on the chart for ${weeksAtOneSoFar === 1 ? 'its first week' : `${weeksAtOneSoFar} weeks so far`}.`,
+      factText: weeksAtOneSoFar === 1
+        ? `"${song.title}" by ${spokenArtist} reaches number one this week.`
+        : `"${song.title}" by ${spokenArtist} is number one on the chart for ${weeksAtOneSoFar} weeks so far.`,
       source,
       date: currentChartWeek,
       rank: 1,
@@ -294,4 +421,105 @@ export function computeChartFacts(
   }
 
   return facts;
+}
+
+/**
+ * Computes the chart status fact (rank this week, change from last week, weeks in top 10 / weeks on chart)
+ * for a song on selectedDate from weekly_chart.
+ */
+export function computeSongChartStatusFact(
+  song: SongIdentifier,
+  selectedDate: string,
+  repo: ChartFactRepository
+): VerifiedFactPacketItem | null {
+  if (!repo.isAvailable()) return null;
+
+  const currentChartWeek = repo.getChartWeekOn(selectedDate);
+  if (!currentChartWeek) return null;
+
+  const history = repo.getSongHistory(song, selectedDate);
+  if (history.length === 0) return null;
+
+  const currentEntry = history.find((h) => h.chart_date === currentChartWeek);
+  if (!currentEntry) return null;
+
+  const currentRank = currentEntry.rank;
+  const prevChartWeek = repo.getPreviousChartWeek(currentChartWeek);
+  const prevEntry = prevChartWeek ? history.find((h) => h.chart_date === prevChartWeek) : null;
+  const prevRank = prevEntry?.rank;
+
+  const weeksOnChartSoFar = history.filter((h) => h.chart_date <= currentChartWeek).length;
+  const weeksInTopTenSoFar = history.filter((h) => h.rank <= 10 && h.chart_date <= currentChartWeek).length;
+
+  let movementText = '';
+  if (prevRank !== undefined) {
+    if (currentRank < prevRank) {
+      movementText = `, climbing up from number ${prevRank} last week`;
+    } else if (currentRank > prevRank) {
+      movementText = `, down from number ${prevRank} last week`;
+    } else {
+      movementText = `, holding steady from last week`;
+    }
+  } else if (weeksOnChartSoFar === 1) {
+    movementText = ` in its chart debut`;
+  }
+
+  let durationText = '';
+  if (currentRank <= 10 && weeksInTopTenSoFar >= 2) {
+    durationText = ` and spending its ${spokenOrdinal(weeksInTopTenSoFar)} week in the top ten`;
+  } else if (weeksOnChartSoFar > 1) {
+    durationText = ` in its ${spokenOrdinal(weeksOnChartSoFar)} week on the chart`;
+  }
+
+  const factText = `"${song.title}" is at number ${currentRank} on the Billboard Hot 100 this week${movementText}${durationText}.`;
+
+  return {
+    text: factText,
+    source: 'Billboard Hot 100',
+    printDate: currentChartWeek,
+    date: currentChartWeek,
+  };
+}
+
+export interface VerifiedFactPacketItem {
+  text: string;
+  source: string;
+  printDate?: string;
+  date: string;
+}
+
+/**
+ * Computes the national "number one this week" chart break for the station on selectedDate.
+ * Mentions the song and how many weeks it has held number one so far.
+ */
+export function computeNationalNumberOneFact(
+  selectedDate: string,
+  repo: ChartFactRepository
+): ChartFact | null {
+  if (!repo.isAvailable()) return null;
+
+  const currentChartWeek = repo.getChartWeekOn(selectedDate);
+  if (!currentChartWeek) return null;
+
+  const no1 = repo.getNumberOneOnWeek(currentChartWeek);
+  if (!no1 || !no1.title || !no1.performer) return null;
+
+  const spokenArtist = cleanDuetArtist(no1.performer);
+  const weeksAtOne = repo.getWeeksAtNumberOne(no1.title, no1.performer, currentChartWeek);
+  const weeksCount = weeksAtOne > 0 ? weeksAtOne : 1;
+  const ordinal = spokenOrdinal(weeksCount);
+
+  return {
+    kind: 'number_one_this_week',
+    factText: weeksCount === 1
+      ? `Holding the number one spot in the nation, "${no1.title}" by ${spokenArtist} reaches number one this week.`
+      : `Holding the number one spot in the nation this week, "${no1.title}" by ${spokenArtist} marks its ${ordinal} week at the top of the Hot 100.`,
+    source: 'Billboard Hot 100',
+    date: currentChartWeek,
+    rank: 1,
+    weeksAtOne: weeksCount,
+    title: no1.title,
+    artist: spokenArtist,
+    interestScore: 95,
+  };
 }
