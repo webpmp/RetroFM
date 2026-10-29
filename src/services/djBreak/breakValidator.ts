@@ -544,15 +544,29 @@ export function validateBreakOutput(
   const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // Strip verified song titles for checks where title phrases shouldn't false-flag
-  // Also strip any quoted song titles appearing in the script (e.g. from chart facts or national number one facts)
-  const quotedTitles = Array.from(trimmed.matchAll(/"([^"]+)"/g)).map((m) => escapeRegExp(m[1]));
+  // Strip all quoted song titles (handling both standard ASCII "" and curly/typographical quotes “”, ‘’)
+  // and strip target/previous artist names so parentheticals within titles/credits don't trigger stage direction check
+  const quotedRegex = /["“”«»'‘’]([^"“”«»'‘’]+)["“”«»'‘’]/g;
+  const quotedMatches = Array.from(trimmed.matchAll(quotedRegex)).map((m) => escapeRegExp(m[1]));
+  
   const nextTitleEsc = context.songNext?.title ? escapeRegExp(context.songNext.title) : '___none___';
   const prevTitleEsc = context.songPlayed?.title ? escapeRegExp(context.songPlayed.title) : '___none___';
+  const nextArtistEsc = context.songNext?.artist ? escapeRegExp(context.songNext.artist) : '___none___';
+  const prevArtistEsc = context.songPlayed?.artist ? escapeRegExp(context.songPlayed.artist) : '___none___';
+
   let textWithoutTitles = trimmed
     .replace(new RegExp(nextTitleEsc, 'gi'), '')
-    .replace(new RegExp(prevTitleEsc, 'gi'), '');
-  for (const qt of quotedTitles) {
-    textWithoutTitles = textWithoutTitles.replace(new RegExp(qt, 'gi'), '');
+    .replace(new RegExp(prevTitleEsc, 'gi'), '')
+    .replace(new RegExp(nextArtistEsc, 'gi'), '')
+    .replace(new RegExp(prevArtistEsc, 'gi'), '');
+
+  // Strip whole quoted phrases (including the quotes) first
+  textWithoutTitles = textWithoutTitles.replace(/["“”«»][^"“”«»]*["“”«»]/g, '');
+
+  for (const qm of quotedMatches) {
+    if (qm.trim()) {
+      textWithoutTitles = textWithoutTitles.replace(new RegExp(qm, 'gi'), '');
+    }
   }
 
   // 0a. Check speaker label (a name followed by a colon, e.g. "DJ:", "Mike:", "Announcer:", "Host:")
@@ -758,9 +772,10 @@ export function validateBreakOutput(
     }
   }
 
-  // 3c2. Check unconverted relative time words
+  // 3c2. Check unconverted relative time words from newspaper reporting
+  // "this week" is legitimate for radio DJs referring to the weekly chart
   const REL_WORDS = [
-    /\b(?:last night|yesterday|this morning|today|this week|tomorrow)\b/i,
+    /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i,
   ];
   for (const rel of REL_WORDS) {
     if (rel.test(trimmed)) {

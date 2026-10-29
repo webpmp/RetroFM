@@ -71,7 +71,6 @@ import { getScriptWriterProvider } from './services/djBreak/scriptWriterFactory.
 import { getEnv } from './services/envUtil.js';
 import { validateBreakOutput } from './services/djBreak/breakValidator.js';
 import { shapeDelivery } from './services/djBreak/djDelivery.js';
-import { clientNewsQueue, ClientNewsStatus } from './services/news/clientNewsQueue.js';
 import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
 import manifest from '../extension/manifest.json';
 
@@ -507,18 +506,14 @@ export default function App() {
     newsText?: string | null;
     economyKind?: string | null;
   } | null>(null);
-  const [newsDebugStatus, setNewsDebugStatus] = useState<ClientNewsStatus>(() => clientNewsQueue.getStatus());
+  const [newsDebugStatus, setNewsDebugStatus] = useState<{ isPrefetching: boolean; readyCount: number; uiText: string }>({
+    isPrefetching: false,
+    readyCount: 0,
+    uiText: 'Segment pipeline active',
+  });
   const isPreparingBreakRef = useRef<boolean>(false);
   const breakTriggeredForSongIdRef = useRef<string | null>(null);
   const breakDuckingStartedRef = useRef<boolean>(false);
-
-  // Subscribe to news queue status updates
-  useEffect(() => {
-    const unsub = clientNewsQueue.subscribe((status) => {
-      setNewsDebugStatus(status);
-    });
-    return () => unsub();
-  }, []);
 
   const handleDjModeChange = (mode: 'ai' | 'observations' | 'off') => {
     setDjMode(mode);
@@ -1677,16 +1672,6 @@ export default function App() {
             const targetDate = action.date || activeDateRef.current;
             const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
 
-            // Trigger non-blocking background news prefetch on confirmed date/genre (Enter)
-            const aiProvider = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio' || 'gemini';
-            const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || undefined;
-            const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || undefined;
-            clientNewsQueue.prefetchNews(targetDate, {
-              provider: aiProvider,
-              endpoint: lmEndpoint,
-              model: lmModel,
-            });
-
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
             varietyStateRef.current = newVarietyState();
@@ -1792,9 +1777,6 @@ export default function App() {
                 }
                 if (prep.pendingState) {
                   djStateRef.current = prep.pendingState;
-                }
-                if (prep.kind === 'news' && prep.newsText) {
-                  clientNewsQueue.markLineUsed(prep.newsText);
                 }
                 setLastDjBreak({
                   text: prep.text,
@@ -1983,9 +1965,6 @@ export default function App() {
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
                       volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
                     }
-                    if (prep.kind === 'news' && prep.newsText) {
-                      clientNewsQueue.returnLineToQueue(prep.newsText);
-                    }
                     preparedBreakRef.current = null;
                     return;
                   }
@@ -1997,9 +1976,6 @@ export default function App() {
                     }
                     if (prep.pendingState) {
                       djStateRef.current = prep.pendingState;
-                    }
-                    if (prep.kind === 'news' && prep.newsText) {
-                      clientNewsQueue.markLineUsed(prep.newsText);
                     }
                     setLastDjBreak({
                       text: prep.text,
@@ -2029,9 +2005,6 @@ export default function App() {
                     logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
                       volumeControllerRef.current.cancel('Audio not ready for DJ speech');
-                    }
-                    if (prep.kind === 'news' && prep.newsText) {
-                      clientNewsQueue.returnLineToQueue(prep.newsText);
                     }
                   }
                 } else {
@@ -4098,10 +4071,6 @@ export default function App() {
       if (reason) {
         logMessage(`[DJ] Discarded prepared break: ${reason}`);
       }
-      // If a news break was prepared but never played, return the line to the queue
-      if (preparedBreakRef.current.newsText) {
-        clientNewsQueue.returnLineToQueue(preparedBreakRef.current.newsText);
-      }
       preparedBreakRef.current = null;
     }
     isPreparingBreakRef.current = false;
@@ -4148,11 +4117,7 @@ export default function App() {
         }
       }
 
-      // News item from pre-audited pipeline if ready ahead of time
-      const nextNewsItem = clientNewsQueue.getNextNewsLine();
-      const newsItem: { text: string } | null = nextNewsItem ? { text: nextNewsItem.text } : null;
-
-      // Spec A Decision Engine: evaluate candidate break before LLM or template via server endpoint
+      // Segment Break Pipeline: query rich segment endpoint (/api/dj/segment-break)
       const freqMap: Record<'every' | 'often' | 'sometimes' | 'rarely', number> = {
         every: 1.0,
         often: 0.70,
@@ -4161,9 +4126,13 @@ export default function App() {
       };
       const freqSetting = freqMap[djTalkFrequency] ?? 0.40;
 
-      let specAResult: BreakDecisionResponsePayload;
+      const aiProvider = ((typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio') || 'gemini';
+      const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || getEnv('LM_STUDIO_ENDPOINT') || 'http://localhost:1234/v1';
+      const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || getEnv('LM_STUDIO_MODEL') || undefined;
+
+      let segmentResult: any;
       try {
-        const res = await fetch('/api/dj/break-decision', {
+        const res = await fetch('/api/dj/segment-break', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4172,21 +4141,20 @@ export default function App() {
             nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: nextSongObj?.first_chart_date } : null,
             frequencySetting: freqSetting,
             usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
-            lastBreakType: specABreakStateRef.current.lastBreakType,
-            breaksSinceLastNews: specABreakStateRef.current.breaksSinceLastNews ?? 4,
-            usedNewsTopics: Array.from(specABreakStateRef.current.usedNewsTopics || []),
-            lastIntroTemplateIndex: specABreakStateRef.current.lastIntroTemplateIndex ?? -1,
-            newsObservation: newsItem ? { text: newsItem.text, date } : null,
+            lastTopic: specABreakStateRef.current.lastBreakType,
+            provider: aiProvider,
+            endpoint: lmEndpoint,
+            model: lmModel,
           }),
         });
         if (res.ok) {
-          specAResult = await res.json();
+          segmentResult = await res.json();
         } else {
           throw new Error(`Server returned ${res.status}`);
         }
       } catch (err) {
-        console.warn('[DJ] Failed to fetch server break decision, falling back to silence:', err);
-        specAResult = {
+        console.warn('[DJ] Failed to fetch server segment break, falling back to silence:', err);
+        segmentResult = {
           decision: 'silence',
           breakType: null,
           candidate: null,
@@ -4197,27 +4165,19 @@ export default function App() {
 
       // Update client-side session state
       specABreakStateRef.current.totalSongChanges++;
-      if (specAResult.decision === 'speak' && specAResult.candidate) {
-        specABreakStateRef.current.usedFactKeys.add(specAResult.candidate.factKey);
-        specABreakStateRef.current.lastBreakType = specAResult.candidate.type;
-        specABreakStateRef.current.totalBreaksSpoken++;
-        if (specAResult.candidate.type === 'observation' && specAResult.candidate.factKey.startsWith('news:')) {
-          specABreakStateRef.current.breaksSinceLastNews = 0;
-          const topic = (specAResult.candidate as any).topic;
-          if (topic && topic !== 'general') {
-            if (!specABreakStateRef.current.usedNewsTopics) {
-              specABreakStateRef.current.usedNewsTopics = new Set<string>();
-            }
-            specABreakStateRef.current.usedNewsTopics.add(topic);
+      if (segmentResult.decision === 'speak' && segmentResult.finalSpeech) {
+        if (Array.isArray(segmentResult.usedKeys)) {
+          for (const k of segmentResult.usedKeys) {
+            specABreakStateRef.current.usedFactKeys.add(k);
           }
-        } else {
-          specABreakStateRef.current.breaksSinceLastNews = (specABreakStateRef.current.breaksSinceLastNews ?? 0) + 1;
         }
+        specABreakStateRef.current.lastBreakType = segmentResult.breakType;
+        specABreakStateRef.current.totalBreaksSpoken++;
       }
 
       // If silence was chosen, enter silent break immediately
-      if (specAResult.decision === 'silence') {
-        console.log('[DJ] Spec A engine selected silence');
+      if (segmentResult.decision === 'silence' || !segmentResult.finalSpeech) {
+        console.log('[DJ] Segment pipeline selected silence');
         preparedBreakRef.current = {
           id: currentSongId,
           audioData: null,
@@ -4233,60 +4193,7 @@ export default function App() {
         return;
       }
 
-      // If AI mode is active and we have an observation break (news or economy), ask the active provider to write spoken sentences from it.
-      // Note: song_credit, chart_fact, and intro_only breaks use rotating code templates and do not call the LLM.
-      let candidateSpokenText = specAResult.finalSpeech;
-      const candidateObj = specAResult.candidate;
-      const isLlmEligibleType = candidateObj && candidateObj.type === 'observation';
-      if (djMode === 'ai' && isLlmEligibleType && candidateObj) {
-        const aiProvider = ((typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio') || 'gemini';
-        const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || getEnv('LM_STUDIO_ENDPOINT') || 'http://localhost:1234/v1';
-        const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || getEnv('LM_STUDIO_MODEL') || undefined;
-
-        const writer = getScriptWriterProvider({
-          provider: aiProvider,
-          endpoint: lmEndpoint,
-          model: lmModel,
-        });
-
-        try {
-          const aiScriptRes = await writer.writeSingleBreakScript({
-            targetDate: date,
-            personality: 'mike',
-            songPlayed: prev ? { title: prev.title, artist: prev.artist } : undefined,
-            songNext: next ? { title: next.title, artist: next.artist } : undefined,
-            targetSong: specAResult.targetSong,
-            breakType: candidateObj.type,
-            factPacket: {
-              factText: candidateObj.factText,
-              source: candidateObj.source,
-              date: candidateObj.date,
-            },
-          });
-          if (aiScriptRes.success && aiScriptRes.scriptText) {
-            // Run strict validation check on LLM output
-            const val = validateBreakOutput(aiScriptRes.scriptText, {
-              selectedDate: date,
-              factPacket: {
-                factText: candidateObj.factText,
-                source: candidateObj.source,
-                date: candidateObj.date,
-              },
-              songPlayed: prev,
-              songNext: next,
-            });
-            if (val.valid) {
-              candidateSpokenText = val.sanitizedText;
-            } else {
-              console.log(`[DJ] LLM output rejected (${val.rejectedReason}) -> using verified candidate script`);
-            }
-          } else if (aiScriptRes.error) {
-            console.warn(`[DJ] ${aiProvider.toUpperCase()} error: ${aiScriptRes.error}`);
-          }
-        } catch (llmErr: any) {
-          console.warn(`[DJ] Failed calling ${aiProvider.toUpperCase()} for single break script:`, llmErr?.message);
-        }
-      }
+      const candidateSpokenText = segmentResult.finalSpeech;
 
       const res = buildVarietyBreak(
         {
@@ -4299,7 +4206,7 @@ export default function App() {
           frequency: frequencyStr,
           topOfWeek,
           jingles: jinglesDataRef.current,
-          news: newsItem,
+          news: null,
           length: djTalkLength,
         },
         varietyStateRef.current,
@@ -4307,10 +4214,10 @@ export default function App() {
         TALK_PRESETS[djTalkFrequency]
       );
 
-      // Override with Spec A candidate spoken text
+      // Override with Segment candidate spoken text
       res.text = candidateSpokenText;
-      if (specAResult.breakType) {
-        res.kind = specAResult.breakType as any;
+      if (segmentResult.breakType) {
+        res.kind = segmentResult.breakType as any;
       }
 
       const timing = res.timing || 'land';
@@ -4453,7 +4360,7 @@ export default function App() {
         varietyResult: res,
         triggerTimeRemaining,
         duckTriggerTimeRemaining,
-        newsText: res.kind === 'news' && nextNewsItem ? nextNewsItem.text : null,
+        newsText: null,
       };
 
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
@@ -4506,7 +4413,6 @@ export default function App() {
       }
     }
 
-    const nextNewsItem = clientNewsQueue.getNextNewsLine();
     const res = buildVarietyBreak(
       {
         prev: prevSong,
@@ -4518,7 +4424,7 @@ export default function App() {
         frequency: frequencyStr,
         topOfWeek,
         jingles: jinglesDataRef.current,
-        news: nextNewsItem ? { text: nextNewsItem.text } : null,
+        news: null,
         length: djTalkLength,
       },
       varietyStateRef.current,
@@ -4526,9 +4432,6 @@ export default function App() {
       TALK_PRESETS[djTalkFrequency]
     );
     varietyStateRef.current = res.state;
-    if (res.kind === 'news' && nextNewsItem) {
-      clientNewsQueue.markLineUsed(nextNewsItem.text);
-    }
 
     let spokenText = res.text;
     if (spokenText && res.kind !== 'jingle') {

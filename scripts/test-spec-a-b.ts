@@ -217,6 +217,43 @@ const rejectedName = validateBreakOutput("Climbing to number one, beating out Le
 assert.strictEqual(rejectedName.valid, false);
 assert.ok(rejectedName.rejectedReason?.includes('Unverified proper name'));
 
+// 4D: Stage directions check stripping parenthetical titles (including smart quotes)
+const validRegulate = validateBreakOutput('Next up, "Regulate (From “Above The Rim”)" by Warren G.', {
+  selectedDate: '1994-06-01',
+  factPacket: { factText: 'Warren G and Nate Dogg release Regulate.', source: 'Billboard', date: '1994-06-01' },
+  songNext: { title: 'Regulate (From “Above The Rim”)', artist: 'Warren G' },
+});
+assert.notStrictEqual(validRegulate.rejectedReason, 'Contains stage directions in parentheses or brackets');
+
+const validShyGuy = validateBreakOutput('Here is "Shy Guy (From “Bad Boys”)" by Diana King.', {
+  selectedDate: '1995-06-01',
+  factPacket: { factText: 'Diana King releases Shy Guy.', source: 'Billboard', date: '1995-06-01' },
+  songNext: { title: 'Shy Guy (From “Bad Boys”)', artist: 'Diana King' },
+});
+assert.notStrictEqual(validShyGuy.rejectedReason, 'Contains stage directions in parentheses or brackets');
+
+const validMacarena = validateBreakOutput('Spinning "Macarena (Bayside Boys Mix)" by Los Del Rio.', {
+  selectedDate: '1996-08-01',
+  factPacket: { factText: 'Los Del Rio releases Macarena.', source: 'Billboard', date: '1996-08-01' },
+  songNext: { title: 'Macarena (Bayside Boys Mix)', artist: 'Los Del Rio' },
+});
+assert.notStrictEqual(validMacarena.rejectedReason, 'Contains stage directions in parentheses or brackets');
+
+// Also test when titles are quoted inline in script body without songNext metadata
+const validQuotedMix = validateBreakOutput('Taking over the chart this week, “Macarena (Bayside Boys Mix)” reaches number one.', {
+  selectedDate: '1996-08-01',
+  factPacket: { factText: '“Macarena (Bayside Boys Mix)” reaches number one.', source: 'Billboard', date: '1996-08-01' },
+});
+assert.notStrictEqual(validQuotedMix.rejectedReason, 'Contains stage directions in parentheses or brackets');
+
+// Confirm genuine stage direction is still rejected
+const rejectedStageDir = validateBreakOutput('Coming up next (laughs) we have music.', {
+  selectedDate: '1979-05-01',
+  factPacket: { factText: 'Music news.', source: 'Test', date: '1979-05-01' },
+});
+assert.strictEqual(rejectedStageDir.valid, false);
+assert.strictEqual(rejectedStageDir.rejectedReason, 'Contains stage directions in parentheses or brackets');
+
 console.log('✓ PASS: All rejection checks validated.\n');
 
 console.log('================================================================================');

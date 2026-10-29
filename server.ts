@@ -25,14 +25,17 @@ import {
   getDJBreakSessionStats,
 } from './src/services/djBreak/djBreakService.js';
 import { LMStudioScriptWriterProvider } from './src/services/djBreak/LMStudioScriptWriterProvider.js';
-import { globalNewsQueueManager } from './src/services/news/newsQueueManager.js';
-import { readAuditedNewsCache } from './src/services/news/newsQueueCache.js';
+import { GeminiScriptWriterProvider } from './src/services/djBreak/GeminiScriptWriterProvider.js';
 import {
   decideAndSelectBreak,
   SongCreditRepository,
 } from './src/services/djBreak/breakDecisionEngine.js';
-import { ChartFactRepository } from './src/services/djBreak/chartFacts.js';
+import { ChartFactRepository, computeChartFacts, computeNationalNumberOneFact } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
+import { getOrBuildAlmanac, resolveRelativeTimeWords } from './src/services/news/almanacService.js';
+import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
+import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
+import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 
 dotenv.config();
 
@@ -406,52 +409,26 @@ async function startServer() {
     }
   });
 
-  // API Route: Trigger background prefetch for news
+  // API Route: Trigger background prefetch for news (Cleaned up - old news writer removed)
   app.post('/api/news/prefetch', async (req, res) => {
-    try {
-      const { date, provider, endpoint, model } = req.body;
-      if (!date || typeof date !== 'string') {
-        return res.status(400).json({ success: false, error: 'date string (YYYY-MM-DD) is required.' });
-      }
-
-      const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
-      globalNewsQueueManager.prefetchNews(date, {
-        provider: provider === 'lmstudio' ? 'lmstudio' : 'gemini',
-        endpoint: resolvedEndpoint,
-        model,
-      });
-
-      return res.json({ success: true, message: `Prefetch initiated for ${date}` });
-    } catch (err: any) {
-      console.error('[API /api/news/prefetch] Error:', err);
-      return res.status(500).json({ success: false, error: err?.message });
-    }
+    return res.json({ success: true, message: 'Legacy news prefetch removed. Segment pipeline active.' });
   });
 
-  // API Route: Poll status of news prefetch
+  // API Route: Poll status of news prefetch (Cleaned up - old news writer removed)
   app.get('/api/news/prefetch/status', (req, res) => {
-    try {
-      const date = String(req.query.date || '');
-      const status = globalNewsQueueManager.getStatus();
-      const cached = date ? readAuditedNewsCache(date) : [];
-      return res.json({
-        success: true,
-        ...status,
-        readyLines: cached.map((c, idx) => ({ id: `line_${idx}`, text: c.line })),
-      });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
-    }
+    return res.json({
+      success: true,
+      isPrefetching: false,
+      readyCount: 0,
+      totalPrefetched: 0,
+      uiText: 'Segment pipeline active',
+      readyLines: [],
+    });
   });
 
-  // API Route: Cancel active prefetch
+  // API Route: Cancel active prefetch (Cleaned up - old news writer removed)
   app.post('/api/news/prefetch/cancel', (_req, res) => {
-    try {
-      globalNewsQueueManager.cancel();
-      return res.json({ success: true, message: 'Prefetch cancelled.' });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
-    }
+    return res.json({ success: true, message: 'Prefetch cancelled.' });
   });
 
   // API Route: Check LM Studio connection and discover available models
@@ -760,7 +737,411 @@ async function startServer() {
   const chartFactRepo = new ChartFactRepository();
   const songCreditRepo = new SongCreditRepository();
 
-  // API Route: Server-side DJ Break Decision (Spec A)
+  // Helper for natural extractive fallback monologue
+  function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {
+    const sentences = (packet.facts || []).map((f: any) => {
+      let t = (f.text || '').trim();
+      const writtenMatch = t.match(/^Written by (.+)\.$/i);
+      if (writtenMatch) t = `${writtenMatch[1]} wrote this one.`;
+      const producedMatch = t.match(/^Produced by (.+)\.$/i);
+      if (producedMatch) t = `${producedMatch[1]} produced this track.`;
+      if (t.length > 4 && t === t.toUpperCase()) {
+        t = t.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      }
+      const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate);
+      return resolved.text;
+    });
+    if (sentences.length === 0) return '';
+    const body = sentences.join(' ');
+    if (packet.targetSongTitle && packet.targetSongArtist) {
+      return `${body} Now on RetroFM, here is "${packet.targetSongTitle}" by ${packet.targetSongArtist}.`;
+    }
+    return body;
+  }
+
+  // API Route: Rich Segment Break Pipeline
+  // Evaluates candidates in priority order: next_song_story, chart_story, credits, music_news, major_news.
+  // Plain intro is allowed ONLY when every other candidate has failed.
+  app.post('/api/dj/segment-break', async (req, res) => {
+    const startTime = Date.now();
+    try {
+      const {
+        selectedDate,
+        prevSong,
+        nextSong,
+        frequencySetting,
+        usedFactKeys,
+        lastTopic,
+        provider,
+        endpoint,
+        model,
+      } = req.body;
+
+      if (!selectedDate || typeof selectedDate !== 'string') {
+        return res.status(400).json({ error: 'selectedDate is required.' });
+      }
+
+      const freqSetting = typeof frequencySetting === 'number' ? frequencySetting : 1.0;
+      const roll = Math.random();
+      const rollPassed = roll <= freqSetting;
+
+      const usedKeysSet = new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []);
+
+      // Load almanac and next song story card
+      const almanac = await getOrBuildAlmanac(selectedDate);
+      const songCard = nextSong
+        ? await getOrBuildSongStoryCard(nextSong, selectedDate, undefined, { runLLMCheck: false })
+        : null;
+
+      // Setup ScriptWriterProvider
+      const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
+      const writer = (provider === 'lmstudio' || (!process.env.GEMINI_API_KEY && resolvedEndpoint))
+        ? new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 35000 })
+        : new GeminiScriptWriterProvider();
+
+      // Collect candidates
+      interface CandidateEval {
+        type: string;
+        score: number;
+        ready: boolean;
+        packet: any;
+        failureReason?: string;
+      }
+      const candidates: CandidateEval[] = [];
+
+      // 1. Next Song Story Candidate
+      if (nextSong && songCard && songCard.facts) {
+        const validSongFacts = songCard.facts.filter((f) => {
+          const key = `song:${nextSong.id}:${f.factText.slice(0, 40)}`;
+          return !usedKeysSet.has(key) && !/squidbillies|remaster|streaming|spotify|youtube/i.test(f.factText);
+        });
+        const ready = validSongFacts.length >= 2;
+        const packetFacts = validSongFacts.slice(0, 4).map((f) => ({
+          text: f.factText,
+          source: f.source,
+          printDate: f.publicDate || selectedDate,
+          date: f.publicDate || selectedDate,
+        }));
+        candidates.push({
+          type: 'next_song_story',
+          score: 110,
+          ready,
+          packet: {
+            topic: 'next_song_story',
+            topicTitle: `Story Behind "${nextSong.title}" by ${nextSong.artist}`,
+            targetSongTitle: nextSong.title,
+            targetSongArtist: nextSong.artist,
+            facts: packetFacts,
+            factKeys: validSongFacts.slice(0, 4).map((f) => `song:${nextSong.id}:${f.factText.slice(0, 40)}`),
+          },
+          failureReason: ready ? undefined : `only ${validSongFacts.length} facts available (minimum 2 required)`,
+        });
+      } else {
+        candidates.push({
+          type: 'next_song_story',
+          score: 110,
+          ready: false,
+          packet: null,
+          failureReason: 'no nextSong or song card available',
+        });
+      }
+
+      // 2. Chart Story Candidate
+      let chartFactsForSong = nextSong ? computeChartFacts(nextSong, selectedDate, chartFactRepo) : [];
+      let nationalNo1 = computeNationalNumberOneFact(selectedDate, chartFactRepo);
+      const availableChartFacts = chartFactsForSong.filter((cf) => !usedKeysSet.has(`chart:${cf.kind}:${cf.date}:${cf.title}`));
+      const chartReady = availableChartFacts.length > 0 || (nationalNo1 !== null && !usedKeysSet.has(`chart:national_no1:${nationalNo1.title}:${nationalNo1.date}`));
+      if (chartReady) {
+        const primaryFact = availableChartFacts[0] || nationalNo1!;
+        const chartKey = availableChartFacts[0]
+          ? `chart:${primaryFact.kind}:${primaryFact.date}:${primaryFact.title}`
+          : `chart:national_no1:${primaryFact.title}:${primaryFact.date}`;
+        candidates.push({
+          type: 'chart_story',
+          score: primaryFact.interestScore || 95,
+          ready: true,
+          packet: {
+            topic: 'chart_story',
+            topicTitle: `Billboard Chart Action: "${primaryFact.title}"`,
+            targetSongTitle: nextSong?.title,
+            targetSongArtist: nextSong?.artist,
+            facts: [{
+              text: primaryFact.factText,
+              source: primaryFact.source,
+              printDate: primaryFact.date,
+              date: primaryFact.date,
+            }],
+            factKeys: [chartKey],
+          },
+        });
+      } else {
+        candidates.push({
+          type: 'chart_story',
+          score: 95,
+          ready: false,
+          packet: null,
+          failureReason: 'no fresh chart facts on or before broadcast date',
+        });
+      }
+
+      // 3. Credits Candidate
+      if (nextSong) {
+        const eligibleCredits = songCreditRepo.getEligibleCredits(nextSong.id, selectedDate)
+          .filter((c) => !usedKeysSet.has(`credit:${nextSong.id}:${c.fact_text.slice(0, 40)}`));
+        if (eligibleCredits.length > 0) {
+          const cred = eligibleCredits[0];
+          candidates.push({
+            type: 'credits',
+            score: 75,
+            ready: true,
+            packet: {
+              topic: 'credits',
+              topicTitle: `Credits for "${nextSong.title}"`,
+              targetSongTitle: nextSong.title,
+              targetSongArtist: nextSong.artist,
+              facts: [{
+                text: cred.fact_text,
+                source: 'MusicBrainz',
+                printDate: selectedDate,
+                date: selectedDate,
+              }],
+              factKeys: [`credit:${nextSong.id}:${cred.fact_text.slice(0, 40)}`],
+            },
+          });
+        } else {
+          candidates.push({
+            type: 'credits',
+            score: 75,
+            ready: false,
+            packet: null,
+            failureReason: 'no fresh song credits found',
+          });
+        }
+      } else {
+        candidates.push({
+          type: 'credits',
+          score: 75,
+          ready: false,
+          packet: null,
+          failureReason: 'credit repository not available or no next song',
+        });
+      }
+
+      // 4. Music News Candidate
+      const musicAlmanacEntries = (almanac.entries || [])
+        .filter((e) => e.category === 'music' && !usedKeysSet.has(`almanac:${e.id}`))
+        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50));
+      if (musicAlmanacEntries.length > 0) {
+        const entry = musicAlmanacEntries[0];
+        const subFacts = splitEntryIntoFacts(entry);
+        candidates.push({
+          type: 'music_news',
+          score: entry.interestScore || 80,
+          ready: true,
+          packet: {
+            topic: 'music_news',
+            topicTitle: entry.headline,
+            targetSongTitle: nextSong?.title,
+            targetSongArtist: nextSong?.artist,
+            facts: subFacts,
+            factKeys: [`almanac:${entry.id}`],
+          },
+        });
+      } else {
+        candidates.push({
+          type: 'music_news',
+          score: 80,
+          ready: false,
+          packet: null,
+          failureReason: 'no fresh music news entries in almanac',
+        });
+      }
+
+      // 5. Major News Candidate
+      const majorNewsEntries = (almanac.entries || [])
+        .filter((e) => e.category === 'major_news' && !usedKeysSet.has(`almanac:${e.id}`))
+        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50));
+      if (majorNewsEntries.length > 0) {
+        const entry = majorNewsEntries[0];
+        const subFacts = splitEntryIntoFacts(entry);
+        candidates.push({
+          type: 'major_news',
+          score: entry.interestScore || 70,
+          ready: true,
+          packet: {
+            topic: 'major_news',
+            topicTitle: entry.headline,
+            targetSongTitle: nextSong?.title,
+            targetSongArtist: nextSong?.artist,
+            facts: subFacts,
+            factKeys: [`almanac:${entry.id}`],
+          },
+        });
+      } else {
+        candidates.push({
+          type: 'major_news',
+          score: 70,
+          ready: false,
+          packet: null,
+          failureReason: 'no fresh major news entries in almanac',
+        });
+      }
+
+      // If roll did not pass frequency check, log and return silence
+      if (!rollPassed) {
+        const elapsedMs = Date.now() - startTime;
+        const candidatesSummary = candidates.map((c) => `${c.type}:${c.score}(${c.ready ? 'ready' : 'unready'})`).join(' ');
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="roll exceeded frequency threshold"`);
+        return res.json({
+          decision: 'silence',
+          breakType: null,
+          finalSpeech: '',
+          targetSong: 'none',
+          usedKeys: [],
+        });
+      }
+
+      // Sort ready candidates by score descending, preferring types different from lastTopic
+      const readyCandidates = candidates.filter((c) => c.ready && c.packet);
+      readyCandidates.sort((a, b) => {
+        if (a.type === lastTopic && b.type !== lastTopic) return 1;
+        if (b.type === lastTopic && a.type !== lastTopic) return -1;
+        return b.score - a.score;
+      });
+
+      let chosenCandidate: CandidateEval | null = null;
+      let finalSpeech = '';
+      let validatorResult = 'N/A';
+      let auditResult = 'N/A';
+      const fellThroughReasons: string[] = [];
+
+      // Evaluate candidates in order
+      for (const cand of readyCandidates) {
+        const packet = cand.packet;
+        try {
+          let scriptText = '';
+          let unsupportedClaims: string[] = [];
+
+          if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
+            const scriptRes = await writer.writeSegmentBreakScript({
+              targetDate: selectedDate,
+              personality: 'mike',
+              topic: packet.topic,
+              topicTitle: packet.topicTitle,
+              targetSongTitle: packet.targetSongTitle,
+              targetSongArtist: packet.targetSongArtist,
+              facts: packet.facts,
+            });
+            if (scriptRes.success && scriptRes.scriptText) {
+              scriptText = scriptRes.scriptText;
+              unsupportedClaims = scriptRes.unsupportedClaims || [];
+            }
+          }
+
+          // If writer failed or returned empty, attempt natural extractive fallback
+          if (!scriptText) {
+            scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
+          }
+
+          if (scriptText) {
+            const val = validateSegmentBreakOutput(scriptText, {
+              selectedDate,
+              factPacket: packet,
+            });
+
+            if (val.valid && unsupportedClaims.length === 0) {
+              chosenCandidate = cand;
+              finalSpeech = scriptText;
+              validatorResult = 'PASS';
+              auditResult = 'PASS(0 unsupported)';
+              break;
+            } else {
+              const failReason = !val.valid
+                ? `validator rejected: ${val.rejectedReason}`
+                : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+              cand.failureReason = failReason;
+              fellThroughReasons.push(`${cand.type}: ${failReason}`);
+            }
+          } else {
+            const failReason = 'script generation returned empty';
+            cand.failureReason = failReason;
+            fellThroughReasons.push(`${cand.type}: ${failReason}`);
+          }
+        } catch (err: any) {
+          const failReason = `generation error: ${err?.message}`;
+          cand.failureReason = failReason;
+          fellThroughReasons.push(`${cand.type}: ${failReason}`);
+        }
+      }
+
+      // Plain intro fallback ONLY when every other candidate has failed
+      if (!chosenCandidate) {
+        if (nextSong) {
+          chosenCandidate = {
+            type: 'plain_intro',
+            score: 25,
+            ready: true,
+            packet: {
+              topic: 'plain_intro',
+              topicTitle: `Intro for ${nextSong.title}`,
+              targetSongTitle: nextSong.title,
+              targetSongArtist: nextSong.artist,
+              facts: [{
+                text: `Spinning next on RetroFM is "${nextSong.title}" by ${nextSong.artist}.`,
+                source: 'Station Playlist',
+                printDate: selectedDate,
+                date: selectedDate,
+              }],
+              factKeys: [`intro:${nextSong.title}:${nextSong.artist}`],
+            },
+          };
+          finalSpeech = `Spinning next on RetroFM is "${nextSong.title}" by ${nextSong.artist}.`;
+          validatorResult = 'PASS';
+          auditResult = 'PASS(intro)';
+        }
+      }
+
+      const elapsedMs = Date.now() - startTime;
+      const candidatesSummary = candidates.map((c) => `${c.type}:${c.score}(${c.ready ? 'ready' : 'unready'})`).join(' ');
+      const factCount = chosenCandidate?.packet?.facts?.length || 0;
+      const failureReasonLog = fellThroughReasons.length > 0 ? ` failure_reasons=[${fellThroughReasons.join(' | ')}]` : '';
+
+      if (chosenCandidate?.type === 'plain_intro') {
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms reason="every other candidate failed"${failureReasonLog}`);
+      } else if (chosenCandidate) {
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=${chosenCandidate.type} facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms${failureReasonLog}`);
+      } else {
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="all candidates failed and no next song"${failureReasonLog}`);
+      }
+
+      return res.json({
+        decision: chosenCandidate ? 'speak' : 'silence',
+        breakType: chosenCandidate?.type || null,
+        candidate: chosenCandidate?.packet ? {
+          type: chosenCandidate.type,
+          topic: chosenCandidate.packet.topic,
+          topicTitle: chosenCandidate.packet.topicTitle,
+          factKey: chosenCandidate.packet.factKeys?.[0] || 'none',
+          factText: chosenCandidate.packet.facts?.[0]?.text || '',
+        } : null,
+        finalSpeech,
+        targetSong: 'next',
+        usedKeys: chosenCandidate?.packet?.factKeys || [],
+      });
+    } catch (err: any) {
+      const elapsedMs = Date.now() - startTime;
+      console.error(`[Segment] error="${err?.message}" elapsed=${elapsedMs}ms`);
+      return res.status(500).json({
+        decision: 'silence',
+        breakType: null,
+        finalSpeech: '',
+        targetSong: 'none',
+        error: err?.message,
+      });
+    }
+  });
+
+  // API Route: Server-side DJ Break Decision (Spec A legacy compatibility)
   // Queries SQLite for era-accurate chart facts and verified song credits
   app.post('/api/dj/break-decision', (req, res) => {
     try {

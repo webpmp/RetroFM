@@ -94,7 +94,7 @@ function getDateNDaysBefore(d: string, n: number): string {
  * Splits a single almanac entry into 2 to 4 coherent sub-facts (sentences)
  * so that each packet has a single thread/story with 2-4 facts about that one story.
  */
-function splitEntryIntoFacts(entry: AlmanacEntry): VerifiedFactPacketItem[] {
+export function splitEntryIntoFacts(entry: AlmanacEntry): VerifiedFactPacketItem[] {
   const sentences = entry.verbatimSentences && entry.verbatimSentences.length > 0
     ? entry.verbatimSentences
     : entry.summary.split(/(?<=[.!?])\s+/).filter(Boolean);
