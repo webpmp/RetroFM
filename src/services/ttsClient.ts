@@ -5,6 +5,7 @@ export interface TTSRequest {
   style?: string;
   model?: string;
   speed?: number;
+  breakId?: string;
 }
 
 export interface TTSResponse {

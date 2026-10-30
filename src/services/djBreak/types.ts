@@ -184,6 +184,8 @@ export interface SegmentBreakScriptInput {
   facts: Array<{ text: string; source?: string; date?: string }>;
   failureReason?: string;
   exactPrompt?: string;
+  allowRetroFm?: boolean;
+  allowNowOnRetroFm?: boolean;
 }
 
 export interface DJBreakSessionStats {

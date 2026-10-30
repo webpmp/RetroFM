@@ -427,6 +427,13 @@ export function computeChartFacts(
  * Computes the chart status fact (rank this week, change from last week, weeks in top 10 / weeks on chart)
  * for a song on selectedDate from weekly_chart.
  */
+/**
+ * Computes the chart status fact (position and change this week, or weeks on chart,
+ * or stating when the song is not on the chart that week) for a song on selectedDate from weekly_chart.
+ * Requirement 4:
+ * Every next-song story must try to include chart status from weekly_chart on or before the broadcast date
+ * (position and change this week, or weeks on chart), and say so when the song is not on the chart that week.
+ */
 export function computeSongChartStatusFact(
   song: SongIdentifier,
   selectedDate: string,
@@ -438,10 +445,69 @@ export function computeSongChartStatusFact(
   if (!currentChartWeek) return null;
 
   const history = repo.getSongHistory(song, selectedDate);
-  if (history.length === 0) return null;
 
+  // If song is NOT on the chart this week:
   const currentEntry = history.find((h) => h.chart_date === currentChartWeek);
-  if (!currentEntry) return null;
+  if (!currentEntry) {
+    if (history.length > 0) {
+      // Find peak rank and peak date
+      let bestRank = 101;
+      let peakDateStr = '';
+      for (const h of history) {
+        if (h.rank < bestRank) {
+          bestRank = h.rank;
+          peakDateStr = h.chart_date;
+        }
+      }
+
+      // Check if run ended before broadcast date
+      const lastEntry = history[history.length - 1];
+      if (lastEntry.chart_date < currentChartWeek) {
+        const weeksCount = history.length;
+        const rankOneRows = history.filter((h) => h.rank === 1);
+        const weeksAtOne = rankOneRows.length;
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        let peakSentence = '';
+        if (bestRank === 1) {
+          if (peakDateStr) {
+            const [py, pm] = peakDateStr.split('-');
+            const mName = MONTH_NAMES[parseInt(pm, 10) - 1] || '';
+            peakSentence = `It reached number one on the Hot 100 in ${mName} ${py}.`;
+          } else {
+            peakSentence = `It reached number one on the Hot 100.`;
+          }
+        } else if (bestRank <= 5) {
+          peakSentence = `It was a top five hit on the Hot 100.`;
+        } else if (bestRank <= 10) {
+          peakSentence = `It was a top ten hit on the Hot 100.`;
+        } else if (bestRank <= 20) {
+          peakSentence = `It reached the top twenty on the Hot 100.`;
+        } else if (bestRank <= 40) {
+          peakSentence = `It reached the top forty on the Hot 100.`;
+        } else {
+          peakSentence = `It reached number ${bestRank} on the Hot 100.`;
+        }
+
+        const runSentence = `It spent ${weeksCount} weeks on the chart.`;
+        const fullFactText = `${peakSentence} ${runSentence}`;
+
+        return {
+          text: fullFactText,
+          source: 'Billboard Hot 100',
+          printDate: lastEntry.chart_date,
+          date: lastEntry.chart_date,
+          isLockedSentence: true,
+          weeksAtOne,
+          weeksOnChart: weeksCount,
+          peakRank: bestRank,
+          peakDate: peakDateStr,
+        };
+      }
+    }
+
+    return null;
+  }
 
   const currentRank = currentEntry.rank;
   const prevChartWeek = repo.getPreviousChartWeek(currentChartWeek);
@@ -486,6 +552,11 @@ export interface VerifiedFactPacketItem {
   source: string;
   printDate?: string;
   date: string;
+  isLockedSentence?: boolean;
+  weeksAtOne?: number;
+  weeksOnChart?: number;
+  peakRank?: number;
+  peakDate?: string;
 }
 
 /**

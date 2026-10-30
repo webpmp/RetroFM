@@ -457,6 +457,7 @@ export default function App() {
   const djStateRef = useRef<DjState>(newDjState());
   const varietyStateRef = useRef<VarietyState>(newVarietyState());
   const specABreakStateRef = useRef<BreakSelectionSessionState>(newBreakSelectionSessionState());
+  const blacklistedFactKeysRef = useRef<Set<string>>(new Set<string>());
   const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
   const jinglesDataRef = useRef<Jingle[]>([]);
   const pendingJingleRef = useRef<Jingle | null>(null);
@@ -465,6 +466,7 @@ export default function App() {
   const jingleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousLibrarySongRef = useRef<LibrarySong | null>(null);
   const currentSongPickRef = useRef<SongPick | null>(null);
+  const songStartedAtMsRef = useRef<number>(Date.now());
   const [currentSongPick, setCurrentSongPick] = useState<SongPick | null>(null);
   const [lastDjBreak, setLastDjBreak] = useState<{
     text: string;
@@ -481,9 +483,36 @@ export default function App() {
     };
   } | null>(null);
 
-  // Ahead-of-time DJ Break preparation & triggering refs
+  // Ahead-of-time DJ Break preparation & triggering refs (prepares up to 2 breaks ahead)
   const preparedBreakRef = useRef<{
     id: string; // current song videoId or song id
+    breakId?: string;
+    audioData: string | null;
+    durationSec: number;
+    text: string;
+    slot: 'before' | 'after';
+    kind: string | null;
+    detail?: string;
+    timing?: 'land' | 'follow';
+    maxSeconds?: number;
+    wordCount?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
+    pendingVarietyState?: VarietyState;
+    varietyResult?: VarietyBreakResult;
+    pendingState?: DjState;
+    triggerTimeRemaining: number;
+    duckTriggerTimeRemaining: number;
+    newsText?: string | null;
+    economyKind?: string | null;
+  } | null>(null);
+
+  // Requirement 5: Second prepared break ahead (prepares 2 breaks ahead during current song)
+  const secondPreparedBreakRef = useRef<{
+    id: string;
     audioData: string | null;
     durationSec: number;
     text: string;
@@ -1796,10 +1825,14 @@ export default function App() {
                   forceGenerate: false,
                   preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
                   preparedDuration: prep.durationSec,
+                  breakId: prep.breakId,
                 }).catch((err) => {
                   console.warn('[DJ] Error during end-of-song speech playback:', err);
                 });
               } else {
+                if (prep.breakId) {
+                  reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+                }
                 logMessage(`[DJ] Break audio was not ready at end-of-song trigger (${triggerReason})`);
               }
               preparedBreakRef.current = null;
@@ -1996,11 +2029,15 @@ export default function App() {
                       forceGenerate: false,
                       preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
                       preparedDuration: prep.durationSec,
+                      breakId: prep.breakId,
                     }).catch((err) => {
                       console.warn('[DJ] Error during prepared speech playback:', err);
                     });
                   } else {
                     // Audio not ready: skip break silently, log, cancel any lead duck
+                    if (prep.breakId) {
+                      reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+                    }
                     console.log(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
                     logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
@@ -2364,6 +2401,7 @@ export default function App() {
       previousLibrarySongRef.current = currentSongPickRef.current.song;
     }
     currentSongPickRef.current = pick;
+    songStartedAtMsRef.current = Date.now();
     setCurrentSongPick(pick);
 
     // Notice handling for genreMatched
@@ -2455,6 +2493,13 @@ export default function App() {
         if (nextPick) {
           console.log('[Song Selector] Pre-selected next song:', nextPick.song.title, 'by', nextPick.song.artist, '| tier:', nextPick.tier, '| genreMatched:', nextPick.genreMatched);
         }
+      }
+
+      // Requirement 5: Start break preparation immediately when current song starts playback
+      const nextSong = nextSongRef.current?.song || null;
+      if (nextSong && !preparedBreakRef.current && !isPreparingBreakRef.current) {
+        console.log(`[DJ Ahead Prep] Initiating ahead-of-time break preparation immediately at song start for "${songTitle}" (next: "${nextSong.title}")`);
+        prepareObservationBreakAhead(pick.song.id, previousLibrarySongRef.current, nextSong);
       }
     }
 
@@ -3598,6 +3643,7 @@ export default function App() {
       preparedAudio?: string;
       preparedDuration?: number;
       delegateToBoomBox?: boolean;
+      breakId?: string;
     }
   ): Promise<boolean> => {
     const text = (textToSpeak || djScript).trim();
@@ -3730,6 +3776,9 @@ export default function App() {
             isBrowser,
             effectsSettings: djVoiceEffects.getSettings()
           };
+          if (options?.breakId) {
+            reportSegmentStatus(options.breakId, 'aired');
+          }
           const bbRes = await musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
           if (bbRes && bbRes.success) {
             playedViaBoomBox = true;
@@ -3807,6 +3856,9 @@ export default function App() {
           u.rate = 1.05;
           u.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
           u.onstart = () => {
+            if (options?.breakId) {
+              reportSegmentStatus(options.breakId, 'aired');
+            }
             logMessage('▶ Playing Browser DJ voice.');
             setTestResults((prev) => ({
               ...prev,
@@ -3864,6 +3916,11 @@ export default function App() {
             console.warn('[DjVoiceEffects] Failed to route audio through effects graph, playing directly:', e);
           }
 
+          audio.onplay = () => {
+            if (options?.breakId) {
+              reportSegmentStatus(options.breakId, 'aired');
+            }
+          };
           audio.onended = () => {
             if (!settled) {
               settled = true;
@@ -4058,6 +4115,16 @@ export default function App() {
     }
   };
 
+  const reportSegmentStatus = (breakId: string, event: 'queued' | 'aired' | 'discarded', reason?: string) => {
+    try {
+      fetch('/api/dj/segment-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ breakId, event, reason }),
+      }).catch(() => {});
+    } catch {}
+  };
+
   // --- Critical Audio Ducking & DJ-Over-Music Execution ---
   const executeDJOverMusic = async (scriptOverride?: string): Promise<boolean> => {
     // Explicit user interaction: ensure Web Audio context is initialized and resumed
@@ -4068,6 +4135,9 @@ export default function App() {
   // --- Ahead-of-Time DJ Observation Break Builder & Synthesizer ---
   const clearPreparedBreak = (reason?: string) => {
     if (preparedBreakRef.current) {
+      if (preparedBreakRef.current.breakId) {
+        reportSegmentStatus(preparedBreakRef.current.breakId, 'discarded', reason || 'cleared');
+      }
       if (reason) {
         logMessage(`[DJ] Discarded prepared break: ${reason}`);
       }
@@ -4141,7 +4211,11 @@ export default function App() {
             nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: nextSongObj?.first_chart_date } : null,
             frequencySetting: freqSetting,
             usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
+            blacklistedFactKeys: Array.from(blacklistedFactKeysRef.current),
             lastTopic: specABreakStateRef.current.lastBreakType,
+            breaksSinceLastRetroFm: specABreakStateRef.current.breaksSinceLastRetroFm ?? 4,
+            lastHandoffGroup: specABreakStateRef.current.lastHandoffGroup,
+            recentHandoffTemplates: specABreakStateRef.current.recentHandoffTemplates || [],
             provider: aiProvider,
             endpoint: lmEndpoint,
             model: lmModel,
@@ -4165,6 +4239,11 @@ export default function App() {
 
       // Update client-side session state
       specABreakStateRef.current.totalSongChanges++;
+      if (Array.isArray(segmentResult.blacklistedKeys)) {
+        for (const bk of segmentResult.blacklistedKeys) {
+          blacklistedFactKeysRef.current.add(bk);
+        }
+      }
       if (segmentResult.decision === 'speak' && segmentResult.finalSpeech) {
         if (Array.isArray(segmentResult.usedKeys)) {
           for (const k of segmentResult.usedKeys) {
@@ -4173,6 +4252,25 @@ export default function App() {
         }
         specABreakStateRef.current.lastBreakType = segmentResult.breakType;
         specABreakStateRef.current.totalBreaksSpoken++;
+
+        // Track handoff group and template recency (last 12)
+        if (typeof segmentResult.handoffGroup === 'number') {
+          specABreakStateRef.current.lastHandoffGroup = segmentResult.handoffGroup;
+        }
+        if (typeof segmentResult.handoffTemplate === 'string') {
+          const recents = specABreakStateRef.current.recentHandoffTemplates || [];
+          recents.push(segmentResult.handoffTemplate);
+          if (recents.length > 12) recents.shift();
+          specABreakStateRef.current.recentHandoffTemplates = recents;
+        }
+
+        // Track RetroFM in session state (separate station ID)
+        const aired = segmentResult.finalSpeech || '';
+        if (/RetroFM/i.test(aired)) {
+          specABreakStateRef.current.breaksSinceLastRetroFm = 0;
+        } else {
+          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 4) + 1;
+        }
       }
 
       // If silence was chosen, enter silent break immediately
@@ -4302,6 +4400,7 @@ export default function App() {
           style: djStyle,
           model: voiceEngine === 'KOKORO' ? 'Kokoro-82M-bf16' : selectedModel,
           speed: voiceEngine === 'KOKORO' ? kokoroSpeed : undefined,
+          breakId: segmentResult.breakId,
         });
 
         if (resp.success && resp.audioBase64) {
@@ -4309,12 +4408,18 @@ export default function App() {
           durationSec = resp.durationSeconds || Math.max(3, Math.round(finalText.split(/\s+/).filter(Boolean).length / 2.5));
         } else {
           console.warn('[DJ] TTS generation failed during ahead-of-time prep:', resp.error);
+          if (segmentResult.breakId) {
+            reportSegmentStatus(segmentResult.breakId, 'discarded', 'TTS failure');
+          }
         }
       }
 
       // Check if song changed while we were synthesizing
       if (currentSongPickRef.current?.song?.id !== currentSongId && playbackStatusRef.current?.videoId !== currentSongId) {
         console.log('[DJ] Discarding prepared break: active song changed during synthesis');
+        if (segmentResult.breakId) {
+          reportSegmentStatus(segmentResult.breakId, 'discarded', 'skipped song / song change');
+        }
         return;
       }
 
@@ -4342,6 +4447,7 @@ export default function App() {
 
       preparedBreakRef.current = {
         id: currentSongId,
+        breakId: segmentResult.breakId,
         audioData: audioBase64,
         durationSec,
         text: finalText,
@@ -4363,10 +4469,15 @@ export default function App() {
         newsText: null,
       };
 
+      if (segmentResult.breakId) {
+        reportSegmentStatus(segmentResult.breakId, 'queued');
+      }
+
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
       const curRemaining = (playbackStatusRef.current?.duration || 0) - (playbackStatusRef.current?.currentTime || 0);
-      console.log(`[DJ] prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
-      logMessage(`[DJ] Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
+      const readyRelSongChangeSec = ((Date.now() - songStartedAtMsRef.current) / 1000).toFixed(1);
+      console.log(`[DJ] break ready relative to song change: +${readyRelSongChangeSec}s | prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
+      logMessage(`[DJ] Break ready relative to song change: +${readyRelSongChangeSec}s | Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
     } catch (e: any) {
       console.warn('[DJ] Error preparing ahead break:', e);
     } finally {

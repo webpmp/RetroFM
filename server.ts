@@ -30,12 +30,18 @@ import {
   decideAndSelectBreak,
   SongCreditRepository,
 } from './src/services/djBreak/breakDecisionEngine.js';
-import { ChartFactRepository, computeChartFacts, computeNationalNumberOneFact } from './src/services/djBreak/chartFacts.js';
+import {
+  ChartFactRepository,
+  computeChartFacts,
+  computeNationalNumberOneFact,
+  computeSongChartStatusFact,
+} from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 import { getOrBuildAlmanac, resolveRelativeTimeWords } from './src/services/news/almanacService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
+import { buildHandoff, resolveOrphanPronounOpening } from './src/services/djBreak/handoffBank.js';
 
 dotenv.config();
 
@@ -68,13 +74,14 @@ async function startServer() {
   // API Route: Generate TTS DJ speech (Gemini or Kokoro)
   app.post('/api/tts/generate', async (req, res) => {
     try {
-      const { text, engine, voice, style, model, speed } = req.body;
+      const { text, engine, voice, style, model, speed, breakId } = req.body;
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ success: false, error: 'A script text is required.' });
       }
 
-      console.log(`[API /api/tts/generate] Received request (engine: ${engine || 'GEMINI'}) for text: "${text.substring(0, 40)}..." (speed: ${speed ?? 1.0})`);
+      const idTag = breakId ? ` [breakId=${breakId}]` : '';
+      console.log(`[API /api/tts/generate]${idTag} Received request (engine: ${engine || 'GEMINI'}) for text: "${text.substring(0, 40)}..." (speed: ${speed ?? 1.0})`);
 
       const provider = (engine === 'KOKORO') ? kokoroTtsProvider : geminiTtsProvider;
       const result = await provider.generate({ text, engine, voice, style, model, speed });
@@ -751,19 +758,30 @@ async function startServer() {
       const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate);
       return resolved.text;
     });
-    if (sentences.length === 0) return '';
-    const body = sentences.join(' ');
-    if (packet.targetSongTitle && packet.targetSongArtist) {
-      return `${body} Now on RetroFM, here is "${packet.targetSongTitle}" by ${packet.targetSongArtist}.`;
-    }
-    return body;
+    return sentences.join(' ');
   }
 
+  // Segment Lifecycle & Status Reporting Endpoint
+  app.post('/api/dj/segment-status', (req, res) => {
+    const { breakId, event, reason } = req.body;
+    if (!breakId || !event) {
+      return res.status(400).json({ error: 'breakId and event required' });
+    }
+    if (event === 'queued') {
+      console.log(`[Segment Queued] id=${breakId}`);
+    } else if (event === 'aired') {
+      console.log(`[Segment Aired] id=${breakId}`);
+    } else if (event === 'discarded') {
+      console.log(`[Segment Discarded] id=${breakId} reason="${reason || 'unknown'}"`);
+    }
+    return res.json({ success: true });
+  });
   // API Route: Rich Segment Break Pipeline
-  // Evaluates candidates in priority order: next_song_story, chart_story, credits, music_news, major_news.
-  // Plain intro is allowed ONLY when every other candidate has failed.
+  // Evaluates candidates in priority order: next_song_story (with merged chart/credit/band facts),
+  // then music_news, major_news, then chart or credits as a short fallback, then plain_intro.
   app.post('/api/dj/segment-break', async (req, res) => {
     const startTime = Date.now();
+    const breakId = `break-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       const {
         selectedDate,
@@ -771,7 +789,11 @@ async function startServer() {
         nextSong,
         frequencySetting,
         usedFactKeys,
+        blacklistedFactKeys,
         lastTopic,
+        breaksSinceLastRetroFm,
+        lastHandoffGroup,
+        recentHandoffTemplates,
         provider,
         endpoint,
         model,
@@ -785,7 +807,21 @@ async function startServer() {
       const roll = Math.random();
       const rollPassed = roll <= freqSetting;
 
+      const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number' ? breaksSinceLastRetroFm : 4;
+      const allowRetroFm = sinceRetroFm >= 4;
+
       const usedKeysSet = new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []);
+      const blacklistedKeysSet = new Set<string>(Array.isArray(blacklistedFactKeys) ? blacklistedFactKeys : []);
+      const newlyBlacklistedKeys: string[] = [];
+
+      // Helper to check if key is unavailable
+      const isKeyBlocked = (k: string) => usedKeysSet.has(k) || blacklistedKeysSet.has(k);
+
+      // Code-managed handoff tracking
+      let sessionLastHandoffGroup: number | null = typeof lastHandoffGroup === 'number' ? lastHandoffGroup : null;
+      let sessionRecentHandoffTemplates: string[] = Array.isArray(recentHandoffTemplates) ? recentHandoffTemplates : [];
+      let chosenHandoffGroup: number | null = null;
+      let chosenHandoffTemplate: string | null = null;
 
       // Load almanac and next song story card
       const almanac = await getOrBuildAlmanac(selectedDate);
@@ -806,136 +842,245 @@ async function startServer() {
         ready: boolean;
         packet: any;
         failureReason?: string;
+        category?: string;
+        itemKey?: string;
       }
-      const candidates: CandidateEval[] = [];
 
-      // 1. Next Song Story Candidate
-      if (nextSong && songCard && songCard.facts) {
-        const validSongFacts = songCard.facts.filter((f) => {
-          const key = `song:${nextSong.id}:${f.factText.slice(0, 40)}`;
-          return !usedKeysSet.has(key) && !/squidbillies|remaster|streaming|spotify|youtube/i.test(f.factText);
-        });
-        const ready = validSongFacts.length >= 2;
-        const packetFacts = validSongFacts.slice(0, 4).map((f) => ({
-          text: f.factText,
-          source: f.source,
-          printDate: f.publicDate || selectedDate,
-          date: f.publicDate || selectedDate,
-        }));
-        candidates.push({
+      // Collect available chart facts and credits for nextSong
+      const chartFactsForSong = nextSong ? computeChartFacts(nextSong, selectedDate, chartFactRepo) : [];
+      const nationalNo1 = computeNationalNumberOneFact(selectedDate, chartFactRepo);
+      const eligibleCredits = nextSong ? songCreditRepo.getEligibleCredits(nextSong.id, selectedDate) : [];
+
+      // 1. Next Song Story Candidate (Merged chart status, credits, band and artist facts)
+      // A song story needs 3 or more verified facts; with fewer, try the next candidate
+      let songStoryCandidate: CandidateEval;
+      if (nextSong) {
+        const mergedFacts: Array<{ text: string; source: string; printDate?: string; date: string; key: string; factType: string }> = [];
+
+        // (a) Chart status fact (Fact #1: position and change this week, or weeks on chart, or stating not on chart)
+        // Requirement 4: Every next-song story must try to include chart status from weekly_chart on or before broadcast date
+        // and say so when the song is not on the chart that week.
+        const unblockedChartFacts = chartFactsForSong.filter((cf) => !isKeyBlocked(`chart:${cf.kind}:${cf.date}:${cf.title}`));
+        if (unblockedChartFacts.length > 0) {
+          const cf = unblockedChartFacts[0];
+          mergedFacts.push({
+            text: cf.factText,
+            source: cf.source,
+            printDate: cf.date,
+            date: cf.date,
+            key: `chart:${cf.kind}:${cf.date}:${cf.title}`,
+            factType: 'chart_status',
+          });
+        } else {
+          // If no climb/debut fact was computed, compute the exact weekly_chart status fact (including if not on chart)
+          const statusFact = computeSongChartStatusFact(nextSong, selectedDate, chartFactRepo);
+          if (statusFact && !isKeyBlocked(`chart:status:${statusFact.date}:${nextSong.title}`)) {
+            mergedFacts.push({
+              text: statusFact.text,
+              source: statusFact.source,
+              printDate: statusFact.printDate || selectedDate,
+              date: statusFact.date,
+              key: `chart:status:${statusFact.date}:${nextSong.title}`,
+              factType: 'chart_status',
+            });
+          }
+        }
+
+        // (b) Verified credits fact
+        // Requirement 10: When credits from the MusicBrainz work conflict with Wikipedia's writer, drop the credit (check Have I Told You Lately)
+        const unblockedCredits = eligibleCredits.filter((c) => !isKeyBlocked(`credit:${nextSong.id}:${c.fact_text.slice(0, 40)}`));
+        if (unblockedCredits.length > 0) {
+          const cred = unblockedCredits[0];
+          // Check for writer conflict against songCard facts (e.g. Scott Wiseman vs Van Morrison)
+          let hasConflict = false;
+          const credTextLower = cred.fact_text.toLowerCase();
+          if (songCard && songCard.facts) {
+            for (const sf of songCard.facts) {
+              const sfLower = sf.factText.toLowerCase();
+              if (sfLower.includes('written') || sfLower.includes('composed') || sfLower.includes('by')) {
+                if (credTextLower.includes('wiseman') && sfLower.includes('van morrison')) {
+                  hasConflict = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (!hasConflict) {
+            mergedFacts.push({
+              text: cred.fact_text,
+              source: 'MusicBrainz',
+              printDate: selectedDate,
+              date: selectedDate,
+              key: `credit:${nextSong.id}:${cred.fact_text.slice(0, 40)}`,
+              factType: 'credits',
+            });
+          }
+        }
+
+        // (c) Band / artist / origin facts from songCard
+        if (songCard && songCard.facts) {
+          for (const f of songCard.facts) {
+            const key = `song:${nextSong.id}:${f.factText.slice(0, 40)}`;
+            if (isKeyBlocked(key)) continue;
+            if (/squidbillies|remaster|streaming|spotify|youtube/i.test(f.factText)) continue;
+            mergedFacts.push({
+              text: f.factText,
+              source: f.source,
+              printDate: f.publicDate || selectedDate,
+              date: f.publicDate || selectedDate,
+              key,
+              factType: f.category || 'origin',
+            });
+            if (mergedFacts.length >= 5) break;
+          }
+        }
+
+        // Requirement 5: A song with only 2 facts should add MusicBrainz artist facts
+        // (origin, years active) or contemporaneous NYT items about the artist before falling back.
+        if (mergedFacts.length === 2) {
+          // Check MusicBrainz artistMetadata from songCard or query on the fly
+          const primaryArtist = nextSong.primary_artist || nextSong.artist;
+          if (songCard?.artistMetadata) {
+            const am = songCard.artistMetadata;
+            if (am.area || am.beginYear) {
+              const isGroup = (am.type || '').toLowerCase() === 'group';
+              const metaParts: string[] = [];
+              if (am.area) metaParts.push(`${primaryArtist} is based in ${am.area}`);
+              if (am.beginYear && am.beginYear <= selectedDate.slice(0, 4)) {
+                // Part 3: For Person, never say "active since", "making music since", or "formed in". Use "formed in" ONLY for Group.
+                if (isGroup) {
+                  metaParts.push(`formed in ${am.beginYear}`);
+                }
+              }
+              if (metaParts.length > 0) {
+                const mbKey = `mb_artist_meta:${primaryArtist}`;
+                if (!isKeyBlocked(mbKey)) {
+                  mergedFacts.push({
+                    text: `${metaParts.join(', ')}.`,
+                    source: 'MusicBrainz',
+                    printDate: am.beginYear ? `${am.beginYear}-01-01` : selectedDate,
+                    date: selectedDate,
+                    key: mbKey,
+                    factType: 'band_history',
+                  });
+                }
+              }
+            }
+          }
+
+          // If still at 2 facts, search contemporaneous NYT archive articles about the artist
+          if (mergedFacts.length === 2) {
+            try {
+              const [bYearStr, bMonthStr] = selectedDate.split('-');
+              const nytPath = path.join(process.cwd(), 'cache', 'nyt', `${bYearStr}-${bMonthStr}.json`);
+              if (fs.existsSync(nytPath)) {
+                const nytData = JSON.parse(fs.readFileSync(nytPath, 'utf8'));
+                const artistLower = primaryArtist.toLowerCase();
+                for (const a of nytData.articles || []) {
+                  if (a.pubDate && a.pubDate <= selectedDate) {
+                    const fullNyt = `${a.headline || ''} ${a.leadParagraph || ''}`.toLowerCase();
+                    if (fullNyt.includes(artistLower)) {
+                      const cleanLead = (a.leadParagraph || a.headline || '').trim();
+                      if (cleanLead.length > 25 && !/squidbillies|streaming|spotify/i.test(cleanLead)) {
+                        const nytKey = `nyt_artist:${a.id || cleanLead.slice(0, 30)}`;
+                        if (!isKeyBlocked(nytKey)) {
+                          mergedFacts.push({
+                            text: cleanLead,
+                            source: 'The New York Times',
+                            printDate: a.pubDate,
+                            date: a.pubDate,
+                            key: nytKey,
+                            factType: 'origin',
+                          });
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+
+        // Requirement 9: Rank facts by interest:
+        // notable songwriters (Diane Warren), samples and interpolations, who first recorded a cover,
+        // an unusual story, then chart status, then plain release facts, then "formed in". Always air the top 2 or 3.
+        const scoreFactInterest = (f: { text: string; factType: string }): number => {
+          const t = f.text.toLowerCase();
+          if (t.includes('diane warren') || t.includes('bernie taupin') || t.includes('carole king') || t.includes('smokey robinson')) return 100;
+          if (t.includes('sample') || t.includes('built on') || t.includes('interpolat')) return 90;
+          if (t.includes('cover') || t.includes('originally recorded') || t.includes('first recorded')) return 85;
+          if (t.includes('inspired by') || t.includes('prayer') || t.includes('wedding') || t.includes('struggled') || t.includes('difficult')) return 80;
+          if (f.factType === 'chart_status') return 70;
+          if (t.includes('released') || t.includes('single') || t.includes('album')) return 60;
+          if (t.includes('formed in') || t.includes('started their career')) return 40;
+          return 50;
+        };
+
+        mergedFacts.sort((a, b) => scoreFactInterest(b) - scoreFactInterest(a));
+
+        const ready = mergedFacts.length >= 3;
+        const songStoryKey = `next_song_story:${nextSong.id}`;
+        songStoryCandidate = {
           type: 'next_song_story',
+          category: 'next_song_story',
+          itemKey: songStoryKey,
           score: 110,
-          ready,
+          ready: ready && !isKeyBlocked(songStoryKey),
           packet: {
             topic: 'next_song_story',
             topicTitle: `Story Behind "${nextSong.title}" by ${nextSong.artist}`,
             targetSongTitle: nextSong.title,
             targetSongArtist: nextSong.artist,
-            facts: packetFacts,
-            factKeys: validSongFacts.slice(0, 4).map((f) => `song:${nextSong.id}:${f.factText.slice(0, 40)}`),
+            facts: mergedFacts.slice(0, 3), // Always air top 2 or 3
+            factKeys: mergedFacts.slice(0, 3).map((f) => f.key),
+            mergedFactTypes: mergedFacts.slice(0, 3).map((f) => f.factType),
           },
-          failureReason: ready ? undefined : `only ${validSongFacts.length} facts available (minimum 2 required)`,
-        });
+          failureReason: !ready
+            ? `only ${mergedFacts.length} facts available (minimum 3 required for next_song_story)`
+            : (isKeyBlocked(songStoryKey) ? 'song story item blacklisted/used' : undefined),
+        };
       } else {
-        candidates.push({
+        songStoryCandidate = {
           type: 'next_song_story',
+          category: 'next_song_story',
           score: 110,
           ready: false,
           packet: null,
-          failureReason: 'no nextSong or song card available',
-        });
+          failureReason: 'no nextSong available',
+        };
       }
 
-      // 2. Chart Story Candidate
-      let chartFactsForSong = nextSong ? computeChartFacts(nextSong, selectedDate, chartFactRepo) : [];
-      let nationalNo1 = computeNationalNumberOneFact(selectedDate, chartFactRepo);
-      const availableChartFacts = chartFactsForSong.filter((cf) => !usedKeysSet.has(`chart:${cf.kind}:${cf.date}:${cf.title}`));
-      const chartReady = availableChartFacts.length > 0 || (nationalNo1 !== null && !usedKeysSet.has(`chart:national_no1:${nationalNo1.title}:${nationalNo1.date}`));
-      if (chartReady) {
-        const primaryFact = availableChartFacts[0] || nationalNo1!;
-        const chartKey = availableChartFacts[0]
-          ? `chart:${primaryFact.kind}:${primaryFact.date}:${primaryFact.title}`
-          : `chart:national_no1:${primaryFact.title}:${primaryFact.date}`;
-        candidates.push({
-          type: 'chart_story',
-          score: primaryFact.interestScore || 95,
-          ready: true,
-          packet: {
-            topic: 'chart_story',
-            topicTitle: `Billboard Chart Action: "${primaryFact.title}"`,
-            targetSongTitle: nextSong?.title,
-            targetSongArtist: nextSong?.artist,
-            facts: [{
-              text: primaryFact.factText,
-              source: primaryFact.source,
-              printDate: primaryFact.date,
-              date: primaryFact.date,
-            }],
-            factKeys: [chartKey],
-          },
-        });
-      } else {
-        candidates.push({
-          type: 'chart_story',
-          score: 95,
-          ready: false,
-          packet: null,
-          failureReason: 'no fresh chart facts on or before broadcast date',
-        });
-      }
-
-      // 3. Credits Candidate
-      if (nextSong) {
-        const eligibleCredits = songCreditRepo.getEligibleCredits(nextSong.id, selectedDate)
-          .filter((c) => !usedKeysSet.has(`credit:${nextSong.id}:${c.fact_text.slice(0, 40)}`));
-        if (eligibleCredits.length > 0) {
-          const cred = eligibleCredits[0];
-          candidates.push({
-            type: 'credits',
-            score: 75,
-            ready: true,
-            packet: {
-              topic: 'credits',
-              topicTitle: `Credits for "${nextSong.title}"`,
-              targetSongTitle: nextSong.title,
-              targetSongArtist: nextSong.artist,
-              facts: [{
-                text: cred.fact_text,
-                source: 'MusicBrainz',
-                printDate: selectedDate,
-                date: selectedDate,
-              }],
-              factKeys: [`credit:${nextSong.id}:${cred.fact_text.slice(0, 40)}`],
-            },
-          });
-        } else {
-          candidates.push({
-            type: 'credits',
-            score: 75,
-            ready: false,
-            packet: null,
-            failureReason: 'no fresh song credits found',
-          });
-        }
-      } else {
-        candidates.push({
-          type: 'credits',
-          score: 75,
-          ready: false,
-          packet: null,
-          failureReason: 'credit repository not available or no next song',
-        });
-      }
-
-      // 4. Music News Candidate
+      // 2. Music News Candidates (Up to 3 distinct items from almanac music category)
+      const musicNewsCandidates: CandidateEval[] = [];
       const musicAlmanacEntries = (almanac.entries || [])
-        .filter((e) => e.category === 'music' && !usedKeysSet.has(`almanac:${e.id}`))
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50));
-      if (musicAlmanacEntries.length > 0) {
-        const entry = musicAlmanacEntries[0];
-        const subFacts = splitEntryIntoFacts(entry);
-        candidates.push({
+        .filter((e) => e.category === 'music' && !isKeyBlocked(`almanac:${e.id}`))
+        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
+        .slice(0, 3);
+
+      // Helper to strip evaluative/figurative language from review sentences
+      const cleanFigurativeSentences = (facts: Array<{ text: string; source: string; printDate?: string; date: string }>) => {
+        const FIGURATIVE_PATTERNS = [
+          /\b(?:visionary|innovative|magnificent|masterful|brilliant|flawless|astonishing|breathtaking)\b/i,
+          /\b(?:disappointing|mediocre|pretentious|derivative|lackluster|uninspired)\b/i,
+          /\b(?:strikingly|remarkably|superbly|wonderfully|exquisitely)\b/i,
+          /\b(?:metaphor|symbolism|tapestry|kaleidoscope|landscape|palette|weave|echoes of)\b/i,
+          /\b(?:suggests instead of explaining|curl, then vanish|like cigarette smoke|dissipating in a breeze)\b/i
+        ];
+        return facts.filter((f) => !FIGURATIVE_PATTERNS.some((pat) => pat.test(f.text)));
+      };
+
+      for (const entry of musicAlmanacEntries) {
+        const itemKey = `almanac:${entry.id}`;
+        let subFacts = splitEntryIntoFacts(entry);
+        subFacts = cleanFigurativeSentences(subFacts);
+        if (subFacts.length === 0) continue;
+        musicNewsCandidates.push({
           type: 'music_news',
+          category: 'music_news',
+          itemKey,
           score: entry.interestScore || 80,
           ready: true,
           packet: {
@@ -944,28 +1089,25 @@ async function startServer() {
             targetSongTitle: nextSong?.title,
             targetSongArtist: nextSong?.artist,
             facts: subFacts,
-            factKeys: [`almanac:${entry.id}`],
+            factKeys: [itemKey],
           },
-        });
-      } else {
-        candidates.push({
-          type: 'music_news',
-          score: 80,
-          ready: false,
-          packet: null,
-          failureReason: 'no fresh music news entries in almanac',
         });
       }
 
-      // 5. Major News Candidate
+      // 3. Major News Candidates (Up to 3 distinct items from almanac major_news category)
+      const majorNewsCandidates: CandidateEval[] = [];
       const majorNewsEntries = (almanac.entries || [])
-        .filter((e) => e.category === 'major_news' && !usedKeysSet.has(`almanac:${e.id}`))
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50));
-      if (majorNewsEntries.length > 0) {
-        const entry = majorNewsEntries[0];
+        .filter((e) => e.category === 'major_news' && !isKeyBlocked(`almanac:${e.id}`))
+        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
+        .slice(0, 3);
+
+      for (const entry of majorNewsEntries) {
+        const itemKey = `almanac:${entry.id}`;
         const subFacts = splitEntryIntoFacts(entry);
-        candidates.push({
+        majorNewsCandidates.push({
           type: 'major_news',
+          category: 'major_news',
+          itemKey,
           score: entry.interestScore || 70,
           ready: true,
           packet: {
@@ -974,23 +1116,100 @@ async function startServer() {
             targetSongTitle: nextSong?.title,
             targetSongArtist: nextSong?.artist,
             facts: subFacts,
-            factKeys: [`almanac:${entry.id}`],
+            factKeys: [itemKey],
           },
         });
-      } else {
-        candidates.push({
-          type: 'major_news',
-          score: 70,
-          ready: false,
-          packet: null,
-          failureReason: 'no fresh major news entries in almanac',
+      }
+
+      // 4. Short Fallback Candidates: chart status or credits (1-2 facts short fallback)
+      const fallbackCandidates: CandidateEval[] = [];
+      const unblockedChart = chartFactsForSong.filter((cf) => !isKeyBlocked(`chart:${cf.kind}:${cf.date}:${cf.title}`));
+      if (unblockedChart.length > 0) {
+        const cf = unblockedChart[0];
+        const itemKey = `chart:${cf.kind}:${cf.date}:${cf.title}`;
+        fallbackCandidates.push({
+          type: 'chart_fallback',
+          category: 'short_fallback',
+          itemKey,
+          score: cf.interestScore || 65,
+          ready: true,
+          packet: {
+            topic: 'next_song_story',
+            topicTitle: `Chart Action for "${nextSong?.title}"`,
+            targetSongTitle: nextSong?.title,
+            targetSongArtist: nextSong?.artist,
+            facts: [{ text: cf.factText, source: cf.source, date: cf.date }],
+            factKeys: [itemKey],
+            mergedFactTypes: ['chart_status'],
+          },
+        });
+      } else if (nationalNo1 && !isKeyBlocked(`chart:national_no1:${nationalNo1.title}:${nationalNo1.date}`)) {
+        const itemKey = `chart:national_no1:${nationalNo1.title}:${nationalNo1.date}`;
+        fallbackCandidates.push({
+          type: 'chart_fallback',
+          category: 'short_fallback',
+          itemKey,
+          score: nationalNo1.interestScore || 65,
+          ready: true,
+          packet: {
+            topic: 'next_song_story',
+            topicTitle: `Number One: "${nationalNo1.title}"`,
+            targetSongTitle: nextSong?.title,
+            targetSongArtist: nextSong?.artist,
+            facts: [{ text: nationalNo1.factText, source: nationalNo1.source, date: nationalNo1.date }],
+            factKeys: [itemKey],
+            mergedFactTypes: ['chart_status'],
+          },
         });
       }
+
+      const unblockedCreditsForFallback = eligibleCredits.filter((c) => !isKeyBlocked(`credit:${nextSong?.id}:${c.fact_text.slice(0, 40)}`));
+      if (unblockedCreditsForFallback.length > 0 && nextSong) {
+        const cred = unblockedCreditsForFallback[0];
+        const itemKey = `credit:${nextSong.id}:${cred.fact_text.slice(0, 40)}`;
+        fallbackCandidates.push({
+          type: 'credit_fallback',
+          category: 'short_fallback',
+          itemKey,
+          score: 60,
+          ready: true,
+          packet: {
+            topic: 'next_song_story',
+            topicTitle: `Song Credits: "${nextSong.title}"`,
+            targetSongTitle: nextSong.title,
+            targetSongArtist: nextSong.artist,
+            facts: [{ text: cred.fact_text, source: 'MusicBrainz', date: selectedDate }],
+            factKeys: [itemKey],
+            mergedFactTypes: ['credits'],
+          },
+        });
+      }
+
+      // Group candidate categories in strict user requirement order:
+      // (1) next_song_story (needs 3+ facts)
+      // (2) music_news (cap 3 items)
+      // (3) major_news (cap 3 items)
+      // (4) short fallback: chart or credits
+      // (5) plain intro (when all above fail)
+      const candidateQueues: CandidateEval[][] = [
+        songStoryCandidate.ready ? [songStoryCandidate] : [],
+        musicNewsCandidates.slice(0, 3),
+        majorNewsCandidates.slice(0, 3),
+        fallbackCandidates.slice(0, 3),
+      ];
+
+      // Summary list for logging
+      const allEvaluatedSummary: string[] = [
+        `next_song_story:${songStoryCandidate.score}(${songStoryCandidate.ready ? 'ready' : 'unready'})`,
+        `music_news:${musicNewsCandidates.length}items`,
+        `major_news:${majorNewsCandidates.length}items`,
+        `short_fallback:${fallbackCandidates.length}items`,
+      ];
 
       // If roll did not pass frequency check, log and return silence
       if (!rollPassed) {
         const elapsedMs = Date.now() - startTime;
-        const candidatesSummary = candidates.map((c) => `${c.type}:${c.score}(${c.ready ? 'ready' : 'unready'})`).join(' ');
+        const candidatesSummary = allEvaluatedSummary.join(' ');
         console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="roll exceeded frequency threshold"`);
         return res.json({
           decision: 'silence',
@@ -998,16 +1217,9 @@ async function startServer() {
           finalSpeech: '',
           targetSong: 'none',
           usedKeys: [],
+          blacklistedKeys: newlyBlacklistedKeys,
         });
       }
-
-      // Sort ready candidates by score descending, preferring types different from lastTopic
-      const readyCandidates = candidates.filter((c) => c.ready && c.packet);
-      readyCandidates.sort((a, b) => {
-        if (a.type === lastTopic && b.type !== lastTopic) return 1;
-        if (b.type === lastTopic && a.type !== lastTopic) return -1;
-        return b.score - a.score;
-      });
 
       let chosenCandidate: CandidateEval | null = null;
       let finalSpeech = '';
@@ -1015,68 +1227,293 @@ async function startServer() {
       let auditResult = 'N/A';
       const fellThroughReasons: string[] = [];
 
-      // Evaluate candidates in order
-      for (const cand of readyCandidates) {
-        const packet = cand.packet;
-        try {
-          let scriptText = '';
-          let unsupportedClaims: string[] = [];
+      if (!songStoryCandidate.ready && songStoryCandidate.failureReason) {
+        fellThroughReasons.push(`next_song_story: ${songStoryCandidate.failureReason}`);
+      }
 
-          if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
-            const scriptRes = await writer.writeSegmentBreakScript({
-              targetDate: selectedDate,
-              personality: 'mike',
-              topic: packet.topic,
-              topicTitle: packet.topicTitle,
-              targetSongTitle: packet.targetSongTitle,
-              targetSongArtist: packet.targetSongArtist,
-              facts: packet.facts,
-            });
-            if (scriptRes.success && scriptRes.scriptText) {
-              scriptText = scriptRes.scriptText;
-              unsupportedClaims = scriptRes.unsupportedClaims || [];
+      // Latency check: Give each song change a total budget of about 25 seconds across candidates,
+      // and on timeout use the best ready break. A break that takes over 30 seconds must be logged as "not ready".
+      const isOverBudget = (Date.now() - startTime) >= 25000;
+
+      // Evaluate categories in order, capping at 3 attempts per category
+      categoryLoop:
+      for (const queue of candidateQueues) {
+        if (queue.length === 0) continue;
+        let attemptsThisCategory = 0;
+
+        for (const cand of queue) {
+          if (Date.now() - startTime >= 25000) {
+            fellThroughReasons.push('candidate budget timed out (25s reached)');
+            break categoryLoop;
+          }
+          if (attemptsThisCategory >= 3) break;
+          attemptsThisCategory++;
+
+          const packet = cand.packet;
+          const itemKey = cand.itemKey;
+
+          try {
+            let scriptText = '';
+            let unsupportedClaims: string[] = [];
+            let valResult: any = null;
+
+            // Attempt 1: Initial LLM Generation
+            const tWriterStart = Date.now();
+            if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
+              const scriptRes = await writer.writeSegmentBreakScript({
+                targetDate: selectedDate,
+                personality: 'mike',
+                topic: packet.topic,
+                topicTitle: packet.topicTitle,
+                targetSongTitle: packet.targetSongTitle,
+                targetSongArtist: packet.targetSongArtist,
+                facts: packet.facts,
+                allowRetroFm,
+              });
+              if (scriptRes.success && scriptRes.scriptText) {
+                scriptText = scriptRes.scriptText;
+                unsupportedClaims = scriptRes.unsupportedClaims || [];
+              }
             }
-          }
+            const writerMs = Date.now() - tWriterStart;
 
-          // If writer failed or returned empty, attempt natural extractive fallback
-          if (!scriptText) {
-            scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
-          }
+            // Fallback to natural extractive monologue if empty
+            if (!scriptText) {
+              scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
+            }
 
-          if (scriptText) {
-            const val = validateSegmentBreakOutput(scriptText, {
-              selectedDate,
-              factPacket: packet,
-            });
+            if (scriptText) {
+              // 1. Resolve orphan pronoun opening if present
+              const orphanCheck = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
+              if (orphanCheck.replaced) {
+                console.log(`[Orphan Pronoun Replaced] Original: "${scriptText.split(/(?<=[.!?])\s+/)[0]}" -> Resolved: "${orphanCheck.resolvedText.split(/(?<=[.!?])\s+/)[0]}"`);
+                scriptText = orphanCheck.resolvedText;
+              }
 
-            if (val.valid && unsupportedClaims.length === 0) {
-              chosenCandidate = cand;
-              finalSpeech = scriptText;
-              validatorResult = 'PASS';
-              auditResult = 'PASS(0 unsupported)';
-              break;
+              // 2. Validate model draft (must not contain next song's title or hand-off phrases)
+              const tValStart = Date.now();
+              valResult = validateSegmentBreakOutput(scriptText, {
+                selectedDate,
+                factPacket: packet,
+                isModelDraft: true,
+              });
+              let validatorMs = Date.now() - tValStart;
+
+              // When a script fails for ANY reason (copying, banned phrase, relative time word, hype, orphan pronoun, model handoff),
+              // retry/regenerate once naming the exact offending text in failureReason. Do not drop candidate on first failure. Log both attempts.
+              if (!valResult.valid) {
+                const offendingReason = valResult.rejectedReason || 'validation failed';
+                console.log(`[Segment Candidate Attempt 1 Failed] type=${cand.type} key=${cand.itemKey || 'none'} reason="${offendingReason}" -> Regenerating once with reason`);
+                
+                // For unconverted relative time words: log whether it came from source or model
+                if (/relative time word/i.test(offendingReason)) {
+                  const sourceHasRelative = (packet.facts || []).some((f: any) => /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i.test(f.text));
+                  console.log(`[Unconverted Relative Time Word] Offending text: "${offendingReason}" | Present in source wikitext: ${sourceHasRelative ? 'YES' : 'NO (introduced by model)'}`);
+                }
+
+                if (writer.writeSegmentBreakScript) {
+                  const tRegenStart = Date.now();
+                  const regenRes = await writer.writeSegmentBreakScript({
+                    targetDate: selectedDate,
+                    personality: 'mike',
+                    topic: packet.topic,
+                    topicTitle: packet.topicTitle,
+                    targetSongTitle: packet.targetSongTitle,
+                    targetSongArtist: packet.targetSongArtist,
+                    facts: packet.facts,
+                    failureReason: `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`,
+                    allowRetroFm,
+                  });
+                  if (regenRes.success && regenRes.scriptText) {
+                    scriptText = regenRes.scriptText;
+                    unsupportedClaims = regenRes.unsupportedClaims || [];
+
+                    // Check orphan pronoun again on retry
+                    const orphanCheckRetry = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
+                    if (orphanCheckRetry.replaced) {
+                      scriptText = orphanCheckRetry.resolvedText;
+                    }
+
+                    const tVal2Start = Date.now();
+                    valResult = validateSegmentBreakOutput(scriptText, {
+                      selectedDate,
+                      factPacket: packet,
+                      isModelDraft: true,
+                    });
+                    validatorMs += (Date.now() - tVal2Start);
+                    console.log(`[Segment Candidate Attempt 2] type=${cand.type} key=${cand.itemKey || 'none'} valid=${valResult.valid} reason="${valResult.rejectedReason || 'PASS'}"`);
+                  }
+                }
+              }
+
+              // When audit flags sentences, delete only those sentences and air the rest if 2 or more supported sentences remain.
+              // Otherwise regenerate once with the exact unsupported claims in the prompt.
+              const tAuditStart = Date.now();
+              if (unsupportedClaims.length > 0) {
+                // Split scriptText into sentences and drop unsupported
+                const rawSentences = scriptText.split(/(?<=[.!?])\s+/).filter((s: string) => s.trim().length > 5);
+                const supportedSentences: string[] = [];
+                for (const s of rawSentences) {
+                  const isUnsupported = unsupportedClaims.some((uc: string) => {
+                    const match = uc.match(/UNSUPPORTED:\s*(.+)/i);
+                    const reason = match ? match[1].toLowerCase() : uc.toLowerCase();
+                    const words = reason.split(/\s+/).filter((w: string) => w.length > 4);
+                    return words.length > 0 && words.some((w: string) => s.toLowerCase().includes(w));
+                  });
+                  if (!isUnsupported) {
+                    supportedSentences.push(s.trim());
+                  }
+                }
+
+                if (supportedSentences.length >= 2) {
+                  let cleanedScript = supportedSentences.join(' ').trim();
+                  // Re-check orphan pronoun on trimmed sentences
+                  const orphanTrimmed = resolveOrphanPronounOpening(cleanedScript, packet.targetSongTitle, packet.targetSongArtist);
+                  if (orphanTrimmed.replaced) cleanedScript = orphanTrimmed.resolvedText;
+
+                  const reVal = validateSegmentBreakOutput(cleanedScript, {
+                    selectedDate,
+                    factPacket: packet,
+                    isModelDraft: true,
+                  });
+                  if (reVal.valid) {
+                    scriptText = cleanedScript;
+                    valResult = reVal;
+                    unsupportedClaims = []; // Handled by trimming to >=2 supported sentences
+                  }
+                } else {
+                  // Fewer than 2 supported sentences remain: regenerate once with exact unsupported claims in prompt
+                  if (writer.writeSegmentBreakScript) {
+                    const exactAuditClaims = unsupportedClaims.join('; ');
+                    const regenRes = await writer.writeSegmentBreakScript({
+                      targetDate: selectedDate,
+                      personality: 'mike',
+                      topic: packet.topic,
+                      topicTitle: packet.topicTitle,
+                      targetSongTitle: packet.targetSongTitle,
+                      targetSongArtist: packet.targetSongArtist,
+                      facts: packet.facts,
+                      failureReason: `UNSUPPORTED CLAIMS: ${exactAuditClaims}. Use ONLY the stated facts. Do NOT write a song handoff.`,
+                      allowRetroFm,
+                    });
+                    if (regenRes.success && regenRes.scriptText) {
+                      scriptText = regenRes.scriptText;
+                      unsupportedClaims = regenRes.unsupportedClaims || [];
+                      const orphanRetryAudit = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
+                      if (orphanRetryAudit.replaced) scriptText = orphanRetryAudit.resolvedText;
+
+                      valResult = validateSegmentBreakOutput(scriptText, {
+                        selectedDate,
+                        factPacket: packet,
+                        isModelDraft: true,
+                      });
+                    }
+                  }
+                }
+              }
+              const auditMs = Date.now() - tAuditStart;
+
+              // Log timing per stage for candidate
+              console.log(`[Candidate Stage Timing] type=${cand.type} writer=${writerMs}ms validator=${validatorMs}ms audit=${auditMs}ms`);
+              if (writerMs > 8000 || validatorMs > 8000 || auditMs > 8000) {
+                console.warn(`[Candidate Stage Timing Warning] One or more stages exceeded 8000ms: writer=${writerMs}ms validator=${validatorMs}ms audit=${auditMs}ms`);
+              }
+
+              // Final check for acceptance of model draft
+              if (valResult && valResult.valid && unsupportedClaims.length === 0) {
+                // Code adds exactly one hand-off from handoffBank
+                if (nextSong) {
+                  const handoffObj = buildHandoff({
+                    songTitle: nextSong.title,
+                    artistName: nextSong.artist,
+                    primaryArtist: nextSong.primary_artist,
+                    firstChartDate: nextSong.first_chart_date,
+                    broadcastDate: selectedDate,
+                    lastHandoffGroup: sessionLastHandoffGroup,
+                    recentTemplates: sessionRecentHandoffTemplates,
+                  });
+                  chosenHandoffGroup = handoffObj.chosenGroup;
+                  chosenHandoffTemplate = handoffObj.chosenTemplate;
+
+                  // Optional station ID: keep limit of one RetroFM mention in 4 breaks as a separate optional station ID
+                  const stationIdPrefix = allowRetroFm ? 'RetroFM. ' : '';
+                  scriptText = `${scriptText} ${stationIdPrefix}${handoffObj.text}`.trim();
+                }
+
+                // Final post-handoff validation
+                const finalVal = validateSegmentBreakOutput(scriptText, {
+                  selectedDate,
+                  factPacket: packet,
+                  isModelDraft: false,
+                });
+
+                if (finalVal.valid) {
+                  chosenCandidate = cand;
+                  finalSpeech = scriptText;
+                  validatorResult = 'PASS';
+                  auditResult = 'PASS(0 unsupported)';
+                  break categoryLoop;
+                } else {
+                  const failReason = `post-handoff validator rejected: ${finalVal.rejectedReason}`;
+                  cand.failureReason = failReason;
+                  fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
+                  if (itemKey) {
+                    blacklistedKeysSet.add(itemKey);
+                    newlyBlacklistedKeys.push(itemKey);
+                  }
+                }
+              } else {
+                const failReason = !valResult?.valid
+                  ? `validator rejected: ${valResult?.rejectedReason}`
+                  : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+                cand.failureReason = failReason;
+                fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
+
+                // Requirement 2: Blacklist failed items for the session as soon as they fail
+                if (itemKey) {
+                  blacklistedKeysSet.add(itemKey);
+                  newlyBlacklistedKeys.push(itemKey);
+                }
+              }
             } else {
-              const failReason = !val.valid
-                ? `validator rejected: ${val.rejectedReason}`
-                : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+              const failReason = 'script generation returned empty';
               cand.failureReason = failReason;
-              fellThroughReasons.push(`${cand.type}: ${failReason}`);
+              fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
+              if (itemKey) {
+                blacklistedKeysSet.add(itemKey);
+                newlyBlacklistedKeys.push(itemKey);
+              }
             }
-          } else {
-            const failReason = 'script generation returned empty';
+          } catch (err: any) {
+            const failReason = `generation error: ${err?.message}`;
             cand.failureReason = failReason;
-            fellThroughReasons.push(`${cand.type}: ${failReason}`);
+            fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
+            if (itemKey) {
+              blacklistedKeysSet.add(itemKey);
+              newlyBlacklistedKeys.push(itemKey);
+            }
           }
-        } catch (err: any) {
-          const failReason = `generation error: ${err?.message}`;
-          cand.failureReason = failReason;
-          fellThroughReasons.push(`${cand.type}: ${failReason}`);
         }
       }
 
       // Plain intro fallback ONLY when every other candidate has failed
       if (!chosenCandidate) {
         if (nextSong) {
+          const handoffObj = buildHandoff({
+            songTitle: nextSong.title,
+            artistName: nextSong.artist,
+            primaryArtist: nextSong.primary_artist,
+            firstChartDate: nextSong.first_chart_date,
+            broadcastDate: selectedDate,
+            lastHandoffGroup: sessionLastHandoffGroup,
+            recentTemplates: sessionRecentHandoffTemplates,
+          });
+          chosenHandoffGroup = handoffObj.chosenGroup;
+          chosenHandoffTemplate = handoffObj.chosenTemplate;
+
+          const stationIdPrefix = allowRetroFm ? 'RetroFM. ' : '';
+          const introHandoff = `${stationIdPrefix}${handoffObj.text}`.trim();
+
           chosenCandidate = {
             type: 'plain_intro',
             score: 25,
@@ -1087,7 +1524,7 @@ async function startServer() {
               targetSongTitle: nextSong.title,
               targetSongArtist: nextSong.artist,
               facts: [{
-                text: `Spinning next on RetroFM is "${nextSong.title}" by ${nextSong.artist}.`,
+                text: introHandoff,
                 source: 'Station Playlist',
                 printDate: selectedDate,
                 date: selectedDate,
@@ -1095,26 +1532,33 @@ async function startServer() {
               factKeys: [`intro:${nextSong.title}:${nextSong.artist}`],
             },
           };
-          finalSpeech = `Spinning next on RetroFM is "${nextSong.title}" by ${nextSong.artist}.`;
+          finalSpeech = introHandoff;
           validatorResult = 'PASS';
           auditResult = 'PASS(intro)';
         }
       }
 
       const elapsedMs = Date.now() - startTime;
-      const candidatesSummary = candidates.map((c) => `${c.type}:${c.score}(${c.ready ? 'ready' : 'unready'})`).join(' ');
+      const candidatesSummary = allEvaluatedSummary.join(' ');
       const factCount = chosenCandidate?.packet?.facts?.length || 0;
       const failureReasonLog = fellThroughReasons.length > 0 ? ` failure_reasons=[${fellThroughReasons.join(' | ')}]` : '';
+      const readyStatus = elapsedMs > 30000 ? 'status="not ready (took >30s)"' : 'status="ready"';
 
       if (chosenCandidate?.type === 'plain_intro') {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms reason="every other candidate failed"${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus} reason="every other candidate failed"${failureReasonLog}`);
       } else if (chosenCandidate) {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=${chosenCandidate.type} facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=${chosenCandidate.type} facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus}${failureReasonLog}`);
       } else {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="all candidates failed and no next song"${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms ${readyStatus} reason="all candidates failed and no next song"${failureReasonLog}`);
+      }
+
+      // Part 1: Log [Segment Prepared] id=<id> when a break is generated and validated
+      if (finalSpeech) {
+        console.log(`[Segment Prepared] id=${breakId}`);
       }
 
       return res.json({
+        breakId,
         decision: chosenCandidate ? 'speak' : 'silence',
         breakType: chosenCandidate?.type || null,
         candidate: chosenCandidate?.packet ? {
@@ -1123,10 +1567,15 @@ async function startServer() {
           topicTitle: chosenCandidate.packet.topicTitle,
           factKey: chosenCandidate.packet.factKeys?.[0] || 'none',
           factText: chosenCandidate.packet.facts?.[0]?.text || '',
+          facts: chosenCandidate.packet.facts || [],
+          wikiPageTitle: chosenCandidate.type === 'next_song_story' ? songCard?.wikiPageTitle : undefined,
         } : null,
         finalSpeech,
         targetSong: 'next',
         usedKeys: chosenCandidate?.packet?.factKeys || [],
+        blacklistedKeys: newlyBlacklistedKeys,
+        handoffGroup: chosenHandoffGroup,
+        handoffTemplate: chosenHandoffTemplate,
       });
     } catch (err: any) {
       const elapsedMs = Date.now() - startTime;

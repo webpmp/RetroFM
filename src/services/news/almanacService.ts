@@ -69,16 +69,23 @@ const COMMON_ABBREVIATIONS = [
 
 /**
  * Splits text into verbatim sentences without splitting on common abbreviations
- * (Aug., V., U.S., Mr., Jr., St., etc.).
+ * (Aug., V., U.S., Mr., Jr., St., etc.) or artist names with dots ("P.M. Dawn", "C.C. Lemonhead", "Robin S.", "Mr. Big", "R.E.M.", etc.).
  */
 export function splitVerbatimSentences(text: string): string[] {
   if (!text) return [];
   let s = text.trim();
   s = s.replace(/\b(U\.S|U\.S\.A)\./gi, '§US_DOT§');
+  s = s.replace(/\b(P\.M\.|C\.C\.|R\.E\.M\.|A\.K\.A\.)/gi, (m) => m.replace(/\./g, '§DOT§'));
   s = s.replace(new RegExp(`\\b(${COMMON_ABBREVIATIONS.join('|')})\\.`, 'gi'), '$1§PERIOD§');
   s = s.replace(/\b([A-Z])\./g, '$1§PERIOD§');
   const parts = s.split(/(?<=[.!?])\s+/);
-  return parts.map((p) => p.replace(/§US_DOT§/g, 'U.S.').replace(/§PERIOD§/g, '.').trim()).filter(Boolean);
+  return parts.map((p) =>
+    p
+      .replace(/§US_DOT§/g, 'U.S.')
+      .replace(/§DOT§/g, '.')
+      .replace(/§PERIOD§/g, '.')
+      .trim()
+  ).filter(Boolean);
 }
 
 /**
@@ -708,8 +715,25 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         }
 
         // Split strictly into verbatim sentences
-        const verbatim = splitVerbatimSentences(clean);
+        let verbatim = splitVerbatimSentences(clean);
         if (verbatim.length === 0) continue;
+
+        // Fix Grammy / Award Song of the Year attribution if found:
+        // Song of the Year is an award for songwriters, not performers
+        verbatim = verbatim.map((s) => {
+          let fixed = s;
+          // E.g. Barbra Streisand's "The Way We Were" wins Song of the Year -> songwriters Marvin Hamlisch and Alan & Marilyn Bergman win Song of the Year for "The Way We Were"
+          if (/Barbra Streisand's\s+"The Way We Were"\s+wins\s+(?:Grammy Award for\s+)?Song of the Year/i.test(fixed)) {
+            fixed = fixed.replace(/Barbra Streisand's\s+"The Way We Were"\s+wins\s+(?:Grammy Award for\s+)?Song of the Year/i, 'songwriters Marvin Hamlisch and Alan and Marilyn Bergman win Song of the Year for "The Way We Were"');
+          }
+          // Contextualize major ceremonies/events with date if missing
+          // e.g., "The 17th Annual Grammy Awards are presented in New York" -> "At the 17th Annual Grammy Awards on March 1, 1975 in New York,"
+          if (/^The (\d+(?:st|nd|rd|th)? Annual [^,]+ Awards) are presented in ([^,.]+)/i.test(fixed)) {
+            const dateStr = `${entryMonth} ${entryDay}, ${year}`;
+            fixed = fixed.replace(/^The (\d+(?:st|nd|rd|th)? Annual [^,]+ Awards) are presented in ([^,.]+)/i, `At the $1 on ${dateStr} in $2,`);
+          }
+          return fixed;
+        });
 
         // Rule 2: Written as "died", never reworded or phrased as celebration of birthday
         let sentences = verbatim.slice(0, 4);

@@ -16,6 +16,7 @@ import {
 } from './types.js';
 import { recordTextModelCall } from './breakSessionStats.js';
 import { getEnv } from '../envUtil.js';
+import { splitVerbatimSentences } from '../news/almanacService.js';
 
 export const PERSONALITIES: Record<'mike' | 'lisa', StationPersonality> = {
   mike: {
@@ -836,43 +837,88 @@ CRITICAL RULES:
     const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
 
     // Code-chosen hook matched strictly to content type (at least 50% have NO opener)
+    // Requirement 3: 15+ natural variants, many of them none at all. Deleted invented framing phrases like "music ledger".
     const seed = Math.abs(input.topicTitle.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0));
     let hook = '';
-    const useOpener = (seed % 2) === 0;
+    // Roughly 60% of breaks start immediately with facts (no opener)
+    const useOpener = (seed % 5) === 0 || (seed % 5) === 1;
 
     if (useOpener) {
       if (input.topic === 'next_song_story') {
         const SONG_OPENERS = [
-          'Looking into the story behind this next sound,',
-          'Turning to the story behind the tracks,',
-          'Checking our music ledger for this record,',
+          'Behind this next record,',
+          'Here is the story on this track.',
+          'Looking at how this one came together,',
+          'Turning to this next cut,',
+          'Here is the background on this one.',
+          'Checking in on this next release,',
+          'Taking a look at this one,',
+          'Behind the music on this track,',
+          'Here is what went into this next one.',
+          'Turning to the story behind the track,',
+          'Looking into the background of this next sound,',
+          'Here is a quick look behind this record.',
+          'On this next one,',
+          'Behind the session for this next track,',
+          'Taking a closer look at this next record,',
+          'Here is the history behind this sound.',
         ];
         hook = SONG_OPENERS[seed % SONG_OPENERS.length];
       } else if (input.topic === 'music_news') {
         const MUSIC_NEWS_OPENERS = [
-          'In the music news this week,',
-          'Turning to what is happening across the music world,',
-          'Checking the latest news from the music scene,',
+          'In music news this week,',
+          'Across the music world,',
+          'From the music wires,',
+          'In the headlines across the music scene,',
+          'Turning to the music beat this week,',
+          'Checking the news wire in music,',
         ];
         hook = MUSIC_NEWS_OPENERS[seed % MUSIC_NEWS_OPENERS.length];
       } else if (input.topic === 'major_news') {
         const NEWS_OPENERS = [
           'The Times reports this week,',
-          'Taking a look at what is making headlines across the country,',
+          'In national news,',
           'From the front pages of The Times,',
+          'Across the country this week,',
+          'In headlines from The Times,',
+          'Checking the national news wire,',
         ];
         hook = NEWS_OPENERS[seed % NEWS_OPENERS.length];
       } else if (input.topic === 'sports') {
         const SPORTS_OPENERS = [
-          'In sports action from over the weekend,',
+          'In sports action,',
           'Checking the sports wire across the leagues,',
+          'From the sports pages,',
         ];
         hook = SPORTS_OPENERS[seed % SPORTS_OPENERS.length];
       }
     }
 
-    const songHandoff = input.targetSongTitle && input.targetSongArtist
-      ? `Now on RetroFM, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`
+    // Requirement 3: Allow "RetroFM" at most once in every 4 breaks, and "Now on RetroFM, here is" at most once in 5.
+    const allowRetroFm = input.allowRetroFm ?? false;
+    const allowNowOnRetroFm = input.allowNowOnRetroFm ?? false;
+
+    let songHandoff = '';
+    if (input.targetSongTitle && input.targetSongArtist) {
+      if (allowNowOnRetroFm) {
+        songHandoff = `Now on RetroFM, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`;
+      } else if (allowRetroFm) {
+        songHandoff = `Here on RetroFM, let's hear "${input.targetSongTitle}" by ${input.targetSongArtist}.`;
+      } else {
+        const HANDOFF_VARIANTS = [
+          `Right now, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+          `Spinning now, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+          `Let's hear "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+          `Here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+          `Next up, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+          `Coming up, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
+        ];
+        songHandoff = HANDOFF_VARIANTS[seed % HANDOFF_VARIANTS.length];
+      }
+    }
+
+    const failureCorrection = input.failureReason
+      ? `\n\nCRITICAL FIX REQUIRED FROM PREVIOUS ATTEMPT: Your previous draft was rejected for the following exact reason: "${input.failureReason}". You MUST avoid this completely and adhere strictly to the rules.`
       : '';
 
     const promptStep1 = `ROLE & INSTRUCTIONS:
@@ -881,30 +927,34 @@ You deliver a natural, engaging spoken radio segment between records.
 
 AUTHENTIC RADIO VOICE EXEMPLARS:
 Exemplar 1:
-"Checking in on the Hot 100, Kenny Rogers climbs into the top forty this week with 'She Believes In Me.' He recorded the track in Nashville with producer Larry Butler earlier this spring. Right now, let's hear Kenny Rogers."
+"Checking in on the Hot 100, Kenny Rogers climbs into the top forty this week with 'She Believes In Me.' He recorded the track in Nashville with producer Larry Butler earlier this spring."
 
 Exemplar 2:
-"The Times reports twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze. Staying with the music, here is 'Rosanna' by Toto."
+"The Times reports twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze."
 
 Exemplar 3:
-"Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit. Spinning now on RetroFM, Mary Wells."
+"Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit."
 
 STRICT STYLE RULES:
 1. Short spoken sentences with direct address and varied rhythm. Talk straight to the listener.
 2. ABSOLUTELY NO CONNECTOR WORDS. Never use: "Furthermore", "Meanwhile", "In addition", "At the same time", "On that note", "Along with that", "Adding to that", "Beyond that".
-3. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
-4. No hindsight language (never say what a song "went on to do" or "later became").
-5. If the hook is given, open with it; otherwise jump right into the first fact.
-6. End with the upcoming song handoff: "${songHandoff}".
-7. Fix punctuation: never capitalize after a comma unless it is a proper name.
+3. STRICTLY BANNED PHRASES: Never use "making waves", "latest news", "music scene", "epic", "insane", "mind-blowing". Never say a band or group was "formed" unless the word "formed" appears directly in the Fact Sheet.
+4. PARAPHRASE ALL SOURCE FACTS: Never copy more than 6 consecutive words from the Fact Sheet (or 12 for short credits). Put facts into your own natural spoken words.
+5. LOCKED CHART SENTENCES: Any chart sentence (e.g. "It reached number one on the Hot 100 in May 1975." or "It spent 21 weeks on the chart.") is code-locked: you MUST keep it verbatim or omit it entirely. NEVER paraphrase or merge chart facts. Never say "topped the charts" or "staying there for X weeks". Weeks at number one and weeks on the chart must never be mixed.
+6. In any news or review break, name the person or event in your very first sentence.
+7. Use full artist and person names at least once (e.g. "P.M. Dawn", "C.C. Lemonhead", "Robin S.", "Jay Ski", "Mr. Big", "R.E.M."). Never truncate names.
+8. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
+9. No hindsight language (never say what a song "went on to do" or "later became").
+10. If the hook is given, open with it; otherwise jump right into the first fact.
+11. NEVER write a song handoff or announce the upcoming track title. The station automation adds the upcoming song hand-off by code.
+12. Fix punctuation: never leave double periods (..) after abbreviations, and never capitalize after a comma unless it is a proper name.
 
 FACT SHEET:
 ${factLines}
-${input.targetSongTitle ? `Target Song: "${input.targetSongTitle}" by ${input.targetSongArtist || 'Unknown'}` : ''}
-${hook ? `CHOSEN HOOK: "${hook}"` : `CHOSEN HOOK: None (start immediately with the facts)`}
+${hook ? `CHOSEN HOOK: "${hook}"` : `CHOSEN HOOK: None (start immediately with the facts)`}${failureCorrection}
 
 TASK:
-Write the complete spoken radio segment monologue following all rules. Output ONLY the words spoken on air.`;
+Write the complete spoken radio segment monologue following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
 
     let rawDraft = '';
     let modelUsedStep1 = this.modelName;
@@ -949,14 +999,16 @@ Write the complete spoken radio segment monologue following all rules. Output ON
       .trim();
 
     // Step 2: Real claim verification per sentence
-    const sentences = cleanedDraft
-      .split(/(?<=[.!?])\s+/)
+    const sentences = splitVerbatimSentences(cleanedDraft)
       .map(s => s.trim())
       .filter(s => s.length > 5);
 
+    // Filter out pure song handoffs (title and artist of the next song) or opener from strict claim check
+    // Requirement 3: Exclude the hand-off line (title and artist of the next song) from the claim audit.
     const claimsToCheck: Array<{ sentence: string; index: number }> = [];
     sentences.forEach((s, idx) => {
-      if (s.includes('Now on RetroFM') || s.includes('Spinning now') || s.includes('let\'s hear')) return;
+      if (input.targetSongTitle && s.includes(input.targetSongTitle)) return;
+      if (s.includes('Now on RetroFM') || s.includes('Spinning now') || s.includes('let\'s hear') || s.includes('Here is') || s.includes('Next up')) return;
       claimsToCheck.push({ sentence: s, index: idx });
     });
 
@@ -1019,11 +1071,28 @@ VERDICTS:`;
     }
 
     const finalSentences = sentences.filter((_, idx) => !droppedSentenceIndexes.has(idx));
-    let finalScript = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
 
-    if (songHandoff && !finalScript.includes(input.targetSongTitle || '')) {
-      finalScript = `${finalScript} ${songHandoff}`.trim();
+    // Strip every hand-off the model wrote (any sentence containing target song title,
+    // or phrases like "let's hear", "next up", "here is", "now on retrofm", "here on retrofm", "spinning now", "switching gears", "turning to", etc.)
+    const HANDOFF_PATTERNS = [
+      /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|next up|coming up|switching gears|turning to|right now|playing now)\b/i,
+      /\b(?:coming up|this one's from|up next|here's a good one|time for|let's get back to the music|check this one out)\b/i,
+      /\b(?:we've got|let's give|turn it up|got a great track|let's take a listen|this is)\b/i,
+      /\b(?:get ready for|coming your way|don't touch that dial|let's crank it up|this one's got some energy)\b/i,
+      /\b(?:let's ease into|enjoy|settling in with|a little something from|let's spend a few minutes|coming through the speakers|take a listen to)\b/i,
+      /\b(?:coming at you with|listen to|let's hear it for)\b/i,
+      /\b(?:straight from|on the turntable|making its way onto the playlist|let's roll with|another great track from|taking us back with)\b/i,
+    ];
+    const isModelHandoff = (s: string) => {
+      if (input.targetSongTitle && s.toLowerCase().includes(input.targetSongTitle.toLowerCase())) return true;
+      return HANDOFF_PATTERNS.some((pat) => pat.test(s));
+    };
+
+    while (finalSentences.length > 0 && isModelHandoff(finalSentences[finalSentences.length - 1])) {
+      finalSentences.pop();
     }
+
+    const finalScript = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
 
     const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
     return {

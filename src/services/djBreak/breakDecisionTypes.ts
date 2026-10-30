@@ -35,6 +35,9 @@ export interface BreakSelectionSessionState {
   totalBreaksSpoken: number;
   recentRhetoricalOpeners: number;
   breaksSinceLastNews: number;
+  breaksSinceLastRetroFm?: number;
+  lastHandoffGroup?: number | null;
+  recentHandoffTemplates?: string[];
   lastIntroTemplateIndex?: number;
   lastChartTemplateIndex?: number;
   lastCreditTemplateIndex?: number;
@@ -50,6 +53,9 @@ export function newBreakSelectionSessionState(): BreakSelectionSessionState {
     totalBreaksSpoken: 0,
     recentRhetoricalOpeners: 0,
     breaksSinceLastNews: 4, // eligible immediately on first break (cap is at most 1 in 4)
+    breaksSinceLastRetroFm: 4, // allow RetroFM at most once in every 4 breaks
+    lastHandoffGroup: null,
+    recentHandoffTemplates: [],
     lastIntroTemplateIndex: -1,
   };
 }

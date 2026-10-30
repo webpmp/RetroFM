@@ -35,6 +35,7 @@ export interface SongStoryCard {
   releaseDate: string | null;
   facts: SongFactItem[];
   droppedFacts?: Array<{ text: string; reason: string }>;
+  wikiPageTitle?: string;
   artistMetadata?: {
     country?: string;
     area?: string;
@@ -49,7 +50,7 @@ const SONG_CARD_CACHE_DIR = path.join(process.cwd(), 'cache', 'song_cards');
 /**
  * Hindsight language that implies post-broadcast knowledge or retrospective evaluations.
  */
-export const HINDSIGHT_REGEX = /\b(peaked|peaking|peaks|reached number|reached no|topped|topping|went on to|later|eventually|since|would|won|winning|nominated|nominating|certified|sold over|covered by|regarded as|regarded for|one of the best of all time|one of the best mastered|best-selling|best selling|signature song|signature sound|acclaim|acclaimed|posthumous|inducted|hall of fame|grammy|most commercially successful|highest-grossing|greatest songs?)\b/i;
+export const HINDSIGHT_REGEX = /\b(peaked|peaking|peaks|reached number|reached no|topped|topping|went on to|later|eventually|since|would|won|winning|nominated|nominating|certified|certification|platinum|gold record|multi-platinum|riaa|year-end|best-selling|best selling|has earned|sold over|covered by|regarded as|regarded for|one of the best of all time|one of the best mastered|signature song|signature sound|acclaim|acclaimed|posthumous|inducted|hall of fame|grammy|most commercially successful|highest-grossing|greatest songs?)\b/i;
 
 /**
  * Filter facts to strictly those knowable on or before broadcastDate.
@@ -125,29 +126,56 @@ function cleanWikiSentences(rawText: string): string[] {
 }
 
 /**
- * Searches and fetches Wikipedia summary extract for a song.
+ * Searches and fetches Wikipedia summary extract and page title for a song.
+ * Requirement 1:
+ * - Print the Wikipedia page title that was matched.
+ * - Accept a page only if its lead sentence contains both the song title and the artist (or a known alias);
+ *   otherwise discard the page.
  */
-async function fetchWikiSongExtract(title: string, artist: string): Promise<string> {
+async function fetchWikiSongExtract(
+  title: string,
+  artist: string,
+  aliases: string[] = []
+): Promise<{ extract: string; pageTitle: string } | null> {
   try {
     const query = `${title} ${artist} song`;
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json`;
     const sRes = await fetch(searchUrl, { headers: { 'User-Agent': 'RetroFM/1.0 (historical radio simulator)' } });
-    if (!sRes.ok) return '';
+    if (!sRes.ok) return null;
     const sData = await sRes.json();
     const top = sData.query?.search?.[0];
-    if (!top || !top.title) return '';
+    if (!top || !top.title) return null;
 
     const extUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&titles=${encodeURIComponent(top.title)}&format=json`;
     const eRes = await fetch(extUrl, { headers: { 'User-Agent': 'RetroFM/1.0 (historical radio simulator)' } });
-    if (!eRes.ok) return '';
+    if (!eRes.ok) return null;
     const eData = await eRes.json();
     const pages = eData.query?.pages || {};
     const firstPage = Object.values(pages)[0] as { extract?: string } | undefined;
     const extract = firstPage?.extract || '';
-    return extract;
+    if (!extract) return null;
+
+    // Requirement 1: Accept a page only if its lead sentence contains both the song title and the artist (or a known alias)
+    const sentences = splitVerbatimSentences(extract);
+    const leadSentence = (sentences[0] || '').toLowerCase();
+    const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanLead = leadSentence.replace(/[^a-z0-9]/g, '');
+
+    const hasTitle = cleanLead.includes(normTitle);
+
+    const artistTerms = [artist, ...aliases].map((a) => a.toLowerCase().replace(/[^a-z0-9]/g, '')).filter(Boolean);
+    const hasArtist = artistTerms.some((term) => cleanLead.includes(term) || term.split(/\s+/).some((w) => w.length > 3 && cleanLead.includes(w)));
+
+    if (!hasTitle || !hasArtist) {
+      console.log(`[SongStoryCard] Discarding Wikipedia page "${top.title}" for "${title}" by ${artist}: lead sentence failed title/artist match.`);
+      return null;
+    }
+
+    console.log(`[SongStoryCard] Wikipedia page matched for "${title}": "${top.title}"`);
+    return { extract, pageTitle: top.title };
   } catch (err) {
     console.warn(`[SongStoryCard] Failed to fetch wiki extract for ${title}:`, err);
-    return '';
+    return null;
   }
 }
 
@@ -263,7 +291,7 @@ export async function getOrBuildSongStoryCard(
       }
 
       let cat: SongFactItem['category'] = 'writer_story';
-      if (r.fact_text.includes('Based on') || r.fact_text.includes('Cover of')) {
+      if (r.fact_text.includes('Based on') || r.fact_text.includes('Cover of') || r.fact_text.includes('built on') || r.fact_text.includes('samples')) {
         cat = 'cover_original';
       } else if (r.fact_type === 'producer') {
         cat = 'origin';
@@ -276,6 +304,57 @@ export async function getOrBuildSongStoryCard(
         publicDate: pubDate,
         eventDate: r.event_date || pubDate,
       });
+
+      // Requirement 1: If MusicBrainz or Wikipedia says a song samples, covers, or is built on another,
+      // state that relation explicitly ("X is built on Y by Z") and only then add facts about the original,
+      // with dates on or before the broadcast date.
+      const matchAdaptation = r.fact_text.match(/(?:Based on|Cover of)\s+"([^"]+)"/i);
+      if (matchAdaptation) {
+        const origTitle = matchAdaptation[1];
+        try {
+          const origSongRow = database.prepare(`
+            SELECT id, title, artist, release_date, first_chart_date
+            FROM songs
+            WHERE title = ?
+            LIMIT 1
+          `).get(origTitle) as any;
+
+          if (origSongRow) {
+            const origReleaseDate = origSongRow.release_date || origSongRow.first_chart_date || '1960-01-01';
+            if (origReleaseDate <= broadcastDate) {
+              facts.push({
+                factText: `"${song.title}" is built on "${origSongRow.title}" by ${origSongRow.artist}.`,
+                category: 'cover_original',
+                source: 'MusicBrainz',
+                publicDate: song.first_chart_date || broadcastDate,
+                eventDate: origReleaseDate,
+              });
+
+              // Add facts about the original, with dates on or before broadcastDate
+              const origFacts = database.prepare(`
+                SELECT fact_text, public_date, event_date, source
+                FROM song_facts
+                WHERE song_id = ?
+              `).all(origSongRow.id) as any[];
+
+              for (const ofact of origFacts) {
+                const opDate = ofact.public_date || origReleaseDate;
+                if (opDate <= broadcastDate && !HINDSIGHT_REGEX.test(ofact.fact_text)) {
+                  facts.push({
+                    factText: ofact.fact_text,
+                    category: 'cover_original',
+                    source: ofact.source || 'MusicBrainz',
+                    publicDate: opDate,
+                    eventDate: ofact.event_date || opDate,
+                  });
+                }
+              }
+            }
+          }
+        } catch (origErr) {
+          console.warn(`[SongStoryCard] Error resolving original song for ${origTitle}:`, origErr);
+        }
+      }
     }
   } catch (err) {
     console.warn(`[SongStoryCard] Error querying song_facts for ${song.id}:`, err);
@@ -325,10 +404,23 @@ export async function getOrBuildSongStoryCard(
     console.warn(`[SongStoryCard] Error querying band_members for ${primaryArtist}:`, err);
   }
 
+  // Fetch artist aliases from artist_aliases table for Wikipedia verification
+  const artistAliases: string[] = [];
+  try {
+    const aliasRows = database.prepare(`
+      SELECT alias_name FROM artist_aliases WHERE LOWER(artist_name) = LOWER(?)
+    `).all(primaryArtist) as any[];
+    for (const ar of aliasRows) {
+      if (ar.alias_name) artistAliases.push(ar.alias_name);
+    }
+  } catch {}
+
   // 3. Query Wikipedia extract for origins and background
-  const extract = await fetchWikiSongExtract(song.title, primaryArtist);
-  if (extract) {
-    const sentences = cleanWikiSentences(extract);
+  let wikiPageTitle: string | undefined = undefined;
+  const wikiResult = await fetchWikiSongExtract(song.title, primaryArtist, artistAliases);
+  if (wikiResult && wikiResult.extract) {
+    wikiPageTitle = wikiResult.pageTitle;
+    const sentences = cleanWikiSentences(wikiResult.extract);
     for (const s of sentences) {
       const eligibility = checkSentenceEligibility(s);
       if (!eligibility.eligible) {
@@ -343,7 +435,7 @@ export async function getOrBuildSongStoryCard(
         cat = 'writer_story';
       } else if (sLower.includes('band') || sLower.includes('group') || sLower.includes('member') || sLower.includes('vocal')) {
         cat = 'band_history';
-      } else if (sLower.includes('cover') || sLower.includes('original') || sLower.includes('recorded first')) {
+      } else if (sLower.includes('cover') || sLower.includes('original') || sLower.includes('recorded first') || sLower.includes('built on') || sLower.includes('samples')) {
         cat = 'cover_original';
       } else if (sLower.includes('chart') || sLower.includes('billboard') || sLower.includes('number one') || sLower.includes('top 10')) {
         // Drop any chart text from wikipedia - chart status must strictly come from weekly_chart
@@ -372,6 +464,61 @@ export async function getOrBuildSongStoryCard(
         publicDate: song.first_chart_date || '1960-01-01',
         eventDate: eligibility.eventDate || song.first_chart_date || '1960-01-01',
       });
+
+      // Requirement 1: If Wikipedia says a song samples, covers, or is built on another,
+      // state that relation explicitly ("X is built on Y by Z") and only then add facts about the original,
+      // with dates on or before the broadcast date.
+      if (s.toLowerCase().includes('sample') || s.toLowerCase().includes('cover') || s.toLowerCase().includes('interpolat') || s.toLowerCase().includes('based on') || s.toLowerCase().includes('built on')) {
+        const quotedMatches = s.match(/"([^"]+)"/g);
+        if (quotedMatches) {
+          for (const qm of quotedMatches) {
+            const candidateTitle = qm.replace(/"/g, '').trim();
+            if (candidateTitle.toLowerCase() === song.title.toLowerCase()) continue;
+            try {
+              const origRow = database.prepare(`
+                SELECT id, title, artist, release_date, first_chart_date
+                FROM songs
+                WHERE title = ?
+                LIMIT 1
+              `).get(candidateTitle) as any;
+
+              if (origRow) {
+                const origDate = origRow.release_date || origRow.first_chart_date || '1960-01-01';
+                if (origDate <= broadcastDate) {
+                  facts.push({
+                    factText: `"${song.title}" is built on "${origRow.title}" by ${origRow.artist}.`,
+                    category: 'cover_original',
+                    source: 'Wikipedia',
+                    publicDate: song.first_chart_date || broadcastDate,
+                    eventDate: origDate,
+                  });
+
+                  const origFacts = database.prepare(`
+                    SELECT fact_text, public_date, event_date, source
+                    FROM song_facts
+                    WHERE song_id = ?
+                  `).all(origRow.id) as any[];
+
+                  for (const ofact of origFacts) {
+                    const opDate = ofact.public_date || origDate;
+                    if (opDate <= broadcastDate && !HINDSIGHT_REGEX.test(ofact.fact_text)) {
+                      facts.push({
+                        factText: ofact.fact_text,
+                        category: 'cover_original',
+                        source: ofact.source || 'MusicBrainz',
+                        publicDate: opDate,
+                        eventDate: ofact.event_date || opDate,
+                      });
+                    }
+                  }
+                }
+              }
+            } catch (wErr) {
+              console.warn(`[SongStoryCard] Error matching original song from wiki sentence for ${candidateTitle}:`, wErr);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -445,11 +592,16 @@ export async function getOrBuildSongStoryCard(
 
     if (artistMetadata) {
       const metaParts: string[] = [];
+      const isGroup = (artistMetadata.type || '').toLowerCase() === 'group';
       if (artistMetadata.type && artistMetadata.area) {
-        metaParts.push(`${primaryArtist} is an American ${artistMetadata.type.toLowerCase() === 'group' ? 'group' : 'artist'}`.replace('American', artistMetadata.country === 'GB' ? 'British' : artistMetadata.country === 'US' ? 'American' : artistMetadata.area));
+        metaParts.push(`${primaryArtist} is an American ${isGroup ? 'group' : 'artist'}`.replace('American', artistMetadata.country === 'GB' ? 'British' : artistMetadata.country === 'US' ? 'American' : artistMetadata.area));
       }
       if (artistMetadata.beginYear && artistMetadata.beginYear <= broadcastDate.slice(0, 4)) {
-        metaParts.push(`formed in ${artistMetadata.beginYear}`);
+        // Part 3: For Person, beginYear is a birth date. Never say "making music since", "active since", or "formed in".
+        // Use "formed in" ONLY for Group.
+        if (isGroup) {
+          metaParts.push(`formed in ${artistMetadata.beginYear}`);
+        }
       }
       if (metaParts.length > 0) {
         const metaFact = `${metaParts.join(', ')}.`;
@@ -470,14 +622,26 @@ export async function getOrBuildSongStoryCard(
   // Re-verify every fact across all sources through filterHindsightAndFutureFacts
   const verifiedFacts = filterHindsightAndFutureFacts(facts, broadcastDate);
 
+  // Requirement 10: Remove duplicate facts from packets
+  const uniqueFacts: SongFactItem[] = [];
+  const seenFactTexts = new Set<string>();
+  for (const f of verifiedFacts) {
+    const norm = f.factText.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!seenFactTexts.has(norm)) {
+      seenFactTexts.add(norm);
+      uniqueFacts.push(f);
+    }
+  }
+
   const card: SongStoryCard = {
     songId: song.id,
     title: song.title,
     artist: song.artist,
     primaryArtist,
     releaseDate,
-    facts: verifiedFacts,
+    facts: uniqueFacts,
     droppedFacts,
+    wikiPageTitle,
     artistMetadata,
   };
 

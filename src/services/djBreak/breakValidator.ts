@@ -36,6 +36,7 @@ export interface SegmentValidationContext {
     targetSongTitle?: string;
     targetSongArtist?: string;
   };
+  isModelDraft?: boolean; // When true, model script must not contain hand-offs or target song title
 }
 
 /**
@@ -74,26 +75,120 @@ export function validateSegmentBreakOutput(
     };
   }
 
-  // 1b. Weekday check: Validate spoken weekday against calendar date
+  // 3a. Check repeated sentences in segment
+  const sentencesInSegment = trimmed.split(/(?<=[.!?])\s+/).map((s) => s.trim().toLowerCase()).filter((s) => s.length > 5);
+  const seenSentences = new Set<string>();
+  for (const s of sentencesInSegment) {
+    if (seenSentences.has(s)) {
+      return {
+        valid: false,
+        rejectedReason: `Repeated sentence found in segment: "${s}"`,
+        sanitizedText: '',
+      };
+    }
+    seenSentences.add(s);
+  }
+
+  // 3a2. Model draft check & target song title in hand-offs:
+  // "The validator must reject any model script that contains the next song's title or a hand-off phrase,
+  // because only code adds hand-offs."
+  const HANDOFF_PHRASE_PATTERNS = [
+    /\b(?:coming up|this one's from|up next|here's a good one|time for|let's get back to the music|check this one out)\b/i,
+    /\b(?:we've got|let's give|turn it up|got a great track|let's take a listen|this is)\b/i,
+    /\b(?:get ready for|coming your way|don't touch that dial|let's crank it up|this one's got some energy)\b/i,
+    /\b(?:let's ease into|enjoy|settling in with|a little something from|let's spend a few minutes|coming through the speakers|take a listen to)\b/i,
+    /\b(?:coming at you with|listen to|let's hear it for)\b/i,
+    /\b(?:straight from|on the turntable|making its way onto the playlist|let's roll with|another great track from|taking us back with)\b/i,
+    /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|right now|playing now|switching gears|turning to)\b/i,
+  ];
+
+  if (context.isModelDraft) {
+    // If the topic is next_song_story, the fact packet itself is about the song, so mentioning the song title
+    // in commentary (e.g. "Michael Jackson released 'Don't Stop 'Til You Get Enough' in 1979") is natural,
+    // but hand-off phrases or placing the title at the end as an intro must be rejected.
+    // For other break types (music_news, major_news, sports), the model must never mention the next song's title.
+    if (context.factPacket.targetSongTitle) {
+      const titleRegex = new RegExp(escapeRegex(context.factPacket.targetSongTitle), 'i');
+      if (context.factPacket.facts && !(context as any).factPacket.topic?.includes('next_song_story')) {
+        if (titleRegex.test(trimmed)) {
+          return {
+            valid: false,
+            rejectedReason: `Model draft contains next song's title ("${context.factPacket.targetSongTitle}"); only code adds hand-offs`,
+            sanitizedText: '',
+          };
+        }
+      }
+    }
+    for (const hp of HANDOFF_PHRASE_PATTERNS) {
+      if (hp.test(trimmed)) {
+        return {
+          valid: false,
+          rejectedReason: `Model draft contains hand-off phrase (${hp}); only code adds hand-offs`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
+  // Check if target song title appears in more than one hand-off or ending sentence
+  if (context.factPacket.targetSongTitle) {
+    const titleRegex = new RegExp(escapeRegex(context.factPacket.targetSongTitle), 'i');
+    const handoffSentencesWithTitle = sentencesInSegment.filter((s) => {
+      const isHandoffStyle = /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|right now|playing now)\b/i.test(s) ||
+        HANDOFF_PHRASE_PATTERNS.some((pat) => pat.test(s));
+      return isHandoffStyle && titleRegex.test(s);
+    });
+    if (handoffSentencesWithTitle.length > 1) {
+      return {
+        valid: false,
+        rejectedReason: `Target song title appears in ${handoffSentencesWithTitle.length} hand-off sentences`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 1b. Weekday check: Validate spoken weekday against calendar date or article event dates
+  // Requirement 4: accept a weekday that matches the weekday of the event date resolved from the article
+  // or appears in the packet consistently; reject only a weekday that contradicts the packet.
   const [y, m, d] = context.selectedDate.split('-').map(Number);
   const calDate = new Date(Date.UTC(y, m - 1, d));
   const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const expectedWeekday = WEEKDAY_NAMES[calDate.getUTCDay()];
-  const otherWeekdays = WEEKDAY_NAMES.filter((w) => w !== expectedWeekday);
+  const expectedBroadcastWeekday = WEEKDAY_NAMES[calDate.getUTCDay()];
 
-  for (const other of otherWeekdays) {
+  // Collect permissible weekdays from packet dates and fact text
+  const permissibleWeekdays = new Set<string>([expectedBroadcastWeekday.toLowerCase()]);
+  for (const f of context.factPacket.facts || []) {
+    const fDate = (f as any).printDate || (f as any).date || (f as any).eventDate;
+    if (fDate && /^\d{4}-\d{2}-\d{2}$/.test(fDate)) {
+      const [fy, fm, fd] = fDate.split('-').map(Number);
+      const factCal = new Date(Date.UTC(fy, fm - 1, fd));
+      const fDay = WEEKDAY_NAMES[factCal.getUTCDay()];
+      if (fDay) permissibleWeekdays.add(fDay.toLowerCase());
+    }
+    // Also check if any weekday is explicitly mentioned in the fact text
+    for (const wd of WEEKDAY_NAMES) {
+      if (new RegExp(`\\b${wd}\\b`, 'i').test(f.text)) {
+        permissibleWeekdays.add(wd.toLowerCase());
+      }
+    }
+  }
+
+  const forbiddenWeekdays = WEEKDAY_NAMES.filter((w) => !permissibleWeekdays.has(w.toLowerCase()));
+
+  for (const other of forbiddenWeekdays) {
     const wdRegex = new RegExp(`\\b${other}\\b`, 'i');
     const match = trimmed.match(wdRegex);
     if (match) {
       return {
         valid: false,
-        rejectedReason: `Wrong weekday: found "${match[0]}" but broadcast date ${context.selectedDate} is a ${expectedWeekday}`,
+        rejectedReason: `Contradictory weekday: found "${match[0]}" which contradicts the packet event dates and broadcast date ${context.selectedDate}`,
         sanitizedText: '',
       };
     }
   }
 
   // 2. First-person feelings, nostalgia, or personal memories check
+  // Also reject feelings attributed to a subject ("that he loves", "loves", "he loves") unless in fact packet
   // Strip all song titles and artist names before personal-feeling check (e.g. "P.S. I Love You")
   let textForFeelingCheck = trimmed;
   if (context.factPacket.targetSongTitle) {
@@ -126,19 +221,39 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // 3. Check banned hype words & cliches (removed "fire", "war" and similar legitimate words)
+  // Reject feelings attributed to a subject ("that he loves", "loves", "she loves") unless that exact claim is in the packet
+  const SUBJECT_FEELING_PATTERNS = [
+    /\b(?:that (?:he|she|they) loves?|(?:he|she|they) (?:really )?loves?)\b/i,
+  ];
+  const packetHasLove = (context.factPacket.facts || []).some((f) => /\bloves?\b/i.test(f.text));
+  if (!packetHasLove) {
+    for (const pat of SUBJECT_FEELING_PATTERNS) {
+      if (pat.test(textForFeelingCheck)) {
+        return {
+          valid: false,
+          rejectedReason: `Attributed unverified feelings to subject ("${textForFeelingCheck.match(pat)?.[0]}") not in fact packet`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
+  // 3. Check banned hype words, cliches, and intensifiers
+  // Reject: astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, pretty unique
   const BANNED_HYPE = [
     /\b(?:absolute banger|banger|total bop)\b/i,
     /\b(?:smash hit|chart topper|chart-topper)\b/i,
     /\b(?:iconic|legendary|masterpiece)\b/i,
     /\b(?:epic|insane|mind-blowing)\b/i,
     /\b(?:total vibe|good vibes)\b/i,
+    /\b(?:astonishing|amazing|incredible|unique|remarkable|stunning|surprising)\b/i,
+    /\b(?:fresh|pretty unique)\b/i,
   ];
   for (const pat of BANNED_HYPE) {
     if (pat.test(trimmed)) {
       return {
         valid: false,
-        rejectedReason: `Contains banned hype word: ${pat}`,
+        rejectedReason: `Contains banned hype or intensifier: ${pat}`,
         sanitizedText: '',
       };
     }
@@ -183,9 +298,9 @@ export function validateSegmentBreakOutput(
     };
   }
 
-  // 3e. Check banned transitions and openers (strictly bans "diving into", "coming up", etc.)
+  // 3e. Check banned transitions and openers (strictly bans "diving into", "coming up", "next up", "switching gears", etc.)
   const BANNED_SEGMENT_TRANSITIONS = [
-    /\b(?:coming up|up next|right after this|dive into|diving into|stay tuned)\b/i,
+    /\b(?:coming up|up next|next up|right after this|dive into|diving into|stay tuned|switching gears)\b/i,
     /\b(?:alright folks|here we go|welcome back|hey there)\b/i,
   ];
   for (const pat of BANNED_SEGMENT_TRANSITIONS) {
@@ -205,6 +320,174 @@ export function validateSegmentBreakOutput(
       rejectedReason: 'Contains invented station frequency, call letters, or format (only "RetroFM" is permitted)',
       sanitizedText: '',
     };
+  }
+
+  // 3g. Check wholesale copying from source sentences
+  // The copying rule applies to narrative prose only. Exempt titles, names, dates, numbers, and common phrases
+  // (e.g. "it was a top five hit on", "it reached number one on the").
+  // Max allowed consecutive words is 8 for ordinary narrative sentences (12 for short factual sentences like credits).
+  // Note: Locked chart sentences (isLockedSentence) are mandated to be included verbatim or omitted, so they are exempt from wholesale copying penalty.
+  const COMMON_CHART_PHRASES = [
+    'it was a top five hit on',
+    'was a top five hit on',
+    'a top five hit on the',
+    'top five hit on the billboard',
+    'hit on the billboard hot 100',
+    'it reached number one on the',
+    'reached number one on the hot',
+    'it spent weeks on the chart',
+    'on the billboard hot 100',
+    'on the billboard hot 100 chart',
+    'number one on the hot 100',
+    'hot 100 in',
+    'billboard hot 100 in',
+  ];
+
+  // Helper to check if a phrase is exempt (consists largely of titles, names, numbers, dates, or common chart phrases)
+  const isExemptCopyPhrase = (phrase: string): boolean => {
+    // Check if covered by or overlapping with common chart phrases
+    if (COMMON_CHART_PHRASES.some((cp) => phrase.includes(cp) || cp.includes(phrase))) {
+      return true;
+    }
+    // Check if phrase contains the target song title or artist
+    if (context.factPacket.targetSongTitle && phrase.includes(context.factPacket.targetSongTitle.toLowerCase())) {
+      return true;
+    }
+    if (context.factPacket.targetSongArtist && phrase.includes(context.factPacket.targetSongArtist.toLowerCase())) {
+      return true;
+    }
+    // Check if tokens are mostly numbers, dates, or months
+    const tokens = phrase.split(' ');
+    const nonContentCount = tokens.filter((tok) => {
+      return /^\d+$/.test(tok) ||
+        ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'].includes(tok) ||
+        ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'].includes(tok);
+    }).length;
+    if (nonContentCount >= tokens.length - 2 && tokens.length > 5) {
+      return true;
+    }
+    return false;
+  };
+
+  const scriptNorm = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+  for (const f of context.factPacket.facts || []) {
+    if ((f as any).isLockedSentence) continue;
+    const isShortFactual = /written by|produced by|composed by|released in|album/i.test(f.text);
+    const maxAllowedConsecutive = isShortFactual ? 12 : 8;
+    const srcNorm = f.text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+    const srcStr = srcNorm.join(' ');
+
+    for (let i = 0; i < scriptNorm.length; i++) {
+      for (let len = maxAllowedConsecutive + 1; i + len <= scriptNorm.length; len++) {
+        const phrase = scriptNorm.slice(i, i + len).join(' ');
+        if (srcStr.includes(phrase)) {
+          if (!isExemptCopyPhrase(phrase)) {
+            return {
+              valid: false,
+              rejectedReason: `Wholesale copying: reproduces ${len} consecutive words ("${phrase}") from source sentence (max allowed: ${maxAllowedConsecutive})`,
+              sanitizedText: '',
+            };
+          }
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  // 3h. Part 2 Validator Rule: Check number one / week count alignment and future #1 claims
+  // (a) Reject any script where a week count appears next to "number one", "topped", "top spot" or "stayed at the top"
+  // unless it matches the rank-1 count in the packet.
+  // (b) Also reject a "reached number one" claim whose chart date is after the broadcast date.
+  let allowedWeeksAtOne = 0;
+  let hasEligibleRankOne = false;
+  let packetRankOneDate: string | null = null;
+  for (const f of context.factPacket.facts || []) {
+    if ((f as any).weeksAtOne !== undefined) {
+      allowedWeeksAtOne = Math.max(allowedWeeksAtOne, (f as any).weeksAtOne);
+      if ((f as any).weeksAtOne > 0) hasEligibleRankOne = true;
+    }
+    if ((f as any).peakRank === 1) {
+      hasEligibleRankOne = true;
+      if ((f as any).peakDate) {
+        packetRankOneDate = (f as any).peakDate;
+      }
+    }
+    if ((f as any).rank === 1) {
+      hasEligibleRankOne = true;
+    }
+    if (/reached number one|number-one hit/i.test(f.text)) {
+      hasEligibleRankOne = true;
+    }
+  }
+
+  // Check for week count paired with number one / topped / top spot / stayed at the top
+  // e.g. "staying there for nineteen weeks", "topped the charts for 21 weeks", "nineteen weeks at number one"
+  const WORD_TO_NUM: Record<string, number> = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+    eighteen: 18, nineteen: 19, twenty: 20, 'twenty-one': 21, 'twenty one': 21
+  };
+
+  const TOP_SPOT_PATTERNS = [
+    /(?:number one|topped|top spot|stayed at the top|staying there|at the top)[^.!?]{0,50}?\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-one)\s+weeks?\b/i,
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-one)\s+weeks?[^.!?]{0,50}?(?:number one|topped|top spot|stayed at the top|staying there|at the top)\b/i,
+  ];
+
+  for (const pat of TOP_SPOT_PATTERNS) {
+    const m = trimmed.match(pat);
+    if (m) {
+      const rawCount = m[1].toLowerCase();
+      const numCount = parseInt(rawCount, 10) || WORD_TO_NUM[rawCount] || 0;
+      if (numCount > 0 && numCount !== allowedWeeksAtOne) {
+        return {
+          valid: false,
+          rejectedReason: `Mismatched weeks at number one: script paired ${numCount} weeks with number one / top spot, but packet allows ${allowedWeeksAtOne} weeks`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
+  // Check if "reached number one" or "number one hit" is claimed when no rank-1 row exists on/before broadcast date
+  if (/reached number one|number-one hit|topped the charts/i.test(trimmed)) {
+    if (!hasEligibleRankOne) {
+      return {
+        valid: false,
+        rejectedReason: `Claimed reached number one, but no rank-1 row exists on or before broadcast date ${context.selectedDate}`,
+        sanitizedText: '',
+      };
+    }
+    if (packetRankOneDate && packetRankOneDate > context.selectedDate) {
+      return {
+        valid: false,
+        rejectedReason: `Claimed reached number one, but rank-1 chart date ${packetRankOneDate} is after broadcast date ${context.selectedDate}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 3i. Orphan pronoun check:
+  // The first sentence of the segment must name its subject (person, band, or event).
+  // Reject a first sentence beginning with Their, They, He, She, It, This, These, Those, or "the band/group"
+  // unless the antecedent is named in that same first sentence.
+  const rawSegmentSentences = trimmed.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 5);
+  if (rawSegmentSentences.length > 0) {
+    const firstSent = rawSegmentSentences[0];
+    const ORPHAN_START_REGEX = /^(?:Their|They|He|She|It|This|These|Those|The band|The group)\b/i;
+    const match = firstSent.match(ORPHAN_START_REGEX);
+    if (match) {
+      // Check if an antecedent proper name appears elsewhere in that first sentence
+      // e.g. "He, Paul McCartney, ..." or "Their guitarist Jimmy Page..."
+      const namesInFirstSent = extractProperNames(firstSent);
+      if (namesInFirstSent.length === 0) {
+        return {
+          valid: false,
+          rejectedReason: `Orphan pronoun: first sentence begins with "${match[0]}" without naming its subject in the same sentence`,
+          sanitizedText: '',
+        };
+      }
+    }
   }
 
   // 4. Check stage directions or bracketed cues
