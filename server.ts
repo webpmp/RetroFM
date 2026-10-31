@@ -742,7 +742,7 @@ async function startServer() {
 
   // Shared repository singletons for server-side chart and credit queries
   const chartFactRepo = new ChartFactRepository();
-  const songCreditRepo = new SongCreditRepository();
+  const songCreditRepo = new SongCreditRepository(undefined, chartFactRepo);
 
   // Helper for natural extractive fallback monologue
   function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {

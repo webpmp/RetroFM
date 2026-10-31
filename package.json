@@ -10,6 +10,7 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "export-library": "tsx scripts/export-library-data.ts",
     "test:music": "tsx scripts/test-music-search.ts",
     "test:boombox": "tsx scripts/test-boombox-integration.ts",
     "test:history": "tsx scripts/test-session-history.ts",

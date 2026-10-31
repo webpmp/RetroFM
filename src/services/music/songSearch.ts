@@ -1257,44 +1257,103 @@ export async function searchYouTubeForSong(
 }
 
 /**
- * Fallback duration lookup from SQLite ~/retrofm/library.sqlite
+ * Fallback duration lookup from SQLite ~/retrofm/library.sqlite or static JSON cache.
  * Reads duration_sec for artist/song match when YouTube duration is unavailable.
  */
 export function lookupDurationFromSqlite(artist: string, song: string): number | null {
   try {
+    const normArtist = artist.trim().toLowerCase();
+    const normSong = song.trim().toLowerCase();
+
+    // 1. Check local JSON cache under .cache/durations.json
+    const cacheFile = path.resolve(process.cwd(), '.cache/durations.json');
+    if (fs.existsSync(cacheFile)) {
+      try {
+        const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        const key = `${normArtist}:::${normSong}`;
+        if (typeof cache[key] === 'number' && cache[key] > 0) {
+          return cache[key];
+        }
+      } catch {}
+    }
+
+    // 2. Check retrofm_library_youtube.json and songs_extra.json
+    const libFiles = [
+      path.resolve(process.cwd(), 'public/data/retrofm_library_youtube.json'),
+      path.resolve(process.cwd(), 'public/data/songs_extra.json'),
+    ];
+    for (const lf of libFiles) {
+      if (fs.existsSync(lf)) {
+        try {
+          const songs = JSON.parse(fs.readFileSync(lf, 'utf8'));
+          const found = songs.find(
+            (s: any) =>
+              (s.artist || '').trim().toLowerCase() === normArtist &&
+              (s.title || '').trim().toLowerCase() === normSong
+          );
+          if (found && typeof found.duration_sec === 'number' && found.duration_sec > 0) {
+            return found.duration_sec;
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Fallback to SQLite ~/retrofm/library.sqlite if present on host
     const homedir = process.env.HOME || '/root';
     const dbPath = path.join(homedir, 'retrofm', 'library.sqlite');
-    if (!fs.existsSync(dbPath)) return null;
-
-    // Use bun:sqlite if running in bun runtime
-    const BunGlobal = (globalThis as any).Bun;
-    if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
-      const db = BunGlobal.openDatabase(dbPath);
-      const query = db.query('SELECT duration_sec FROM songs WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) LIMIT 1');
-      const row = query.get(artist.trim(), song.trim()) as { duration_sec?: number } | null;
-      return typeof row?.duration_sec === 'number' && row.duration_sec > 0 ? row.duration_sec : null;
+    if (fs.existsSync(dbPath)) {
+      const BunGlobal = (globalThis as any).Bun;
+      if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+        const db = BunGlobal.openDatabase(dbPath);
+        const query = db.query('SELECT duration_sec FROM songs WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) LIMIT 1');
+        const row = query.get(artist.trim(), song.trim()) as { duration_sec?: number } | null;
+        return typeof row?.duration_sec === 'number' && row.duration_sec > 0 ? row.duration_sec : null;
+      }
     }
   } catch (e) {}
   return null;
 }
 
 /**
- * Caches duration_sec in SQLite ~/retrofm/library.sqlite if present.
+ * Caches duration_sec in .cache/durations.json (and SQLite ~/retrofm/library.sqlite if present).
  */
 export function storeDurationInSqlite(artist: string, song: string, durationSec: number): boolean {
   try {
+    const validSec = Math.floor(durationSec);
+    if (validSec <= 0) return false;
+
+    // 1. Store in .cache/durations.json
+    try {
+      const cacheDir = path.resolve(process.cwd(), '.cache');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      const cacheFile = path.join(cacheDir, 'durations.json');
+      let cache: Record<string, number> = {};
+      if (fs.existsSync(cacheFile)) {
+        try {
+          cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        } catch {}
+      }
+      const key = `${artist.trim().toLowerCase()}:::${song.trim().toLowerCase()}`;
+      cache[key] = validSec;
+      fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), 'utf8');
+    } catch (cacheErr) {
+      console.warn('[songSearch] Warning: failed to write duration to .cache/durations.json:', cacheErr);
+    }
+
+    // 2. Optional write-back to SQLite ~/retrofm/library.sqlite if present
     const homedir = process.env.HOME || '/root';
     const dbPath = path.join(homedir, 'retrofm', 'library.sqlite');
-    if (!fs.existsSync(dbPath)) return false;
-
-    const BunGlobal = (globalThis as any).Bun;
-    if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
-      const db = BunGlobal.openDatabase(dbPath);
-      const stmt = db.query('UPDATE songs SET duration_sec = ? WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) AND (duration_sec IS NULL OR duration_sec = 0)');
-      stmt.run(Math.floor(durationSec), artist.trim(), song.trim());
-      return true;
+    if (fs.existsSync(dbPath)) {
+      const BunGlobal = (globalThis as any).Bun;
+      if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+        const db = BunGlobal.openDatabase(dbPath);
+        const stmt = db.query('UPDATE songs SET duration_sec = ? WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) AND (duration_sec IS NULL OR duration_sec = 0)');
+        stmt.run(validSec, artist.trim(), song.trim());
+      }
     }
+    return true;
   } catch (e) {}
   return false;
 }
+
 

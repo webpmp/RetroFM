@@ -50,11 +50,17 @@ export function assignPrimaryGenres(library: LibrarySong[]): LibrarySong[] {
 }
 
 export async function loadLibrary(url = "/data/retrofm_library_youtube.json"): Promise<LibrarySong[]> {
-  const res = await fetch(url);
+  let res = await fetch(url);
+  // Auto-fallback to sample library when full library is not present (fresh clone)
+  if (!res.ok && url === "/data/retrofm_library_youtube.json") {
+    console.log('[SongSelector] Full library not found; loading sample dataset (/data/sample/retrofm_library_youtube.json)...');
+    res = await fetch("/data/sample/retrofm_library_youtube.json");
+  }
   if (!res.ok) throw new Error(`Could not load the song library (${res.status})`);
   const songs = (await res.json()) as LibrarySong[];
   return assignPrimaryGenres(songs);
 }
+
 
 const DAY = 86_400_000;
 const shift = (date: string, days: number): string =>

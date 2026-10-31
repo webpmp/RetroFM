@@ -226,6 +226,84 @@ export async function checkSentenceKnowableWithLLM(
   }
 }
 
+// In-memory data store for JSON static library files
+class JsonSongStoryDataLoader {
+  private songFacts: any[] = [];
+  private bandMembers: any[] = [];
+  private artistAliases: any[] = [];
+  private songs: any[] = [];
+  public isAvailable = false;
+
+  constructor() {
+    let dataDir = path.resolve(process.cwd(), 'public/data');
+    if (!fs.existsSync(path.join(dataDir, 'song_facts.json')) && fs.existsSync(path.join(dataDir, 'sample', 'song_facts.json'))) {
+      dataDir = path.join(dataDir, 'sample');
+    }
+    const sfPath = path.join(dataDir, 'song_facts.json');
+    if (fs.existsSync(sfPath)) {
+      this.isAvailable = true;
+      try {
+        this.songFacts = JSON.parse(fs.readFileSync(sfPath, 'utf8'));
+      } catch {}
+      const bmPath = path.join(dataDir, 'band_members.json');
+      if (fs.existsSync(bmPath)) {
+        try {
+          this.bandMembers = JSON.parse(fs.readFileSync(bmPath, 'utf8'));
+        } catch {}
+      }
+      const aaPath = path.join(dataDir, 'artist_aliases.json');
+      if (fs.existsSync(aaPath)) {
+        try {
+          this.artistAliases = JSON.parse(fs.readFileSync(aaPath, 'utf8'));
+        } catch {}
+      }
+      let allSongs: any[] = [];
+      const mPath = path.join(dataDir, 'retrofm_library_youtube.json');
+      if (fs.existsSync(mPath)) {
+        try {
+          allSongs = allSongs.concat(JSON.parse(fs.readFileSync(mPath, 'utf8')));
+        } catch {}
+      }
+      const ePath = path.join(dataDir, 'songs_extra.json');
+      if (fs.existsSync(ePath)) {
+        try {
+          allSongs = allSongs.concat(JSON.parse(fs.readFileSync(ePath, 'utf8')));
+        } catch {}
+      }
+      this.songs = allSongs;
+    }
+  }
+
+  getSongFacts(songId: string): any[] {
+    return this.songFacts.filter((f) => f.song_id === songId);
+  }
+
+  getSongByTitle(title: string): any | null {
+    const tLower = (title || '').trim().toLowerCase();
+    return this.songs.find((s) => (s.title || '').trim().toLowerCase() === tLower) || null;
+  }
+
+  getBandMembers(bandName: string): any[] {
+    const bLower = (bandName || '').trim().toLowerCase();
+    return this.bandMembers.filter((m) => (m.band_name || '').trim().toLowerCase() === bLower);
+  }
+
+  getArtistAliases(artistName: string): string[] {
+    const aLower = (artistName || '').trim().toLowerCase();
+    return this.artistAliases
+      .filter((a) => (a.artist_name || '').trim().toLowerCase() === aLower)
+      .map((a) => a.alias_name);
+  }
+}
+
+let jsonLoaderInstance: JsonSongStoryDataLoader | null = null;
+function getJsonLoader(): JsonSongStoryDataLoader {
+  if (!jsonLoaderInstance) {
+    jsonLoaderInstance = new JsonSongStoryDataLoader();
+  }
+  return jsonLoaderInstance;
+}
+
 /**
  * Builds or retrieves a verified song story card.
  */
@@ -246,12 +324,15 @@ export async function getOrBuildSongStoryCard(
   }
 
   const homedir = process.env.HOME || '/root';
-  const database = db || new DatabaseSync(path.join(homedir, 'retrofm', 'library.sqlite'));
+  const sqliteTarget = path.join(homedir, 'retrofm', 'library.sqlite');
+  const database = db || (fs.existsSync(sqliteTarget) ? new DatabaseSync(sqliteTarget) : null);
+  const jsonLoader = getJsonLoader();
   const facts: SongFactItem[] = [];
   const droppedFacts: Array<{ text: string; reason: string }> = [];
   const primaryArtist = song.primary_artist || song.artist;
   const releaseDate = song.first_chart_date || null;
   const bYear = parseInt(broadcastDate.slice(0, 4), 10);
+
 
   // Helper to extract year/date from sentence
   const checkSentenceEligibility = (sentence: string): { eligible: boolean; reason?: string; eventDate?: string } => {
@@ -275,13 +356,18 @@ export async function getOrBuildSongStoryCard(
     return { eligible: true, eventDate: song.first_chart_date || '1960-01-01' };
   };
 
-  // 1. Ingest existing verified song_facts from database (credits, producers, writers, adaptations)
+  // 1. Ingest existing verified song_facts (credits, producers, writers, adaptations)
   try {
-    const rows = database.prepare(`
-      SELECT fact_type, fact_text, event_date, public_date, source
-      FROM song_facts
-      WHERE song_id = ?
-    `).all(song.id) as any[];
+    let rows: any[] = [];
+    if (jsonLoader.isAvailable) {
+      rows = jsonLoader.getSongFacts(song.id);
+    } else if (database) {
+      rows = database.prepare(`
+        SELECT fact_type, fact_text, event_date, public_date, source
+        FROM song_facts
+        WHERE song_id = ?
+      `).all(song.id) as any[];
+    }
 
     for (const r of rows) {
       const pubDate = r.public_date || song.first_chart_date || '1960-01-01';
@@ -312,12 +398,17 @@ export async function getOrBuildSongStoryCard(
       if (matchAdaptation) {
         const origTitle = matchAdaptation[1];
         try {
-          const origSongRow = database.prepare(`
-            SELECT id, title, artist, release_date, first_chart_date
-            FROM songs
-            WHERE title = ?
-            LIMIT 1
-          `).get(origTitle) as any;
+          let origSongRow: any = null;
+          if (jsonLoader.isAvailable) {
+            origSongRow = jsonLoader.getSongByTitle(origTitle);
+          } else if (database) {
+            origSongRow = database.prepare(`
+              SELECT id, title, artist, release_date, first_chart_date
+              FROM songs
+              WHERE title = ?
+              LIMIT 1
+            `).get(origTitle) as any;
+          }
 
           if (origSongRow) {
             const origReleaseDate = origSongRow.release_date || origSongRow.first_chart_date || '1960-01-01';
@@ -331,11 +422,16 @@ export async function getOrBuildSongStoryCard(
               });
 
               // Add facts about the original, with dates on or before broadcastDate
-              const origFacts = database.prepare(`
-                SELECT fact_text, public_date, event_date, source
-                FROM song_facts
-                WHERE song_id = ?
-              `).all(origSongRow.id) as any[];
+              let origFacts: any[] = [];
+              if (jsonLoader.isAvailable) {
+                origFacts = jsonLoader.getSongFacts(origSongRow.id);
+              } else if (database) {
+                origFacts = database.prepare(`
+                  SELECT fact_text, public_date, event_date, source
+                  FROM song_facts
+                  WHERE song_id = ?
+                `).all(origSongRow.id) as any[];
+              }
 
               for (const ofact of origFacts) {
                 const opDate = ofact.public_date || origReleaseDate;
@@ -362,11 +458,16 @@ export async function getOrBuildSongStoryCard(
 
   // 2. Query band_members for artist history (strictly members active on broadcastDate)
   try {
-    const memberRows = database.prepare(`
-      SELECT member_name, begin_date, end_date
-      FROM band_members
-      WHERE band_name = ?
-    `).all(primaryArtist) as any[];
+    let memberRows: any[] = [];
+    if (jsonLoader.isAvailable) {
+      memberRows = jsonLoader.getBandMembers(primaryArtist);
+    } else if (database) {
+      memberRows = database.prepare(`
+        SELECT member_name, begin_date, end_date
+        FROM band_members
+        WHERE band_name = ?
+      `).all(primaryArtist) as any[];
+    }
 
     if (memberRows.length > 0) {
       const activeMembers = memberRows.filter((m) => {
@@ -407,13 +508,18 @@ export async function getOrBuildSongStoryCard(
   // Fetch artist aliases from artist_aliases table for Wikipedia verification
   const artistAliases: string[] = [];
   try {
-    const aliasRows = database.prepare(`
-      SELECT alias_name FROM artist_aliases WHERE LOWER(artist_name) = LOWER(?)
-    `).all(primaryArtist) as any[];
-    for (const ar of aliasRows) {
-      if (ar.alias_name) artistAliases.push(ar.alias_name);
+    if (jsonLoader.isAvailable) {
+      artistAliases.push(...jsonLoader.getArtistAliases(primaryArtist));
+    } else if (database) {
+      const aliasRows = database.prepare(`
+        SELECT alias_name FROM artist_aliases WHERE LOWER(artist_name) = LOWER(?)
+      `).all(primaryArtist) as any[];
+      for (const ar of aliasRows) {
+        if (ar.alias_name) artistAliases.push(ar.alias_name);
+      }
     }
   } catch {}
+
 
   // 3. Query Wikipedia extract for origins and background
   let wikiPageTitle: string | undefined = undefined;
@@ -475,12 +581,17 @@ export async function getOrBuildSongStoryCard(
             const candidateTitle = qm.replace(/"/g, '').trim();
             if (candidateTitle.toLowerCase() === song.title.toLowerCase()) continue;
             try {
-              const origRow = database.prepare(`
-                SELECT id, title, artist, release_date, first_chart_date
-                FROM songs
-                WHERE title = ?
-                LIMIT 1
-              `).get(candidateTitle) as any;
+              let origRow: any = null;
+              if (jsonLoader.isAvailable) {
+                origRow = jsonLoader.getSongByTitle(candidateTitle);
+              } else if (database) {
+                origRow = database.prepare(`
+                  SELECT id, title, artist, release_date, first_chart_date
+                  FROM songs
+                  WHERE title = ?
+                  LIMIT 1
+                `).get(candidateTitle) as any;
+              }
 
               if (origRow) {
                 const origDate = origRow.release_date || origRow.first_chart_date || '1960-01-01';
@@ -493,11 +604,16 @@ export async function getOrBuildSongStoryCard(
                     eventDate: origDate,
                   });
 
-                  const origFacts = database.prepare(`
-                    SELECT fact_text, public_date, event_date, source
-                    FROM song_facts
-                    WHERE song_id = ?
-                  `).all(origRow.id) as any[];
+                  let origFacts: any[] = [];
+                  if (jsonLoader.isAvailable) {
+                    origFacts = jsonLoader.getSongFacts(origRow.id);
+                  } else if (database) {
+                    origFacts = database.prepare(`
+                      SELECT fact_text, public_date, event_date, source
+                      FROM song_facts
+                      WHERE song_id = ?
+                    `).all(origRow.id) as any[];
+                  }
 
                   for (const ofact of origFacts) {
                     const opDate = ofact.public_date || origDate;
@@ -516,6 +632,7 @@ export async function getOrBuildSongStoryCard(
             } catch (wErr) {
               console.warn(`[SongStoryCard] Error matching original song from wiki sentence for ${candidateTitle}:`, wErr);
             }
+
           }
         }
       }

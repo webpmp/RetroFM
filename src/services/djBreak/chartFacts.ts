@@ -103,38 +103,107 @@ interface ChartRow {
 
 /**
  * Interface for database query abstraction.
- * Works with node:sqlite (DatabaseSync) or bun:sqlite.
+ * Reads static JSON files from public/data/ or fallback SQLite database if present.
  */
 export class ChartFactRepository {
   private db: any = null;
+  private dataDir: string;
+  private decadeCache = new Map<string, ChartRow[]>();
+  private allWeeks: string[] | null = null;
+  private isJsonAvailable = false;
 
-  constructor(dbPath?: string) {
+  constructor(customPathOrDir?: string) {
     const homedir = process.env.HOME || '/root';
-    const targetPath = dbPath || path.join(homedir, 'retrofm', 'library.sqlite');
-    if (!fs.existsSync(targetPath)) {
-      return;
-    }
+    this.dataDir = customPathOrDir && fs.existsSync(customPathOrDir) && fs.statSync(customPathOrDir).isDirectory()
+      ? customPathOrDir
+      : path.resolve(process.cwd(), 'public/data');
 
-    try {
-      const BunGlobal = (globalThis as any).Bun;
-      if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
-        this.db = BunGlobal.openDatabase(targetPath);
-      } else {
-        this.db = new DatabaseSync(targetPath);
+    // Check if JSON chart files exist, with automatic fallback to sample/ if full files are absent
+    const standardJson = path.join(this.dataDir, 'chart_facts_1980s.json');
+    const sampleSubdir = path.join(this.dataDir, 'sample');
+    if (fs.existsSync(standardJson)) {
+      this.isJsonAvailable = true;
+    } else if (fs.existsSync(path.join(sampleSubdir, 'chart_facts_1980s.json'))) {
+      this.dataDir = sampleSubdir;
+      this.isJsonAvailable = true;
+    } else {
+      // Fallback: check SQLite if JSON files are not yet generated
+      const targetPath = (customPathOrDir && fs.existsSync(customPathOrDir) && !fs.statSync(customPathOrDir).isDirectory())
+        ? customPathOrDir
+        : path.join(homedir, 'retrofm', 'library.sqlite');
+
+      if (fs.existsSync(targetPath)) {
+        try {
+          const BunGlobal = (globalThis as any).Bun;
+          if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+            this.db = BunGlobal.openDatabase(targetPath);
+          } else {
+            this.db = new DatabaseSync(targetPath);
+          }
+        } catch (e) {
+          console.warn('[ChartFactRepository] Unable to open SQLite database:', e);
+        }
       }
-    } catch (e) {
-      console.warn('[ChartFactRepository] Unable to open SQLite database:', e);
     }
   }
 
   public isAvailable(): boolean {
-    return this.db !== null;
+    return this.isJsonAvailable || this.db !== null;
+  }
+
+  private getDecade(dateStr: string): string {
+    const y = parseInt(dateStr.slice(0, 4), 10);
+    const decadeStart = Math.floor(y / 10) * 10;
+    return `${decadeStart}s`;
+  }
+
+  private loadDecadeRows(decade: string): ChartRow[] {
+    if (this.decadeCache.has(decade)) {
+      return this.decadeCache.get(decade)!;
+    }
+    const file = path.join(this.dataDir, `chart_facts_${decade}.json`);
+    if (fs.existsSync(file)) {
+      try {
+        const rows: ChartRow[] = JSON.parse(fs.readFileSync(file, 'utf8'));
+        this.decadeCache.set(decade, rows);
+        return rows;
+      } catch (err) {
+        console.warn(`[ChartFactRepository] Error reading ${file}:`, err);
+      }
+    }
+    return [];
+  }
+
+  private getAllChartWeeks(): string[] {
+    if (this.allWeeks) return this.allWeeks;
+    if (this.isJsonAvailable) {
+      const weeksSet = new Set<string>();
+      const decades = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s'];
+      for (const dec of decades) {
+        const rows = this.loadDecadeRows(dec);
+        for (const r of rows) {
+          weeksSet.add(r.chart_date);
+        }
+      }
+      this.allWeeks = Array.from(weeksSet).sort();
+      return this.allWeeks;
+    }
+    return [];
   }
 
   /**
    * Finds the latest chart_date on or before selectedDate.
    */
   public getChartWeekOn(selectedDate: string): string | null {
+    if (this.isJsonAvailable) {
+      const weeks = this.getAllChartWeeks();
+      for (let i = weeks.length - 1; i >= 0; i--) {
+        if (weeks[i] <= selectedDate) {
+          return weeks[i];
+        }
+      }
+      return null;
+    }
     if (!this.db) return null;
     try {
       const query = 'SELECT MAX(chart_date) AS d FROM weekly_chart WHERE chart_date <= ?';
@@ -149,6 +218,15 @@ export class ChartFactRepository {
    * Finds the previous chart_date that exists strictly before chartWeek.
    */
   public getPreviousChartWeek(chartWeek: string): string | null {
+    if (this.isJsonAvailable) {
+      const weeks = this.getAllChartWeeks();
+      for (let i = weeks.length - 1; i >= 0; i--) {
+        if (weeks[i] < chartWeek) {
+          return weeks[i];
+        }
+      }
+      return null;
+    }
     if (!this.db) return null;
     try {
       const query = 'SELECT MAX(chart_date) AS d FROM weekly_chart WHERE chart_date < ?';
@@ -163,7 +241,17 @@ export class ChartFactRepository {
    * Gets the #1 song for a specific chart week.
    */
   public getNumberOneOnWeek(chartWeek: string): { title: string; performer: string } | null {
-    if (!this.db || !chartWeek) return null;
+    if (!chartWeek) return null;
+    if (this.isJsonAvailable) {
+      const dec = this.getDecade(chartWeek);
+      const rows = this.loadDecadeRows(dec);
+      const found = rows.find((r) => r.chart_date === chartWeek && r.rank === 1);
+      if (found && found.title && found.performer) {
+        return { title: found.title, performer: found.performer };
+      }
+      return null;
+    }
+    if (!this.db) return null;
     try {
       const query = 'SELECT title, performer FROM weekly_chart WHERE chart_date = ? AND rank = 1';
       const row = this.db.prepare ? this.db.prepare(query).get(chartWeek) : this.db.query(query).get(chartWeek);
@@ -180,7 +268,27 @@ export class ChartFactRepository {
    * Computes the cumulative weeks at #1 for a song up to chartWeek.
    */
   public getWeeksAtNumberOne(title: string, performer: string, chartWeek: string): number {
-    if (!this.db || !title || !chartWeek) return 0;
+    if (!title || !chartWeek) return 0;
+    if (this.isJsonAvailable) {
+      const normTitle = normalizeChartText(title);
+      const targetYear = parseInt(chartWeek.slice(0, 4), 10);
+      const decades = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s'];
+      let count = 0;
+      for (const dec of decades) {
+        const decYear = parseInt(dec.slice(0, 4), 10);
+        if (decYear > targetYear) break;
+        const rows = this.loadDecadeRows(dec);
+        for (const r of rows) {
+          if (r.chart_date <= chartWeek && r.rank === 1) {
+            if (r.title === title || normalizeChartText(r.title) === normTitle) {
+              count++;
+            }
+          }
+        }
+      }
+      return count;
+    }
+    if (!this.db) return 0;
     try {
       const normTitle = normalizeChartText(title);
       const query = 'SELECT chart_date, performer FROM weekly_chart WHERE title = ? AND rank = 1 AND chart_date <= ?';
@@ -201,6 +309,54 @@ export class ChartFactRepository {
    * Uses normalized title and performer matching.
    */
   public getSongHistory(song: SongIdentifier, upToDate: string): ChartRow[] {
+    if (this.isJsonAvailable) {
+      const normTitle = normalizeChartText(song.title);
+      const normArtist = normalizeChartText(song.artist);
+      const normPrimary = normalizeChartText(song.primary_artist || primaryPerformer(song.artist));
+
+      const targetYear = parseInt(upToDate.slice(0, 4), 10);
+      const currentDecadeStart = Math.floor(targetYear / 10) * 10;
+      // Search current decade and immediately prior decade to cover multi-month cross-decade chart runs
+      const decadesToSearch = [
+        `${currentDecadeStart - 10}s`,
+        `${currentDecadeStart}s`,
+      ];
+
+      const candidates: ChartRow[] = [];
+      for (const dec of decadesToSearch) {
+        const rows = this.loadDecadeRows(dec);
+        for (const r of rows) {
+          if (r.chart_date > upToDate) continue;
+          if (r.title === song.title || normalizeChartText(r.title) === normTitle) {
+            const np = normalizeChartText(r.performer);
+            if (np === normArtist || np.includes(normPrimary) || normPrimary.includes(np)) {
+              candidates.push(r);
+            }
+          }
+        }
+      }
+
+      // If no exact match, fallback to 8-char title prefix
+      if (candidates.length === 0 && song.title.length >= 4) {
+        const titlePrefix = normalizeChartText(song.title.slice(0, 8));
+        for (const dec of decadesToSearch) {
+          const rows = this.loadDecadeRows(dec);
+          for (const r of rows) {
+            if (r.chart_date > upToDate) continue;
+            if (normalizeChartText(r.title).includes(titlePrefix)) {
+              const np = normalizeChartText(r.performer);
+              if (np === normArtist || np.includes(normPrimary) || normPrimary.includes(np)) {
+                candidates.push(r);
+              }
+            }
+          }
+        }
+      }
+
+      candidates.sort((a, b) => a.chart_date.localeCompare(b.chart_date));
+      return candidates;
+    }
+
     if (!this.db) return [];
     try {
       const normTitle = normalizeChartText(song.title);
@@ -229,6 +385,7 @@ export class ChartFactRepository {
     }
   }
 }
+
 
 /**
  * Computes all eligible era-accurate chart facts for a song on selectedDate.

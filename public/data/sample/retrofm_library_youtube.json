@@ -1,0 +1,2893 @@
+[
+  {
+    "id": "1964-001",
+    "title": "Hello, Dolly!",
+    "artist": "Louis Armstrong And The All Stars",
+    "primary_artist": "Louis Armstrong And The All Stars",
+    "chart_year": 1964,
+    "chart_year_rank": 1,
+    "rank_method": "computed",
+    "release_date": "1964-01",
+    "release_date_precision": "month",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Jazz",
+    "primary_genre": "Jazz",
+    "album": "Hello, Dolly!",
+    "duration_sec": 147,
+    "peak_position": 1,
+    "first_chart_date": "1964-02-15",
+    "last_chart_date": "1964-07-11",
+    "peak_date": "1964-05-09",
+    "weeks_on_chart": 22,
+    "musicbrainz": {
+      "recording_mbid": "19bdce87-7af7-4098-abdf-380fb5658374",
+      "recording_url": "https://musicbrainz.org/recording/19bdce87-7af7-4098-abdf-380fb5658374"
+    },
+    "isrc": "USMC16356894",
+    "streaming": {
+      "youtube": {
+        "id": "Kx2AYFvwxKY",
+        "url": "https://www.youtube.com/watch?v=Kx2AYFvwxKY",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-002",
+    "title": "I Want To Hold Your Hand",
+    "artist": "The Beatles",
+    "primary_artist": "The Beatles",
+    "chart_year": 1964,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1964",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "British Invasion, Pop",
+    "primary_genre": "British Invasion",
+    "album": "Beatlemania",
+    "duration_sec": 147,
+    "peak_position": 1,
+    "first_chart_date": "1964-01-18",
+    "last_chart_date": "1964-04-25",
+    "peak_date": "1964-02-01",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "3c4febdb-e308-4fa9-b0b8-bc969aa7c16a",
+      "recording_url": "https://musicbrainz.org/recording/3c4febdb-e308-4fa9-b0b8-bc969aa7c16a"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "v1HDt1tknTc",
+        "url": "https://www.youtube.com/watch?v=v1HDt1tknTc",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-003",
+    "title": "She Loves You",
+    "artist": "The Beatles",
+    "primary_artist": "The Beatles",
+    "chart_year": 1964,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1964",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "British Invasion, Pop",
+    "primary_genre": "British Invasion",
+    "album": "Beatlemania",
+    "duration_sec": 141,
+    "peak_position": 1,
+    "first_chart_date": "1964-01-25",
+    "last_chart_date": "1964-05-02",
+    "peak_date": "1964-03-21",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "0639de1f-4ec9-4e7c-a900-d458cddc49f2",
+      "recording_url": "https://musicbrainz.org/recording/0639de1f-4ec9-4e7c-a900-d458cddc49f2"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "nGbWU8S3vzs",
+        "url": "https://www.youtube.com/watch?v=nGbWU8S3vzs",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-005",
+    "title": "My Guy",
+    "artist": "Mary Wells",
+    "primary_artist": "Mary Wells",
+    "chart_year": 1964,
+    "chart_year_rank": 5,
+    "rank_method": "computed",
+    "release_date": "1964-03-13",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Motown, R&B",
+    "primary_genre": "Motown",
+    "album": "My Guy / Oh Little Boy (What Did You Do to Me)",
+    "duration_sec": 167,
+    "peak_position": 1,
+    "first_chart_date": "1964-04-04",
+    "last_chart_date": "1964-07-11",
+    "peak_date": "1964-05-16",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "90309d4b-7f35-4001-a472-0ea873367e53",
+      "recording_url": "https://musicbrainz.org/recording/90309d4b-7f35-4001-a472-0ea873367e53"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "4WT7nBGX5eU",
+        "url": "https://www.youtube.com/watch?v=4WT7nBGX5eU",
+        "official": false
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-006",
+    "title": "I Get Around",
+    "artist": "The Beach Boys",
+    "primary_artist": "The Beach Boys",
+    "chart_year": 1964,
+    "chart_year_rank": 6,
+    "rank_method": "computed",
+    "release_date": "1964",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Surf Rock, Rock",
+    "primary_genre": "Surf Rock",
+    "album": "Don't Worry Baby / I Get Around",
+    "duration_sec": 132,
+    "peak_position": 1,
+    "first_chart_date": "1964-05-23",
+    "last_chart_date": "1964-08-29",
+    "peak_date": "1964-07-04",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "b5c802ab-8e07-480e-b655-615f080be7fd",
+      "recording_url": "https://musicbrainz.org/recording/b5c802ab-8e07-480e-b655-615f080be7fd"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "BchXkabxn4A",
+        "url": "https://www.youtube.com/watch?v=BchXkabxn4A",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-007",
+    "title": "Everybody Loves Somebody",
+    "artist": "Dean Martin",
+    "primary_artist": "Dean Martin",
+    "chart_year": 1964,
+    "chart_year_rank": 7,
+    "rank_method": "computed",
+    "release_date": "1964",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Easy Listening",
+    "primary_genre": "Easy Listening",
+    "album": "Dream With Dean: The Intimate Dean Martin",
+    "duration_sec": 190,
+    "peak_position": 1,
+    "first_chart_date": "1964-06-27",
+    "last_chart_date": "1964-10-03",
+    "peak_date": "1964-08-15",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "8c8e148b-20e9-4643-8dcf-bc4fe229ee73",
+      "recording_url": "https://musicbrainz.org/recording/8c8e148b-20e9-4643-8dcf-bc4fe229ee73"
+    },
+    "isrc": "USQX91301975",
+    "streaming": {
+      "youtube": {
+        "id": "z-2_OstpR5c",
+        "url": "https://www.youtube.com/watch?v=z-2_OstpR5c",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-011",
+    "title": "People",
+    "artist": "Barbra Streisand",
+    "primary_artist": "Barbra Streisand",
+    "chart_year": 1964,
+    "chart_year_rank": 11,
+    "rank_method": "computed",
+    "release_date": "1964-04",
+    "release_date_precision": "month",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Pop",
+    "primary_genre": "Pop",
+    "album": "Funny Girl: Original Broadway Cast",
+    "duration_sec": 207,
+    "peak_position": 5,
+    "first_chart_date": "1964-04-04",
+    "last_chart_date": "1964-08-08",
+    "peak_date": "1964-06-27",
+    "weeks_on_chart": 19,
+    "musicbrainz": {
+      "recording_mbid": "e0c894de-38f2-4a5c-9a99-97eced000035",
+      "recording_url": "https://musicbrainz.org/recording/e0c894de-38f2-4a5c-9a99-97eced000035"
+    },
+    "isrc": "USCA28700110",
+    "streaming": {
+      "youtube": {
+        "id": "g1B-a1M7U58",
+        "url": "https://www.youtube.com/watch?v=g1B-a1M7U58",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-012",
+    "title": "Java",
+    "artist": "Al (He's the King) Hirt",
+    "primary_artist": "Al (He's the King) Hirt",
+    "chart_year": 1964,
+    "chart_year_rank": 12,
+    "rank_method": "computed",
+    "release_date": "1964-01-04",
+    "release_date_precision": "day",
+    "date_source": "chart_debut",
+    "decade": "1960s",
+    "genres": "Surf Rock, Rock",
+    "primary_genre": "Surf Rock",
+    "album": "Instrumental Gems of the ’60s",
+    "duration_sec": 118,
+    "peak_position": 4,
+    "first_chart_date": "1964-01-04",
+    "last_chart_date": "1964-04-18",
+    "peak_date": "1964-02-29",
+    "weeks_on_chart": 16,
+    "musicbrainz": {
+      "recording_mbid": "62029631-d45a-4531-a05b-a3fb0f4655fb",
+      "recording_url": "https://musicbrainz.org/recording/62029631-d45a-4531-a05b-a3fb0f4655fb"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "gYyLkcf_S_0",
+        "url": "https://www.youtube.com/watch?v=gYyLkcf_S_0",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-016",
+    "title": "Little Children",
+    "artist": "Billy J. Kramer With The Dakotas",
+    "primary_artist": "Billy J. Kramer With The Dakotas",
+    "chart_year": 1964,
+    "chart_year_rank": 16,
+    "rank_method": "computed",
+    "release_date": "1964-04",
+    "release_date_precision": "month",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "British Invasion, Rock",
+    "primary_genre": "British Invasion",
+    "album": "Little Children / Bad to Me",
+    "duration_sec": 167,
+    "peak_position": 7,
+    "first_chart_date": "1964-04-18",
+    "last_chart_date": "1964-07-25",
+    "peak_date": "1964-06-13",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "f01e68d5-eb58-41b1-96fc-6ed078188243",
+      "recording_url": "https://musicbrainz.org/recording/f01e68d5-eb58-41b1-96fc-6ed078188243"
+    },
+    "isrc": "GBAYE1400335",
+    "streaming": {
+      "youtube": {
+        "id": "7t0xYjx16Ew",
+        "url": "https://www.youtube.com/watch?v=7t0xYjx16Ew",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1964-018",
+    "title": "Love Me With All Your Heart (Cuando Calienta El Sol)",
+    "artist": "The Ray Charles Singers",
+    "primary_artist": "The Ray Charles Singers",
+    "chart_year": 1964,
+    "chart_year_rank": 18,
+    "rank_method": "computed",
+    "release_date": "1964",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Easy Listening",
+    "primary_genre": "Easy Listening",
+    "album": "Love Me With All Your Heart (Cuando Calienta El Sol) / Sweet Little Mountain Bird",
+    "duration_sec": 141,
+    "peak_position": 3,
+    "first_chart_date": "1964-04-11",
+    "last_chart_date": "1964-07-18",
+    "peak_date": "1964-06-13",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "12efde51-4472-4392-852e-afbf93e5e88f",
+      "recording_url": "https://musicbrainz.org/recording/12efde51-4472-4392-852e-afbf93e5e88f"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "KiIdf4ghQ2Y",
+        "url": "https://www.youtube.com/watch?v=KiIdf4ghQ2Y",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-001",
+    "title": "Come And Get Your Love",
+    "artist": "Redbone",
+    "primary_artist": "Redbone",
+    "chart_year": 1974,
+    "chart_year_rank": 1,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Funk, R&B",
+    "primary_genre": "Funk",
+    "album": "Come and Get Your Love",
+    "duration_sec": 212,
+    "peak_position": 5,
+    "first_chart_date": "1974-01-12",
+    "last_chart_date": "1974-06-15",
+    "peak_date": "1974-04-13",
+    "weeks_on_chart": 23,
+    "musicbrainz": {
+      "recording_mbid": "19743e71-e55d-4413-9450-0be53223675a",
+      "recording_url": "https://musicbrainz.org/recording/19743e71-e55d-4413-9450-0be53223675a"
+    },
+    "isrc": "USBT21600126",
+    "streaming": {
+      "youtube": {
+        "id": "kuymTS9PoBQ",
+        "url": "https://www.youtube.com/watch?v=kuymTS9PoBQ",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-002",
+    "title": "Dancing Machine",
+    "artist": "Jackson 5",
+    "primary_artist": "Jackson 5",
+    "chart_year": 1974,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Disco, Funk, Dance",
+    "primary_genre": "Disco",
+    "album": "Get It Together",
+    "duration_sec": 207,
+    "peak_position": 2,
+    "first_chart_date": "1974-03-16",
+    "last_chart_date": "1974-08-10",
+    "peak_date": "1974-05-18",
+    "weeks_on_chart": 22,
+    "musicbrainz": {
+      "recording_mbid": "6901548e-085d-401b-ab57-dc1bf785c5e8",
+      "recording_url": "https://musicbrainz.org/recording/6901548e-085d-401b-ab57-dc1bf785c5e8"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "D_tiKaNzx-8",
+        "url": "https://www.youtube.com/watch?v=D_tiKaNzx-8",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-003",
+    "title": "One Hell Of A Woman",
+    "artist": "Mac Davis",
+    "primary_artist": "Mac Davis",
+    "chart_year": 1974,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1974",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Soft Rock, Pop",
+    "primary_genre": "Soft Rock",
+    "album": "Stop and Smell the Roses",
+    "duration_sec": 175,
+    "peak_position": 11,
+    "first_chart_date": "1974-03-30",
+    "last_chart_date": "1974-10-05",
+    "peak_date": "1974-07-13",
+    "weeks_on_chart": 28,
+    "musicbrainz": {
+      "recording_mbid": "74876bd9-2e66-42ae-88df-8725f30518a4",
+      "recording_url": "https://musicbrainz.org/recording/74876bd9-2e66-42ae-88df-8725f30518a4"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "vqXt8AmCv_U",
+        "url": "https://www.youtube.com/watch?v=vqXt8AmCv_U",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-004",
+    "title": "Midnight At The Oasis",
+    "artist": "Maria Muldaur",
+    "primary_artist": "Maria Muldaur",
+    "chart_year": 1974,
+    "chart_year_rank": 4,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Singer-Songwriter, Pop",
+    "primary_genre": "Singer-Songwriter",
+    "album": "Maria Muldaur",
+    "duration_sec": 228,
+    "peak_position": 6,
+    "first_chart_date": "1974-02-23",
+    "last_chart_date": "1974-08-03",
+    "peak_date": "1974-06-01",
+    "weeks_on_chart": 24,
+    "musicbrainz": {
+      "recording_mbid": "52d80bc5-7eed-4ad9-baae-e8337675f5df",
+      "recording_url": "https://musicbrainz.org/recording/52d80bc5-7eed-4ad9-baae-e8337675f5df"
+    },
+    "isrc": "USRE10100264",
+    "streaming": {
+      "youtube": {
+        "id": "3gKnnb24Eso",
+        "url": "https://www.youtube.com/watch?v=3gKnnb24Eso",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-005",
+    "title": "You Make Me Feel Brand New",
+    "artist": "The Stylistics",
+    "primary_artist": "The Stylistics",
+    "chart_year": 1974,
+    "chart_year_rank": 5,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Philadelphia Soul, R&B",
+    "primary_genre": "Philadelphia Soul",
+    "album": "Rockin' Roll Baby",
+    "duration_sec": 327,
+    "peak_position": 2,
+    "first_chart_date": "1974-03-23",
+    "last_chart_date": "1974-09-07",
+    "peak_date": "1974-06-15",
+    "weeks_on_chart": 25,
+    "musicbrainz": {
+      "recording_mbid": "e31417ad-29c1-43a9-9908-d454b5613c2a",
+      "recording_url": "https://musicbrainz.org/recording/e31417ad-29c1-43a9-9908-d454b5613c2a"
+    },
+    "isrc": "GBUM71700032",
+    "streaming": {
+      "youtube": {
+        "id": "z00Y5gCzhvc",
+        "url": "https://www.youtube.com/watch?v=z00Y5gCzhvc",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-006",
+    "title": "Bennie And The Jets",
+    "artist": "Elton John",
+    "primary_artist": "Elton John",
+    "chart_year": 1974,
+    "chart_year_rank": 6,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Glam Rock, Rock",
+    "primary_genre": "Glam Rock",
+    "album": "Bennie And The Jets / Harmony",
+    "duration_sec": 306,
+    "peak_position": 1,
+    "first_chart_date": "1974-02-16",
+    "last_chart_date": "1974-06-15",
+    "peak_date": "1974-04-13",
+    "weeks_on_chart": 18,
+    "musicbrainz": {
+      "recording_mbid": "714edc52-8623-489f-a91a-850b6fcfb1e9",
+      "recording_url": "https://musicbrainz.org/recording/714edc52-8623-489f-a91a-850b6fcfb1e9"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "wo1OwRTRKRk",
+        "url": "https://www.youtube.com/watch?v=wo1OwRTRKRk",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-007",
+    "title": "Seasons In The Sun",
+    "artist": "Terry Jacks",
+    "primary_artist": "Terry Jacks",
+    "chart_year": 1974,
+    "chart_year_rank": 7,
+    "rank_method": "computed",
+    "release_date": "1973",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Soft Rock, Pop",
+    "primary_genre": "Soft Rock",
+    "album": "Seasons in the Sun / Put the Bone In",
+    "duration_sec": 207,
+    "peak_position": 1,
+    "first_chart_date": "1974-01-12",
+    "last_chart_date": "1974-06-01",
+    "peak_date": "1974-03-02",
+    "weeks_on_chart": 21,
+    "musicbrainz": {
+      "recording_mbid": "4a708ce4-740e-4d97-a25b-8e9c9e88caa5",
+      "recording_url": "https://musicbrainz.org/recording/4a708ce4-740e-4d97-a25b-8e9c9e88caa5"
+    },
+    "isrc": "CAB0A1400020",
+    "streaming": {
+      "youtube": {
+        "id": "-tPcc1ftj8E",
+        "url": "https://www.youtube.com/watch?v=-tPcc1ftj8E",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-008",
+    "title": "The Way We Were",
+    "artist": "Barbra Streisand",
+    "primary_artist": "Barbra Streisand",
+    "chart_year": 1974,
+    "chart_year_rank": 8,
+    "rank_method": "computed",
+    "release_date": "1973-09-26",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Soft Rock, Singer-Songwriter, Pop",
+    "primary_genre": "Soft Rock",
+    "album": "The Way We Were",
+    "duration_sec": 209,
+    "peak_position": 1,
+    "first_chart_date": "1973-11-24",
+    "last_chart_date": "1974-04-27",
+    "peak_date": "1974-02-02",
+    "weeks_on_chart": 23,
+    "musicbrainz": {
+      "recording_mbid": "00f8614c-cb04-4881-9d18-d659464d0158",
+      "recording_url": "https://musicbrainz.org/recording/00f8614c-cb04-4881-9d18-d659464d0158"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "ifWOSnoCS0M",
+        "url": "https://www.youtube.com/watch?v=ifWOSnoCS0M",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-009",
+    "title": "Jungle Boogie",
+    "artist": "Kool & The Gang",
+    "primary_artist": "Kool & The Gang",
+    "chart_year": 1974,
+    "chart_year_rank": 9,
+    "rank_method": "computed",
+    "release_date": "1973-09-09",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Funk, R&B",
+    "primary_genre": "Funk",
+    "album": "Wild and Peaceful",
+    "duration_sec": 185,
+    "peak_position": 4,
+    "first_chart_date": "1973-12-08",
+    "last_chart_date": "1974-05-04",
+    "peak_date": "1974-03-09",
+    "weeks_on_chart": 22,
+    "musicbrainz": {
+      "recording_mbid": "afd7680d-0df0-41d8-8d80-318090702f90",
+      "recording_url": "https://musicbrainz.org/recording/afd7680d-0df0-41d8-8d80-318090702f90"
+    },
+    "isrc": "USRHD0708244",
+    "streaming": {
+      "youtube": {
+        "id": "QGKiC2suCHQ",
+        "url": "https://www.youtube.com/watch?v=QGKiC2suCHQ",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1974-010",
+    "title": "The Loco-Motion",
+    "artist": "Grand Funk",
+    "primary_artist": "Grand Funk",
+    "chart_year": 1974,
+    "chart_year_rank": 10,
+    "rank_method": "computed",
+    "release_date": "1974-02-25",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Hard Rock, Rock",
+    "primary_genre": "Hard Rock",
+    "album": "The Loco-Motion / Destitute & Losin'",
+    "duration_sec": 165,
+    "peak_position": 1,
+    "first_chart_date": "1974-03-09",
+    "last_chart_date": "1974-07-20",
+    "peak_date": "1974-05-04",
+    "weeks_on_chart": 20,
+    "musicbrainz": {
+      "recording_mbid": "902071ae-fac7-4858-a324-e4a12966ee2b",
+      "recording_url": "https://musicbrainz.org/recording/902071ae-fac7-4858-a324-e4a12966ee2b"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "FULmAxNS4hk",
+        "url": "https://www.youtube.com/watch?v=FULmAxNS4hk",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-001",
+    "title": "What's Love Got To Do With It",
+    "artist": "Tina Turner",
+    "primary_artist": "Tina Turner",
+    "chart_year": 1984,
+    "chart_year_rank": 1,
+    "rank_method": "computed",
+    "release_date": "1984",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Adult Contemporary, Pop",
+    "primary_genre": "Adult Contemporary",
+    "album": "Pretty Woman: Special Edition Motion Picture Soundtrack",
+    "duration_sec": 198,
+    "peak_position": 1,
+    "first_chart_date": "1984-05-19",
+    "last_chart_date": "1984-11-24",
+    "peak_date": "1984-09-01",
+    "weeks_on_chart": 28,
+    "musicbrainz": {
+      "recording_mbid": "c476f0fc-ec0b-4945-a310-939d4a68c9fa",
+      "recording_url": "https://musicbrainz.org/recording/c476f0fc-ec0b-4945-a310-939d4a68c9fa"
+    },
+    "isrc": "USCA28400002",
+    "streaming": {
+      "youtube": {
+        "id": "oGpFcHTxjZs",
+        "url": "https://www.youtube.com/watch?v=oGpFcHTxjZs",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-002",
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "artist": "Phil Collins",
+    "primary_artist": "Phil Collins",
+    "chart_year": 1984,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1984-07-23",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Adult Contemporary, Pop",
+    "primary_genre": "Adult Contemporary",
+    "album": "Against All Odds: Music From the Original Motion Picture Soundtrack",
+    "duration_sec": 205,
+    "peak_position": 1,
+    "first_chart_date": "1984-02-25",
+    "last_chart_date": "1984-08-04",
+    "peak_date": "1984-04-21",
+    "weeks_on_chart": 24,
+    "musicbrainz": {
+      "recording_mbid": "9250097b-6449-4926-acfd-d591d95b3f60",
+      "recording_url": "https://musicbrainz.org/recording/9250097b-6449-4926-acfd-d591d95b3f60"
+    },
+    "isrc": "USRH11603367",
+    "streaming": {
+      "youtube": {
+        "id": "wuvtoyVi7vY",
+        "url": "https://www.youtube.com/watch?v=wuvtoyVi7vY",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-003",
+    "title": "Hello",
+    "artist": "Lionel Richie",
+    "primary_artist": "Lionel Richie",
+    "chart_year": 1984,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1983-10-11",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Contemporary R&B, R&B",
+    "primary_genre": "Contemporary R&B",
+    "album": "Can’t Slow Down",
+    "duration_sec": 249,
+    "peak_position": 1,
+    "first_chart_date": "1984-02-25",
+    "last_chart_date": "1984-08-04",
+    "peak_date": "1984-05-12",
+    "weeks_on_chart": 24,
+    "musicbrainz": {
+      "recording_mbid": "6aa575e3-6772-4e5b-a09a-d274d14fb415",
+      "recording_url": "https://musicbrainz.org/recording/6aa575e3-6772-4e5b-a09a-d274d14fb415"
+    },
+    "isrc": "USM018390012",
+    "streaming": {
+      "youtube": {
+        "id": "zjbrkbgKH58",
+        "url": "https://www.youtube.com/watch?v=zjbrkbgKH58",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-004",
+    "title": "Footloose",
+    "artist": "Kenny Loggins",
+    "primary_artist": "Kenny Loggins",
+    "chart_year": 1984,
+    "chart_year_rank": 4,
+    "rank_method": "computed",
+    "release_date": "1984",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Adult Contemporary, Pop",
+    "primary_genre": "Adult Contemporary",
+    "album": "Footloose",
+    "duration_sec": 227,
+    "peak_position": 1,
+    "first_chart_date": "1984-01-28",
+    "last_chart_date": "1984-06-30",
+    "peak_date": "1984-03-31",
+    "weeks_on_chart": 23,
+    "musicbrainz": {
+      "recording_mbid": "384f304d-5539-4cbf-920b-cfa8e69f795e",
+      "recording_url": "https://musicbrainz.org/recording/384f304d-5539-4cbf-920b-cfa8e69f795e"
+    },
+    "isrc": "USSM18400908",
+    "streaming": {
+      "youtube": {
+        "id": "hq3Q3FfJkK4",
+        "url": "https://www.youtube.com/watch?v=hq3Q3FfJkK4",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-005",
+    "title": "Missing You",
+    "artist": "John Waite",
+    "primary_artist": "John Waite",
+    "chart_year": 1984,
+    "chart_year_rank": 5,
+    "rank_method": "computed",
+    "release_date": "1984-04-20",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Adult Contemporary, Pop",
+    "primary_genre": "Adult Contemporary",
+    "album": "No Brakes",
+    "duration_sec": 268,
+    "peak_position": 1,
+    "first_chart_date": "1984-06-23",
+    "last_chart_date": "1984-12-01",
+    "peak_date": "1984-09-22",
+    "weeks_on_chart": 24,
+    "musicbrainz": {
+      "recording_mbid": "d60b4791-b0c3-47e4-aede-9456843f4b2c",
+      "recording_url": "https://musicbrainz.org/recording/d60b4791-b0c3-47e4-aede-9456843f4b2c"
+    },
+    "isrc": "USEM38400152",
+    "streaming": {
+      "youtube": {
+        "id": "Tg7vvmlrRzc",
+        "url": "https://www.youtube.com/watch?v=Tg7vvmlrRzc",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-006",
+    "title": "When Doves Cry",
+    "artist": "Prince",
+    "primary_artist": "Prince",
+    "chart_year": 1984,
+    "chart_year_rank": 6,
+    "rank_method": "computed",
+    "release_date": "1984-05-16",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Contemporary R&B, R&B",
+    "primary_genre": "Contemporary R&B",
+    "album": "When Doves Cry",
+    "duration_sec": 229,
+    "peak_position": 1,
+    "first_chart_date": "1984-06-02",
+    "last_chart_date": "2016-05-14",
+    "peak_date": "1984-07-07",
+    "weeks_on_chart": 23,
+    "musicbrainz": {
+      "recording_mbid": "99c6241b-4403-43d5-99e9-3708df649989",
+      "recording_url": "https://musicbrainz.org/recording/99c6241b-4403-43d5-99e9-3708df649989"
+    },
+    "isrc": "USWB11700644",
+    "streaming": {
+      "youtube": {
+        "id": "UG3VcCAlUgE",
+        "url": "https://www.youtube.com/watch?v=UG3VcCAlUgE",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-007",
+    "title": "Borderline",
+    "artist": "Madonna",
+    "primary_artist": "Madonna",
+    "chart_year": 1984,
+    "chart_year_rank": 7,
+    "rank_method": "computed",
+    "release_date": "1983-07-26",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Synth-Pop, Pop",
+    "primary_genre": "Synth-Pop",
+    "album": "Madonna",
+    "duration_sec": 322,
+    "peak_position": 10,
+    "first_chart_date": "1984-03-10",
+    "last_chart_date": "1984-09-29",
+    "peak_date": "1984-06-16",
+    "weeks_on_chart": 30,
+    "musicbrainz": {
+      "recording_mbid": "516012bf-ff23-4fb9-ae18-d70f35fa8603",
+      "recording_url": "https://musicbrainz.org/recording/516012bf-ff23-4fb9-ae18-d70f35fa8603"
+    },
+    "isrc": "USWB11200470",
+    "streaming": {
+      "youtube": {
+        "id": "MHQIs0Yonws",
+        "url": "https://www.youtube.com/watch?v=MHQIs0Yonws",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-008",
+    "title": "Self Control",
+    "artist": "Laura Branigan",
+    "primary_artist": "Laura Branigan",
+    "chart_year": 1984,
+    "chart_year_rank": 8,
+    "rank_method": "computed",
+    "release_date": "1984",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Synth-Pop, Pop",
+    "primary_genre": "Synth-Pop",
+    "album": "Self Control",
+    "duration_sec": 237,
+    "peak_position": 4,
+    "first_chart_date": "1984-04-14",
+    "last_chart_date": "1984-09-29",
+    "peak_date": "1984-06-30",
+    "weeks_on_chart": 25,
+    "musicbrainz": {
+      "recording_mbid": "987e874c-c7f3-4908-b422-9a3fa506b552",
+      "recording_url": "https://musicbrainz.org/recording/987e874c-c7f3-4908-b422-9a3fa506b552"
+    },
+    "isrc": "USRH11904759",
+    "streaming": {
+      "youtube": {
+        "id": "FQD0yGuZ2N8",
+        "url": "https://www.youtube.com/watch?v=FQD0yGuZ2N8",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-009",
+    "title": "The Glamorous Life",
+    "artist": "Sheila E.",
+    "primary_artist": "Sheila E.",
+    "chart_year": 1984,
+    "chart_year_rank": 9,
+    "rank_method": "computed",
+    "release_date": "1984-05-02",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Dance",
+    "primary_genre": "Dance",
+    "album": "The Glamorous Life",
+    "duration_sec": 223,
+    "peak_position": 7,
+    "first_chart_date": "1984-06-16",
+    "last_chart_date": "1984-12-08",
+    "peak_date": "1984-10-06",
+    "weeks_on_chart": 26,
+    "musicbrainz": {
+      "recording_mbid": "2ca1d9b7-c0f0-4168-b188-35184d6b7b3c",
+      "recording_url": "https://musicbrainz.org/recording/2ca1d9b7-c0f0-4168-b188-35184d6b7b3c"
+    },
+    "isrc": "USWB10001934",
+    "streaming": {
+      "youtube": {
+        "id": "6Zqtl8azCs8",
+        "url": "https://www.youtube.com/watch?v=6Zqtl8azCs8",
+        "official": false
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1984-010",
+    "title": "I Can Dream About You",
+    "artist": "Dan Hartman",
+    "primary_artist": "Dan Hartman",
+    "chart_year": 1984,
+    "chart_year_rank": 10,
+    "rank_method": "computed",
+    "release_date": "1984",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "Adult Contemporary, Pop",
+    "primary_genre": "Adult Contemporary",
+    "album": "I Can Dream About You / Instant Replay",
+    "duration_sec": 231,
+    "peak_position": 6,
+    "first_chart_date": "1984-05-05",
+    "last_chart_date": "1984-10-20",
+    "peak_date": "1984-08-18",
+    "weeks_on_chart": 25,
+    "musicbrainz": {
+      "recording_mbid": "913ac51d-f367-412d-97d0-0fdd400df2b8",
+      "recording_url": "https://musicbrainz.org/recording/913ac51d-f367-412d-97d0-0fdd400df2b8"
+    },
+    "isrc": "USMC18414559",
+    "streaming": {
+      "youtube": {
+        "id": "621Nk3Ubz4A",
+        "url": "https://www.youtube.com/watch?v=621Nk3Ubz4A",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-001",
+    "title": "Just Another Day",
+    "artist": "Jon Secada",
+    "primary_artist": "Jon Secada",
+    "chart_year": 1992,
+    "chart_year_rank": 1,
+    "rank_method": "computed",
+    "release_date": "1992",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Pop",
+    "primary_genre": "Pop",
+    "album": "Just Another Day (Remix By Tommy Musto)",
+    "duration_sec": 349,
+    "peak_position": 5,
+    "first_chart_date": "1992-04-18",
+    "last_chart_date": "1992-12-26",
+    "peak_date": "1992-08-01",
+    "weeks_on_chart": 37,
+    "musicbrainz": {
+      "recording_mbid": "e6dfebda-f0b9-4fe7-952d-a301843c40b3",
+      "recording_url": "https://musicbrainz.org/recording/e6dfebda-f0b9-4fe7-952d-a301843c40b3"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "B6LhWbQthAI",
+        "url": "https://www.youtube.com/watch?v=B6LhWbQthAI",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-002",
+    "title": "Baby-Baby-Baby",
+    "artist": "TLC",
+    "primary_artist": "TLC",
+    "chart_year": 1992,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1992-02-25",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Contemporary R&B, R&B",
+    "primary_genre": "Contemporary R&B",
+    "album": "Ooooooohhh…On the TLC Tip",
+    "duration_sec": 315,
+    "peak_position": 2,
+    "first_chart_date": "1992-06-06",
+    "last_chart_date": "1993-01-16",
+    "peak_date": "1992-08-15",
+    "weeks_on_chart": 33,
+    "musicbrainz": {
+      "recording_mbid": "097d9c49-65fe-4104-8bf4-ed00f0f0ce19",
+      "recording_url": "https://musicbrainz.org/recording/097d9c49-65fe-4104-8bf4-ed00f0f0ce19"
+    },
+    "isrc": "USLF29200128",
+    "streaming": {
+      "youtube": {
+        "id": "Q2H6pTtEVlo",
+        "url": "https://www.youtube.com/watch?v=Q2H6pTtEVlo",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-003",
+    "title": "Baby Got Back",
+    "artist": "Sir Mix-A-Lot",
+    "primary_artist": "Sir Mix-A-Lot",
+    "chart_year": 1992,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1992",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Hip-Hop",
+    "primary_genre": "Hip-Hop",
+    "album": "Baby Got Back",
+    "duration_sec": 261,
+    "peak_position": 1,
+    "first_chart_date": "1992-04-11",
+    "last_chart_date": "1992-10-17",
+    "peak_date": "1992-07-04",
+    "weeks_on_chart": 28,
+    "musicbrainz": {
+      "recording_mbid": "71190fb1-7974-4961-a196-abbd974d84c5",
+      "recording_url": "https://musicbrainz.org/recording/71190fb1-7974-4961-a196-abbd974d84c5"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "X53ZSxkQ3Ho",
+        "url": "https://www.youtube.com/watch?v=X53ZSxkQ3Ho",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-004",
+    "title": "My Lovin' (You're Never Gonna Get It)",
+    "artist": "En Vogue",
+    "primary_artist": "En Vogue",
+    "chart_year": 1992,
+    "chart_year_rank": 4,
+    "rank_method": "computed",
+    "release_date": "1992-03-30",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Contemporary R&B, R&B",
+    "primary_genre": "Contemporary R&B",
+    "album": "Funky Divas",
+    "duration_sec": 282,
+    "peak_position": 2,
+    "first_chart_date": "1992-03-21",
+    "last_chart_date": "1992-10-10",
+    "peak_date": "1992-05-16",
+    "weeks_on_chart": 30,
+    "musicbrainz": {
+      "recording_mbid": "9cf2bb20-ca0f-421b-a437-9d626850fc9b",
+      "recording_url": "https://musicbrainz.org/recording/9cf2bb20-ca0f-421b-a437-9d626850fc9b"
+    },
+    "isrc": "USRH12200003",
+    "streaming": {
+      "youtube": {
+        "id": "JIuYQ_4TcXg",
+        "url": "https://www.youtube.com/watch?v=JIuYQ_4TcXg",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-006",
+    "title": "Save The Best For Last",
+    "artist": "Vanessa Williams",
+    "primary_artist": "Vanessa Williams",
+    "chart_year": 1992,
+    "chart_year_rank": 6,
+    "rank_method": "computed",
+    "release_date": "1991-08-20",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Contemporary R&B, R&B",
+    "primary_genre": "Contemporary R&B",
+    "album": "The Comfort Zone",
+    "duration_sec": 220,
+    "peak_position": 1,
+    "first_chart_date": "1992-02-01",
+    "last_chart_date": "1992-08-01",
+    "peak_date": "1992-03-21",
+    "weeks_on_chart": 27,
+    "musicbrainz": {
+      "recording_mbid": "826d7049-90db-403a-92ce-5837c033fa9d",
+      "recording_url": "https://musicbrainz.org/recording/826d7049-90db-403a-92ce-5837c033fa9d"
+    },
+    "isrc": "USPG19190052",
+    "streaming": {
+      "youtube": {
+        "id": "5EdmHSTwmWY",
+        "url": "https://www.youtube.com/watch?v=5EdmHSTwmWY",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-007",
+    "title": "Tears In Heaven",
+    "artist": "Eric Clapton",
+    "primary_artist": "Eric Clapton",
+    "chart_year": 1992,
+    "chart_year_rank": 7,
+    "rank_method": "computed",
+    "release_date": "1992-01-14",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Rock",
+    "primary_genre": "Rock",
+    "album": "Rush",
+    "duration_sec": 273,
+    "peak_position": 2,
+    "first_chart_date": "1992-02-08",
+    "last_chart_date": "1992-08-01",
+    "peak_date": "1992-03-28",
+    "weeks_on_chart": 26,
+    "musicbrainz": {
+      "recording_mbid": "21ddde6c-90f4-469e-bdd0-1f438d011917",
+      "recording_url": "https://musicbrainz.org/recording/21ddde6c-90f4-469e-bdd0-1f438d011917"
+    },
+    "isrc": "USRE11500099",
+    "streaming": {
+      "youtube": {
+        "id": "JxPj3GAYYZ0",
+        "url": "https://www.youtube.com/watch?v=JxPj3GAYYZ0",
+        "official": false
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-008",
+    "title": "Under The Bridge",
+    "artist": "Red Hot Chili Peppers",
+    "primary_artist": "Red Hot Chili Peppers",
+    "chart_year": 1992,
+    "chart_year_rank": 8,
+    "rank_method": "computed",
+    "release_date": "1991-09-24",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Alternative Rock, Rock",
+    "primary_genre": "Alternative Rock",
+    "album": "Blood Sugar Sex Magik",
+    "duration_sec": 266,
+    "peak_position": 2,
+    "first_chart_date": "1992-04-04",
+    "last_chart_date": "1992-09-26",
+    "peak_date": "1992-06-06",
+    "weeks_on_chart": 26,
+    "musicbrainz": {
+      "recording_mbid": "10d1062a-7275-458f-ad0d-906eeaa22c57",
+      "recording_url": "https://musicbrainz.org/recording/10d1062a-7275-458f-ad0d-906eeaa22c57"
+    },
+    "isrc": "USWB11402852",
+    "streaming": {
+      "youtube": {
+        "id": "GLvohMXgcBo",
+        "url": "https://www.youtube.com/watch?v=GLvohMXgcBo",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-009",
+    "title": "Jump Around",
+    "artist": "House Of Pain",
+    "primary_artist": "House Of Pain",
+    "chart_year": 1992,
+    "chart_year_rank": 9,
+    "rank_method": "computed",
+    "release_date": "1992",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Hip-Hop",
+    "primary_genre": "Hip-Hop",
+    "album": "Jump Around",
+    "duration_sec": 217,
+    "peak_position": 3,
+    "first_chart_date": "1992-06-27",
+    "last_chart_date": "1993-01-16",
+    "peak_date": "1992-10-10",
+    "weeks_on_chart": 30,
+    "musicbrainz": {
+      "recording_mbid": "c2c87dc6-dca3-474e-85d2-a61fa0ac84ed",
+      "recording_url": "https://musicbrainz.org/recording/c2c87dc6-dca3-474e-85d2-a61fa0ac84ed"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "jrL_LzX5wv4",
+        "url": "https://www.youtube.com/watch?v=jrL_LzX5wv4",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-010",
+    "title": "Achy Breaky Heart",
+    "artist": "Billy Ray Cyrus",
+    "primary_artist": "Billy Ray Cyrus",
+    "chart_year": 1992,
+    "chart_year_rank": 10,
+    "rank_method": "computed",
+    "release_date": "1992-05-19",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Country Pop, Country",
+    "primary_genre": "Country Pop",
+    "album": "Some Gave All",
+    "duration_sec": 204,
+    "peak_position": 4,
+    "first_chart_date": "1992-05-09",
+    "last_chart_date": "1992-10-24",
+    "peak_date": "1992-07-18",
+    "weeks_on_chart": 25,
+    "musicbrainz": {
+      "recording_mbid": "94b6703e-3ea7-4156-827e-7d7baa33e385",
+      "recording_url": "https://musicbrainz.org/recording/94b6703e-3ea7-4156-827e-7d7baa33e385"
+    },
+    "isrc": "USPG19290113",
+    "streaming": {
+      "youtube": {
+        "id": "byQIPdHMpjc",
+        "url": "https://www.youtube.com/watch?v=byQIPdHMpjc",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1992-011",
+    "title": "Life Is A Highway",
+    "artist": "Tom Cochrane",
+    "primary_artist": "Tom Cochrane",
+    "chart_year": 1992,
+    "chart_year_rank": 11,
+    "rank_method": "computed",
+    "release_date": "1991-09-20",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Rock",
+    "primary_genre": "Rock",
+    "album": "Mad Mad World",
+    "duration_sec": 266,
+    "peak_position": 6,
+    "first_chart_date": "1992-05-16",
+    "last_chart_date": "1992-11-07",
+    "peak_date": "1992-08-22",
+    "weeks_on_chart": 26,
+    "musicbrainz": {
+      "recording_mbid": "3961059c-48f2-471f-9aa1-6067072b3e87",
+      "recording_url": "https://musicbrainz.org/recording/3961059c-48f2-471f-9aa1-6067072b3e87"
+    },
+    "isrc": "CAUM71600209",
+    "streaming": {
+      "youtube": {
+        "id": "zVPmwSTMhjo",
+        "url": "https://www.youtube.com/watch?v=zVPmwSTMhjo",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1963-002",
+    "title": "Surfin' U.S.A.",
+    "artist": "The Beach Boys",
+    "primary_artist": "The Beach Boys",
+    "chart_year": 1963,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1963",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Surf Rock, Rock",
+    "primary_genre": "Surf Rock",
+    "album": "Surfin’ U.S.A.",
+    "duration_sec": null,
+    "peak_position": 3,
+    "first_chart_date": "1963-03-23",
+    "last_chart_date": "1974-10-05",
+    "peak_date": "1963-05-25",
+    "weeks_on_chart": 25,
+    "musicbrainz": {
+      "recording_mbid": "99197e2b-c35f-4960-9f29-9c65fd8cec72",
+      "recording_url": "https://musicbrainz.org/recording/99197e2b-c35f-4960-9f29-9c65fd8cec72"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "enlOHxQ0tb4",
+        "url": "https://www.youtube.com/watch?v=enlOHxQ0tb4",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1986-032",
+    "title": "Manic Monday",
+    "artist": "The Bangles",
+    "primary_artist": "The Bangles",
+    "chart_year": 1986,
+    "chart_year_rank": 32,
+    "rank_method": "computed",
+    "release_date": "1986",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "New Wave, Pop",
+    "primary_genre": "New Wave",
+    "album": "Bristol Bierkeller 4th Feb 1986",
+    "duration_sec": null,
+    "peak_position": 2,
+    "first_chart_date": "1986-01-25",
+    "last_chart_date": "1986-06-07",
+    "peak_date": "1986-04-19",
+    "weeks_on_chart": 20,
+    "musicbrainz": {
+      "recording_mbid": "a634592d-6900-41ab-9302-4e47184ff7ed",
+      "recording_url": "https://musicbrainz.org/recording/a634592d-6900-41ab-9302-4e47184ff7ed"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "SsmVgoXDq2w",
+        "url": "https://www.youtube.com/watch?v=SsmVgoXDq2w",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1976-011",
+    "title": "Bohemian Rhapsody",
+    "artist": "Queen",
+    "primary_artist": "Queen",
+    "chart_year": 1976,
+    "chart_year_rank": 11,
+    "rank_method": "computed",
+    "release_date": "1975-11-21",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1970s",
+    "genres": "Progressive Rock, Rock",
+    "primary_genre": "Progressive Rock",
+    "album": "A Night at the Opera",
+    "duration_sec": 355,
+    "peak_position": 2,
+    "first_chart_date": "1976-01-03",
+    "last_chart_date": "2018-12-01",
+    "peak_date": "1992-05-09",
+    "weeks_on_chart": 44,
+    "musicbrainz": {
+      "recording_mbid": "b1a9c0e9-d987-4042-ae91-78d6a3267d69",
+      "recording_url": "https://musicbrainz.org/recording/b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+    },
+    "isrc": "GBCEE7500015",
+    "streaming": {
+      "youtube": {
+        "id": "fJ9rUzIMcZQ",
+        "url": "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1983-003",
+    "title": "Every Breath You Take",
+    "artist": "The Police",
+    "primary_artist": "The Police",
+    "chart_year": 1983,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1983",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1980s",
+    "genres": "New Wave, Rock",
+    "primary_genre": "New Wave",
+    "album": "Four Big Hits, Vol. 2",
+    "duration_sec": 253,
+    "peak_position": 1,
+    "first_chart_date": "1983-06-04",
+    "last_chart_date": "1983-10-29",
+    "peak_date": "1983-07-09",
+    "weeks_on_chart": 22,
+    "musicbrainz": {
+      "recording_mbid": "ad704170-12b0-4353-9805-aa1372bcda7f",
+      "recording_url": "https://musicbrainz.org/recording/ad704170-12b0-4353-9805-aa1372bcda7f"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "6T18zHGq8x0",
+        "url": "https://www.youtube.com/watch?v=6T18zHGq8x0",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1991-026",
+    "title": "Losing My Religion",
+    "artist": "R.E.M.",
+    "primary_artist": "R.E.M.",
+    "chart_year": 1991,
+    "chart_year_rank": 26,
+    "rank_method": "computed",
+    "release_date": "1991-02",
+    "release_date_precision": "month",
+    "date_source": "musicbrainz",
+    "decade": "1990s",
+    "genres": "Alternative Rock, Rock",
+    "primary_genre": "Alternative Rock",
+    "album": "Out of Time",
+    "duration_sec": 268,
+    "peak_position": 4,
+    "first_chart_date": "1991-04-06",
+    "last_chart_date": "1991-08-24",
+    "peak_date": "1991-06-22",
+    "weeks_on_chart": 21,
+    "musicbrainz": {
+      "recording_mbid": "d4e0a590-e461-499a-8f62-b595b6c65ada",
+      "recording_url": "https://musicbrainz.org/recording/d4e0a590-e461-499a-8f62-b595b6c65ada"
+    },
+    "isrc": "USWB10402077",
+    "streaming": {
+      "youtube": {
+        "id": "Efa6BAWPm9o",
+        "url": "https://www.youtube.com/watch?v=Efa6BAWPm9o",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1967-002",
+    "title": "Light My Fire",
+    "artist": "The Doors",
+    "primary_artist": "The Doors",
+    "chart_year": 1967,
+    "chart_year_rank": 2,
+    "rank_method": "computed",
+    "release_date": "1967",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Psychedelic Rock, Rock",
+    "primary_genre": "Psychedelic Rock",
+    "album": "Light My Fire",
+    "duration_sec": 390,
+    "peak_position": 1,
+    "first_chart_date": "1967-06-03",
+    "last_chart_date": "1968-10-05",
+    "peak_date": "1967-07-29",
+    "weeks_on_chart": 23,
+    "musicbrainz": {
+      "recording_mbid": "3a3570ff-5130-4b1d-80b6-33eca95a2908",
+      "recording_url": "https://musicbrainz.org/recording/3a3570ff-5130-4b1d-80b6-33eca95a2908"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "_g_tuOS-iZ4",
+        "url": "https://www.youtube.com/watch?v=_g_tuOS-iZ4",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1965-003",
+    "title": "(I Can't Get No) Satisfaction",
+    "artist": "The Rolling Stones",
+    "primary_artist": "The Rolling Stones",
+    "chart_year": 1965,
+    "chart_year_rank": 3,
+    "rank_method": "computed",
+    "release_date": "1965",
+    "release_date_precision": "year",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "British Invasion, Rock",
+    "primary_genre": "British Invasion",
+    "album": "(I Can’t Get No) Satisfaction / The Spider and the Fly",
+    "duration_sec": null,
+    "peak_position": 1,
+    "first_chart_date": "1965-06-12",
+    "last_chart_date": "1965-09-11",
+    "peak_date": "1965-07-10",
+    "weeks_on_chart": 14,
+    "musicbrainz": {
+      "recording_mbid": "f04531a5-eafd-4e2f-ba13-5e16399ddc94",
+      "recording_url": "https://musicbrainz.org/recording/f04531a5-eafd-4e2f-ba13-5e16399ddc94"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "nrIPxlFzDi0",
+        "url": "https://www.youtube.com/watch?v=nrIPxlFzDi0",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1966-004",
+    "title": "Last Train To Clarksville",
+    "artist": "The Monkees",
+    "primary_artist": "The Monkees",
+    "chart_year": 1966,
+    "chart_year_rank": 4,
+    "rank_method": "computed",
+    "release_date": "1966-08-16",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Pop",
+    "primary_genre": "Pop",
+    "album": "Last Train to Clarksville / Take a Giant Step",
+    "duration_sec": 160,
+    "peak_position": 1,
+    "first_chart_date": "1966-09-10",
+    "last_chart_date": "1966-12-17",
+    "peak_date": "1966-11-05",
+    "weeks_on_chart": 15,
+    "musicbrainz": {
+      "recording_mbid": "39c3288d-9d75-4bd0-a4c9-a841afdc0b41",
+      "recording_url": "https://musicbrainz.org/recording/39c3288d-9d75-4bd0-a4c9-a841afdc0b41"
+    },
+    "isrc": null,
+    "streaming": {
+      "youtube": {
+        "id": "BlgmfYoMD-g",
+        "url": "https://www.youtube.com/watch?v=BlgmfYoMD-g",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  },
+  {
+    "id": "1969-026",
+    "title": "Bad Moon Rising",
+    "artist": "Creedence Clearwater Revival",
+    "primary_artist": "Creedence Clearwater Revival",
+    "chart_year": 1969,
+    "chart_year_rank": 26,
+    "rank_method": "computed",
+    "release_date": "1969-04-16",
+    "release_date_precision": "day",
+    "date_source": "musicbrainz",
+    "decade": "1960s",
+    "genres": "Blues Rock, Rock",
+    "primary_genre": "Blues Rock",
+    "album": "Bad Moon Rising / Lodi",
+    "duration_sec": 140,
+    "peak_position": 2,
+    "first_chart_date": "1969-05-03",
+    "last_chart_date": "1969-08-02",
+    "peak_date": "1969-06-28",
+    "weeks_on_chart": 14,
+    "musicbrainz": {
+      "recording_mbid": "494c7af6-b4ec-4897-b4c7-4663099377e6",
+      "recording_url": "https://musicbrainz.org/recording/494c7af6-b4ec-4897-b4c7-4663099377e6"
+    },
+    "isrc": "USC4R2334168",
+    "streaming": {
+      "youtube": {
+        "id": "3uTBvQ0DRyM",
+        "url": "https://www.youtube.com/watch?v=3uTBvQ0DRyM",
+        "official": true
+      },
+      "youtube_music": {
+        "id": null,
+        "url": null
+      },
+      "spotify": {
+        "id": null,
+        "url": null
+      },
+      "apple_music": {
+        "id": null,
+        "url": null
+      },
+      "amazon_music": {
+        "id": null,
+        "url": null
+      },
+      "tidal": {
+        "id": null,
+        "url": null
+      },
+      "deezer": {
+        "id": null,
+        "url": null
+      }
+    },
+    "verification": "verified"
+  }
+]

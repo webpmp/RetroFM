@@ -73,7 +73,52 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
 
 ---
 
-## Environment Variables
+## Library Setups & Running Modes
+
+RetroFM is designed so that anyone who clones the repository can immediately run it with full DJ features and without requiring an external SQLite database.
+
+### Setup 1: Out-of-the-Box (Sample Dataset)
+A fresh clone includes a bundled sample dataset in `public/data/sample/` with ~50 curated songs across multiple dates and decades (1960s to 2000s), complete with authentic Billboard chart rankings, songwriter/producer credits, and active band member histories.
+
+When the full library files are not present, RetroFM detects this and **automatically loads the sample data**:
+```bash
+# 1. Clone the repository and install dependencies
+git clone https://github.com/chris-schmitz/RetroFM.git
+cd RetroFM
+npm install # or bun install
+
+# 2. Configure .env with your Gemini API key
+cp .env.example .env
+
+# 3. Launch the development server
+npm run dev # or docker compose up -d
+```
+Open [http://localhost:3003](http://localhost:3003) (Docker) or [http://localhost:3000](http://localhost:3000) (local npm). The DJ commentary, era-accurate chart trivia, and song stories will work out of the box using the sample dataset.
+
+---
+
+### Setup 2: Full Historical Library (Building with Database & Builder Scripts)
+For power users and contributors wanting the entire 70-year library (~1,800 verified YouTube tracks and 355,800 Billboard Hot 100 weekly chart entries spanning 1958 through today):
+
+1. **SQLite Database Warehouse**:
+   The authoritative historical data is maintained in an SQLite database at `~/retrofm/library.sqlite` (containing `songs`, `song_facts`, `band_members`, `artist_aliases`, and `weekly_chart`).
+   * The `weekly_chart` data originates from open-source Billboard Hot 100 historical datasets (3,558 consecutive chart weeks from 1958 through today).
+   * Music metadata and credits are enriched via MusicBrainz and Wikipedia using the maintenance builder scripts in `scripts/`:
+     * `bun run scripts/populate-library-credits.ts`: queries MusicBrainz for songwriter/producer credits.
+     * `bun run scripts/populate-band-members.ts`: queries MusicBrainz for band member line-up history with join/leave years.
+
+2. **Deterministic Exporter Command**:
+   Whenever you enrich or build `library.sqlite`, run:
+   ```bash
+   npm run export-library
+   ```
+   This command:
+   * Validates referential integrity (ensuring every credit and fact maps to a valid song ID).
+   * Fully regenerates the verified catalog (`public/data/retrofm_library_youtube.json`), extra song references (`public/data/songs_extra.json`), song facts, band members, and artist aliases.
+   * Splits the 355,800 weekly chart rankings into decade JSON files (`public/data/chart_facts_<decade>.json`), atomically rewriting **only** decades whose content changed.
+   * Clears `.cache/song-cards/` so no stale cache persists.
+   * Prints row counts and file sizes. All exported files stay git-ignored.
+
 
 Configure the following variables in your local `.env` file (do not commit real values to version control):
 

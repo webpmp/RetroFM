@@ -1,0 +1,322 @@
+[
+  {
+    "id": 274,
+    "song_id": "1963-002",
+    "fact_type": "credit",
+    "fact_text": "Composed by Chuck Berry; Lyrics by Brian Wilson. Based on \"Sweet Little Sixteen\".",
+    "event_date": null,
+    "public_date": "1963-03-23",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/99197e2b-c35f-4960-9f29-9c65fd8cec72"
+  },
+  {
+    "id": 288,
+    "song_id": "1964-001",
+    "fact_type": "credit",
+    "fact_text": "Produced by Mickey Kapp; Composed by Jerry Herman; Lyrics by Jerry Herman.",
+    "event_date": null,
+    "public_date": "1964-02-15",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/19bdce87-7af7-4098-abdf-380fb5658374"
+  },
+  {
+    "id": 289,
+    "song_id": "1964-002",
+    "fact_type": "credit",
+    "fact_text": "Written by John Lennon, Paul McCartney.",
+    "event_date": null,
+    "public_date": "1964-01-18",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/3c4febdb-e308-4fa9-b0b8-bc969aa7c16a"
+  },
+  {
+    "id": 290,
+    "song_id": "1964-003",
+    "fact_type": "credit",
+    "fact_text": "Written by John Lennon, Paul McCartney.",
+    "event_date": null,
+    "public_date": "1964-01-25",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/0639de1f-4ec9-4e7c-a900-d458cddc49f2"
+  },
+  {
+    "id": 291,
+    "song_id": "1964-005",
+    "fact_type": "credit",
+    "fact_text": "Composed by Smokey Robinson; Lyrics by Smokey Robinson.",
+    "event_date": null,
+    "public_date": "1964-04-04",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/90309d4b-7f35-4001-a472-0ea873367e53"
+  },
+  {
+    "id": 292,
+    "song_id": "1964-006",
+    "fact_type": "credit",
+    "fact_text": "Composed by Brian Wilson; Lyrics by Mike Love, Brian Wilson.",
+    "event_date": null,
+    "public_date": "1964-05-23",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/b5c802ab-8e07-480e-b655-615f080be7fd"
+  },
+  {
+    "id": 293,
+    "song_id": "1964-007",
+    "fact_type": "credit",
+    "fact_text": "Written by Irving Taylor; Composed by Sam Coslow, Ken Lane; Lyrics by Sam Coslow, Irving Taylor.",
+    "event_date": null,
+    "public_date": "1964-06-27",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/8c8e148b-20e9-4643-8dcf-bc4fe229ee73"
+  },
+  {
+    "id": 295,
+    "song_id": "1964-011",
+    "fact_type": "credit",
+    "fact_text": "Composed by Jule Styne; Lyrics by Bob Merrill.",
+    "event_date": null,
+    "public_date": "1964-04-04",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/e0c894de-38f2-4a5c-9a99-97eced000035"
+  },
+  {
+    "id": 161,
+    "song_id": "1964-016",
+    "fact_type": "credit",
+    "fact_text": "Written by J. Leslie McFarland, Mort Shuman.",
+    "event_date": null,
+    "public_date": "1964-04-18",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/f01e68d5-eb58-41b1-96fc-6ed078188243"
+  },
+  {
+    "id": 299,
+    "song_id": "1964-018",
+    "fact_type": "credit",
+    "fact_text": "Composed by Rafael Gastón Perez; Lyrics by Carlos Martinoli, Carlos Rigual, Mario Rigual.",
+    "event_date": null,
+    "public_date": "1964-04-11",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/12efde51-4472-4392-852e-afbf93e5e88f"
+  },
+  {
+    "id": 313,
+    "song_id": "1965-003",
+    "fact_type": "credit",
+    "fact_text": "Written by Mick Jagger, Keith Richards.",
+    "event_date": null,
+    "public_date": "1965-06-12",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/f04531a5-eafd-4e2f-ba13-5e16399ddc94"
+  },
+  {
+    "id": 206,
+    "song_id": "1966-004",
+    "fact_type": "credit",
+    "fact_text": "Produced by Tommy Boyce, Bobby Hart; Written by Tommy Boyce, Bobby Hart.",
+    "event_date": null,
+    "public_date": "1966-09-10",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/39c3288d-9d75-4bd0-a4c9-a841afdc0b41"
+  },
+  {
+    "id": 346,
+    "song_id": "1967-002",
+    "fact_type": "credit",
+    "fact_text": "Produced by Paul A. Rothchild; Written by John Densmore, Robby Krieger, Ray Manzarek, Jim Morrison.",
+    "event_date": null,
+    "public_date": "1967-06-03",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/3a3570ff-5130-4b1d-80b6-33eca95a2908"
+  },
+  {
+    "id": 520,
+    "song_id": "1974-002",
+    "fact_type": "credit",
+    "fact_text": "Written by Hal Davis, Donald E. Fletcher, Dean Parks.",
+    "event_date": null,
+    "public_date": "1974-03-16",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/6901548e-085d-401b-ab57-dc1bf785c5e8"
+  },
+  {
+    "id": 521,
+    "song_id": "1974-005",
+    "fact_type": "credit",
+    "fact_text": "Written by Thom Bell, Linda Creed.",
+    "event_date": null,
+    "public_date": "1974-03-23",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/e31417ad-29c1-43a9-9908-d454b5613c2a"
+  },
+  {
+    "id": 522,
+    "song_id": "1974-007",
+    "fact_type": "credit",
+    "fact_text": "Produced by Terry Jacks; Composed by Jacques Brel; Lyrics by Rod McKuen. Based on \"Le Moribond\".",
+    "event_date": null,
+    "public_date": "1974-01-12",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/4a708ce4-740e-4d97-a25b-8e9c9e88caa5"
+  },
+  {
+    "id": 523,
+    "song_id": "1974-008",
+    "fact_type": "credit",
+    "fact_text": "Composed by Marvin Hamlisch; Lyrics by Alan Bergman, Marilyn Bergman.",
+    "event_date": null,
+    "public_date": "1973-11-24",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/00f8614c-cb04-4881-9d18-d659464d0158"
+  },
+  {
+    "id": 524,
+    "song_id": "1974-009",
+    "fact_type": "credit",
+    "fact_text": "Produced by Kool & the Gang; Written by Robert “Kool” Bell, Ronald Bell, Don Boyce, George Brown, Robert Spike Mickens, Claydes Smith, Dennis “D.T.” Thomas, Ricky West.",
+    "event_date": null,
+    "public_date": "1973-12-08",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/afd7680d-0df0-41d8-8d80-318090702f90"
+  },
+  {
+    "id": 525,
+    "song_id": "1974-010",
+    "fact_type": "credit",
+    "fact_text": "Composed by Carole King; Lyrics by Gerry Goffin.",
+    "event_date": null,
+    "public_date": "1974-03-09",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/902071ae-fac7-4858-a324-e4a12966ee2b"
+  },
+  {
+    "id": 574,
+    "song_id": "1976-011",
+    "fact_type": "credit",
+    "fact_text": "Produced by Roy Thomas Baker, Brian May, Queen, Roger Taylor; Composed by Freddie Mercury; Lyrics by Freddie Mercury.",
+    "event_date": null,
+    "public_date": "1976-01-03",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+  },
+  {
+    "id": 760,
+    "song_id": "1983-003",
+    "fact_type": "credit",
+    "fact_text": "Composed by Sting; Lyrics by Sting.",
+    "event_date": null,
+    "public_date": "1983-06-04",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/ad704170-12b0-4353-9805-aa1372bcda7f"
+  },
+  {
+    "id": 784,
+    "song_id": "1984-001",
+    "fact_type": "credit",
+    "fact_text": "Written by Terry Britten, Graham Lyle.",
+    "event_date": null,
+    "public_date": "1984-05-19",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/c476f0fc-ec0b-4945-a310-939d4a68c9fa"
+  },
+  {
+    "id": 785,
+    "song_id": "1984-003",
+    "fact_type": "credit",
+    "fact_text": "Produced by James Anthony Carmichael, Lionel Richie; Written by James Anthony Carmichael.",
+    "event_date": null,
+    "public_date": "1984-02-25",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/6aa575e3-6772-4e5b-a09a-d274d14fb415"
+  },
+  {
+    "id": 786,
+    "song_id": "1984-005",
+    "fact_type": "credit",
+    "fact_text": "Composed by Mark Leonard, Chas Sandford.",
+    "event_date": null,
+    "public_date": "1984-06-23",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/d60b4791-b0c3-47e4-aede-9456843f4b2c"
+  },
+  {
+    "id": 787,
+    "song_id": "1984-008",
+    "fact_type": "credit",
+    "fact_text": "Written by Harro Steffen; Composed by Giancarlo Bigazzi, Raf; Lyrics by Steve Piccolo.",
+    "event_date": null,
+    "public_date": "1984-04-14",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/987e874c-c7f3-4908-b422-9a3fa506b552"
+  },
+  {
+    "id": 788,
+    "song_id": "1984-009",
+    "fact_type": "credit",
+    "fact_text": "Composed by Prince; Lyrics by Prince.",
+    "event_date": null,
+    "public_date": "1984-06-16",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/2ca1d9b7-c0f0-4168-b188-35184d6b7b3c"
+  },
+  {
+    "id": 856,
+    "song_id": "1986-032",
+    "fact_type": "credit",
+    "fact_text": "Composed by Prince; Lyrics by Prince.",
+    "event_date": null,
+    "public_date": "1986-01-25",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/a634592d-6900-41ab-9302-4e47184ff7ed"
+  },
+  {
+    "id": 991,
+    "song_id": "1991-026",
+    "fact_type": "credit",
+    "fact_text": "Produced by Scott Litt, R.E.M.; Written by Bill Berry, Peter Buck, Mike Mills, Michael Stipe.",
+    "event_date": null,
+    "public_date": "1991-04-06",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/d4e0a590-e461-499a-8f62-b595b6c65ada"
+  },
+  {
+    "id": 1002,
+    "song_id": "1992-002",
+    "fact_type": "credit",
+    "fact_text": "Produced by Babyface, L.A. Reid, Daryl Simmons; Written by Babyface, L.A. Reid, Daryl Simmons.",
+    "event_date": null,
+    "public_date": "1992-06-06",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/097d9c49-65fe-4104-8bf4-ed00f0f0ce19"
+  },
+  {
+    "id": 1003,
+    "song_id": "1992-004",
+    "fact_type": "credit",
+    "fact_text": "Produced by Denzil Foster, Thomas McElroy; Written by Denzil Foster, Thomas McElroy.",
+    "event_date": null,
+    "public_date": "1992-03-21",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/9cf2bb20-ca0f-421b-a437-9d626850fc9b"
+  },
+  {
+    "id": 1004,
+    "song_id": "1992-006",
+    "fact_type": "credit",
+    "fact_text": "Produced by Keith Thomas; Written by Phil Galdston, Jon Lind, Wendy Waldman.",
+    "event_date": null,
+    "public_date": "1992-02-01",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/826d7049-90db-403a-92ce-5837c033fa9d"
+  },
+  {
+    "id": 1005,
+    "song_id": "1992-008",
+    "fact_type": "credit",
+    "fact_text": "Produced by Rick Rubin; Composed by Flea, John Frusciante, Anthony Kiedis, Chad Smith; Lyrics by Anthony Kiedis.",
+    "event_date": null,
+    "public_date": "1992-04-04",
+    "source": "MusicBrainz",
+    "source_url": "https://musicbrainz.org/recording/10d1062a-7275-458f-ad0d-906eeaa22c57"
+  }
+]

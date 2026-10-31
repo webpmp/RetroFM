@@ -1,0 +1,5270 @@
+[
+  {
+    "chart_date": "1980-01-05",
+    "rank": 1,
+    "title": "Please Don't Go",
+    "performer": "KC And The Sunshine Band"
+  },
+  {
+    "chart_date": "1980-01-12",
+    "rank": 1,
+    "title": "Escape (The Pina Colada Song)",
+    "performer": "Rupert Holmes"
+  },
+  {
+    "chart_date": "1980-01-19",
+    "rank": 1,
+    "title": "Rock With You",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1980-01-26",
+    "rank": 1,
+    "title": "Rock With You",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1980-02-02",
+    "rank": 1,
+    "title": "Rock With You",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1980-02-09",
+    "rank": 1,
+    "title": "Rock With You",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1980-02-16",
+    "rank": 1,
+    "title": "Do That To Me One More Time",
+    "performer": "Captain & Tennille"
+  },
+  {
+    "chart_date": "1980-02-23",
+    "rank": 1,
+    "title": "Crazy Little Thing Called Love",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-03-01",
+    "rank": 1,
+    "title": "Crazy Little Thing Called Love",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-03-08",
+    "rank": 1,
+    "title": "Crazy Little Thing Called Love",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-03-15",
+    "rank": 1,
+    "title": "Crazy Little Thing Called Love",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-03-22",
+    "rank": 1,
+    "title": "Another Brick In The Wall (Part II)",
+    "performer": "Pink Floyd"
+  },
+  {
+    "chart_date": "1980-03-29",
+    "rank": 1,
+    "title": "Another Brick In The Wall (Part II)",
+    "performer": "Pink Floyd"
+  },
+  {
+    "chart_date": "1980-04-05",
+    "rank": 1,
+    "title": "Another Brick In The Wall (Part II)",
+    "performer": "Pink Floyd"
+  },
+  {
+    "chart_date": "1980-04-12",
+    "rank": 1,
+    "title": "Another Brick In The Wall (Part II)",
+    "performer": "Pink Floyd"
+  },
+  {
+    "chart_date": "1980-04-19",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-04-26",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-05-03",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-05-10",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-05-17",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-05-24",
+    "rank": 1,
+    "title": "Call Me",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1980-05-31",
+    "rank": 1,
+    "title": "Funkytown",
+    "performer": "Lipps, Inc."
+  },
+  {
+    "chart_date": "1980-06-07",
+    "rank": 1,
+    "title": "Funkytown",
+    "performer": "Lipps, Inc."
+  },
+  {
+    "chart_date": "1980-06-14",
+    "rank": 1,
+    "title": "Funkytown",
+    "performer": "Lipps, Inc."
+  },
+  {
+    "chart_date": "1980-06-21",
+    "rank": 1,
+    "title": "Funkytown",
+    "performer": "Lipps, Inc."
+  },
+  {
+    "chart_date": "1980-06-28",
+    "rank": 1,
+    "title": "Coming Up (Live At Glasgow)",
+    "performer": "Paul McCartney And Wings"
+  },
+  {
+    "chart_date": "1980-07-05",
+    "rank": 1,
+    "title": "Coming Up (Live At Glasgow)",
+    "performer": "Paul McCartney And Wings"
+  },
+  {
+    "chart_date": "1980-07-12",
+    "rank": 1,
+    "title": "Coming Up (Live At Glasgow)",
+    "performer": "Paul McCartney And Wings"
+  },
+  {
+    "chart_date": "1980-07-19",
+    "rank": 1,
+    "title": "It's Still Rock And Roll To Me",
+    "performer": "Billy Joel"
+  },
+  {
+    "chart_date": "1980-07-26",
+    "rank": 1,
+    "title": "It's Still Rock And Roll To Me",
+    "performer": "Billy Joel"
+  },
+  {
+    "chart_date": "1980-08-02",
+    "rank": 1,
+    "title": "Magic",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1980-08-09",
+    "rank": 1,
+    "title": "Magic",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1980-08-16",
+    "rank": 1,
+    "title": "Magic",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1980-08-23",
+    "rank": 1,
+    "title": "Magic",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1980-08-30",
+    "rank": 1,
+    "title": "Sailing",
+    "performer": "Christopher Cross"
+  },
+  {
+    "chart_date": "1980-09-06",
+    "rank": 1,
+    "title": "Upside Down",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1980-09-13",
+    "rank": 1,
+    "title": "Upside Down",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1980-09-20",
+    "rank": 1,
+    "title": "Upside Down",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1980-09-27",
+    "rank": 1,
+    "title": "Upside Down",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1980-10-04",
+    "rank": 1,
+    "title": "Another One Bites The Dust",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-10-11",
+    "rank": 1,
+    "title": "Another One Bites The Dust",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-10-18",
+    "rank": 1,
+    "title": "Another One Bites The Dust",
+    "performer": "Queen"
+  },
+  {
+    "chart_date": "1980-10-25",
+    "rank": 1,
+    "title": "Woman In Love",
+    "performer": "Barbra Streisand"
+  },
+  {
+    "chart_date": "1980-11-01",
+    "rank": 1,
+    "title": "Woman In Love",
+    "performer": "Barbra Streisand"
+  },
+  {
+    "chart_date": "1980-11-08",
+    "rank": 1,
+    "title": "Woman In Love",
+    "performer": "Barbra Streisand"
+  },
+  {
+    "chart_date": "1980-11-15",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-11-22",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-11-29",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-12-06",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-12-13",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-12-20",
+    "rank": 1,
+    "title": "Lady",
+    "performer": "Kenny Rogers"
+  },
+  {
+    "chart_date": "1980-12-27",
+    "rank": 1,
+    "title": "(Just Like) Starting Over",
+    "performer": "John Lennon"
+  },
+  {
+    "chart_date": "1981-01-03",
+    "rank": 1,
+    "title": "(Just Like) Starting Over",
+    "performer": "John Lennon"
+  },
+  {
+    "chart_date": "1981-01-10",
+    "rank": 1,
+    "title": "(Just Like) Starting Over",
+    "performer": "John Lennon"
+  },
+  {
+    "chart_date": "1981-01-17",
+    "rank": 1,
+    "title": "(Just Like) Starting Over",
+    "performer": "John Lennon"
+  },
+  {
+    "chart_date": "1981-01-24",
+    "rank": 1,
+    "title": "(Just Like) Starting Over",
+    "performer": "John Lennon"
+  },
+  {
+    "chart_date": "1981-01-31",
+    "rank": 1,
+    "title": "The Tide Is High",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1981-02-07",
+    "rank": 1,
+    "title": "Celebration",
+    "performer": "Kool & The Gang"
+  },
+  {
+    "chart_date": "1981-02-14",
+    "rank": 1,
+    "title": "Celebration",
+    "performer": "Kool & The Gang"
+  },
+  {
+    "chart_date": "1981-02-21",
+    "rank": 1,
+    "title": "9 To 5",
+    "performer": "Dolly Parton"
+  },
+  {
+    "chart_date": "1981-02-28",
+    "rank": 1,
+    "title": "I Love A Rainy Night",
+    "performer": "Eddie Rabbitt"
+  },
+  {
+    "chart_date": "1981-03-07",
+    "rank": 1,
+    "title": "I Love A Rainy Night",
+    "performer": "Eddie Rabbitt"
+  },
+  {
+    "chart_date": "1981-03-14",
+    "rank": 1,
+    "title": "9 To 5",
+    "performer": "Dolly Parton"
+  },
+  {
+    "chart_date": "1981-03-21",
+    "rank": 1,
+    "title": "Keep On Loving You",
+    "performer": "REO Speedwagon"
+  },
+  {
+    "chart_date": "1981-03-28",
+    "rank": 1,
+    "title": "Rapture",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1981-04-04",
+    "rank": 1,
+    "title": "Rapture",
+    "performer": "Blondie"
+  },
+  {
+    "chart_date": "1981-04-11",
+    "rank": 1,
+    "title": "Kiss On My List",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1981-04-18",
+    "rank": 1,
+    "title": "Kiss On My List",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1981-04-25",
+    "rank": 1,
+    "title": "Kiss On My List",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1981-05-02",
+    "rank": 1,
+    "title": "Morning Train (Nine To Five)",
+    "performer": "Sheena Easton"
+  },
+  {
+    "chart_date": "1981-05-09",
+    "rank": 1,
+    "title": "Morning Train (Nine To Five)",
+    "performer": "Sheena Easton"
+  },
+  {
+    "chart_date": "1981-05-16",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-05-23",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-05-30",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-06-06",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-06-13",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-06-20",
+    "rank": 1,
+    "title": "Medley",
+    "performer": "Stars On 45"
+  },
+  {
+    "chart_date": "1981-06-27",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-07-04",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-07-11",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-07-18",
+    "rank": 1,
+    "title": "Bette Davis Eyes",
+    "performer": "Kim Carnes"
+  },
+  {
+    "chart_date": "1981-07-25",
+    "rank": 1,
+    "title": "The One That You Love",
+    "performer": "Air Supply"
+  },
+  {
+    "chart_date": "1981-08-01",
+    "rank": 1,
+    "title": "Jessie's Girl",
+    "performer": "Rick Springfield"
+  },
+  {
+    "chart_date": "1981-08-08",
+    "rank": 1,
+    "title": "Jessie's Girl",
+    "performer": "Rick Springfield"
+  },
+  {
+    "chart_date": "1981-08-15",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-08-22",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-08-29",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-09-05",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-09-12",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-09-19",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-09-26",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-10-03",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-10-10",
+    "rank": 1,
+    "title": "Endless Love",
+    "performer": "Diana Ross & Lionel Richie"
+  },
+  {
+    "chart_date": "1981-10-17",
+    "rank": 1,
+    "title": "Arthur's Theme (Best That You Can Do)",
+    "performer": "Christopher Cross"
+  },
+  {
+    "chart_date": "1981-10-24",
+    "rank": 1,
+    "title": "Arthur's Theme (Best That You Can Do)",
+    "performer": "Christopher Cross"
+  },
+  {
+    "chart_date": "1981-10-31",
+    "rank": 1,
+    "title": "Arthur's Theme (Best That You Can Do)",
+    "performer": "Christopher Cross"
+  },
+  {
+    "chart_date": "1981-11-07",
+    "rank": 1,
+    "title": "Private Eyes",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1981-11-14",
+    "rank": 1,
+    "title": "Private Eyes",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1981-11-21",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1981-11-28",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1981-12-05",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1981-12-12",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1981-12-19",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1981-12-26",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1982-01-02",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1982-01-09",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1982-01-16",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1982-01-23",
+    "rank": 1,
+    "title": "Physical",
+    "performer": "Olivia Newton-John"
+  },
+  {
+    "chart_date": "1982-01-30",
+    "rank": 1,
+    "title": "I Can't Go For That (No Can Do)",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1982-01-30",
+    "rank": 81,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-02-06",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-02-06",
+    "rank": 71,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-02-13",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-02-13",
+    "rank": 61,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-02-20",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-02-20",
+    "rank": 47,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-02-27",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-02-27",
+    "rank": 41,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-03-06",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-03-06",
+    "rank": 36,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-03-13",
+    "rank": 1,
+    "title": "Centerfold",
+    "performer": "The J. Geils Band"
+  },
+  {
+    "chart_date": "1982-03-13",
+    "rank": 32,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-03-20",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-03-20",
+    "rank": 28,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-03-27",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-03-27",
+    "rank": 25,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-04-03",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-04-03",
+    "rank": 23,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-04-10",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-04-10",
+    "rank": 23,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-04-17",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-04-17",
+    "rank": 43,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-04-24",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-04-24",
+    "rank": 93,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-05-01",
+    "rank": 1,
+    "title": "I Love Rock 'N Roll",
+    "performer": "Joan Jett & the Blackhearts"
+  },
+  {
+    "chart_date": "1982-05-01",
+    "rank": 93,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-05-08",
+    "rank": 1,
+    "title": "Chariots Of Fire - Titles",
+    "performer": "Vangelis"
+  },
+  {
+    "chart_date": "1982-05-08",
+    "rank": 95,
+    "title": "My Guy",
+    "performer": "Sister Sledge"
+  },
+  {
+    "chart_date": "1982-05-15",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-05-22",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-05-29",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-06-05",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-06-12",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-06-19",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-06-26",
+    "rank": 1,
+    "title": "Ebony And Ivory",
+    "performer": "Paul McCartney And Stevie Wonder"
+  },
+  {
+    "chart_date": "1982-07-03",
+    "rank": 1,
+    "title": "Don't You Want Me",
+    "performer": "The Human League"
+  },
+  {
+    "chart_date": "1982-07-10",
+    "rank": 1,
+    "title": "Don't You Want Me",
+    "performer": "The Human League"
+  },
+  {
+    "chart_date": "1982-07-17",
+    "rank": 1,
+    "title": "Don't You Want Me",
+    "performer": "The Human League"
+  },
+  {
+    "chart_date": "1982-07-24",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-07-31",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-08-07",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-08-14",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-08-21",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-08-28",
+    "rank": 1,
+    "title": "Eye Of The Tiger",
+    "performer": "Survivor"
+  },
+  {
+    "chart_date": "1982-09-04",
+    "rank": 1,
+    "title": "Abracadabra",
+    "performer": "The Steve Miller Band"
+  },
+  {
+    "chart_date": "1982-09-11",
+    "rank": 1,
+    "title": "Hard To Say I'm Sorry",
+    "performer": "Chicago"
+  },
+  {
+    "chart_date": "1982-09-18",
+    "rank": 1,
+    "title": "Hard To Say I'm Sorry",
+    "performer": "Chicago"
+  },
+  {
+    "chart_date": "1982-09-25",
+    "rank": 1,
+    "title": "Abracadabra",
+    "performer": "The Steve Miller Band"
+  },
+  {
+    "chart_date": "1982-10-02",
+    "rank": 1,
+    "title": "Jack & Diane",
+    "performer": "John Cougar"
+  },
+  {
+    "chart_date": "1982-10-09",
+    "rank": 1,
+    "title": "Jack & Diane",
+    "performer": "John Cougar"
+  },
+  {
+    "chart_date": "1982-10-09",
+    "rank": 72,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-10-16",
+    "rank": 1,
+    "title": "Jack & Diane",
+    "performer": "John Cougar"
+  },
+  {
+    "chart_date": "1982-10-16",
+    "rank": 60,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-10-23",
+    "rank": 1,
+    "title": "Jack & Diane",
+    "performer": "John Cougar"
+  },
+  {
+    "chart_date": "1982-10-23",
+    "rank": 48,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-10-30",
+    "rank": 1,
+    "title": "Who Can It Be Now?",
+    "performer": "Men At Work"
+  },
+  {
+    "chart_date": "1982-10-30",
+    "rank": 45,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-11-06",
+    "rank": 1,
+    "title": "Up Where We Belong",
+    "performer": "Joe Cocker And Jennifer Warnes"
+  },
+  {
+    "chart_date": "1982-11-06",
+    "rank": 42,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-11-13",
+    "rank": 1,
+    "title": "Up Where We Belong",
+    "performer": "Joe Cocker And Jennifer Warnes"
+  },
+  {
+    "chart_date": "1982-11-13",
+    "rank": 35,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-11-20",
+    "rank": 1,
+    "title": "Up Where We Belong",
+    "performer": "Joe Cocker And Jennifer Warnes"
+  },
+  {
+    "chart_date": "1982-11-20",
+    "rank": 31,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-11-27",
+    "rank": 1,
+    "title": "Truly",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1982-11-27",
+    "rank": 27,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-12-04",
+    "rank": 1,
+    "title": "Truly",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1982-12-04",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-12-11",
+    "rank": 1,
+    "title": "Mickey",
+    "performer": "Toni Basil"
+  },
+  {
+    "chart_date": "1982-12-11",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-12-18",
+    "rank": 1,
+    "title": "Maneater",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1982-12-18",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1982-12-25",
+    "rank": 1,
+    "title": "Maneater",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1982-12-25",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1983-01-01",
+    "rank": 1,
+    "title": "Maneater",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1983-01-01",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1983-01-08",
+    "rank": 1,
+    "title": "Maneater",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1983-01-08",
+    "rank": 39,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1983-01-15",
+    "rank": 1,
+    "title": "Down Under",
+    "performer": "Men At Work"
+  },
+  {
+    "chart_date": "1983-01-15",
+    "rank": 61,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1983-01-22",
+    "rank": 1,
+    "title": "Down Under",
+    "performer": "Men At Work"
+  },
+  {
+    "chart_date": "1983-01-22",
+    "rank": 93,
+    "title": "Missing You",
+    "performer": "Dan Fogelberg"
+  },
+  {
+    "chart_date": "1983-01-29",
+    "rank": 1,
+    "title": "Down Under",
+    "performer": "Men At Work"
+  },
+  {
+    "chart_date": "1983-02-05",
+    "rank": 1,
+    "title": "Africa",
+    "performer": "Toto"
+  },
+  {
+    "chart_date": "1983-02-12",
+    "rank": 1,
+    "title": "Down Under",
+    "performer": "Men At Work"
+  },
+  {
+    "chart_date": "1983-02-19",
+    "rank": 1,
+    "title": "Baby, Come To Me",
+    "performer": "Patti Austin A Duet With James Ingram"
+  },
+  {
+    "chart_date": "1983-02-26",
+    "rank": 1,
+    "title": "Baby, Come To Me",
+    "performer": "Patti Austin A Duet With James Ingram"
+  },
+  {
+    "chart_date": "1983-03-05",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-03-12",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-03-19",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-03-26",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-04-02",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-04-09",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-04-16",
+    "rank": 1,
+    "title": "Billie Jean",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-04-23",
+    "rank": 1,
+    "title": "Come On Eileen",
+    "performer": "Dexys Midnight Runners"
+  },
+  {
+    "chart_date": "1983-04-30",
+    "rank": 1,
+    "title": "Beat It",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-05-07",
+    "rank": 1,
+    "title": "Beat It",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-05-14",
+    "rank": 1,
+    "title": "Beat It",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1983-05-21",
+    "rank": 1,
+    "title": "Let's Dance",
+    "performer": "David Bowie"
+  },
+  {
+    "chart_date": "1983-05-28",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-06-04",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-06-04",
+    "rank": 36,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-06-11",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-06-11",
+    "rank": 25,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-06-18",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-06-18",
+    "rank": 14,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-06-25",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-06-25",
+    "rank": 4,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-07-02",
+    "rank": 1,
+    "title": "Flashdance...What A Feeling",
+    "performer": "Irene Cara"
+  },
+  {
+    "chart_date": "1983-07-02",
+    "rank": 3,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-07-09",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-07-16",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-07-23",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-07-30",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-08-06",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-08-13",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-08-20",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-08-27",
+    "rank": 1,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-09-03",
+    "rank": 1,
+    "title": "Sweet Dreams (Are Made Of This)",
+    "performer": "Eurythmics"
+  },
+  {
+    "chart_date": "1983-09-03",
+    "rank": 3,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-09-10",
+    "rank": 1,
+    "title": "Maniac",
+    "performer": "Michael Sembello"
+  },
+  {
+    "chart_date": "1983-09-10",
+    "rank": 6,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-09-17",
+    "rank": 1,
+    "title": "Maniac",
+    "performer": "Michael Sembello"
+  },
+  {
+    "chart_date": "1983-09-17",
+    "rank": 6,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-09-24",
+    "rank": 1,
+    "title": "Tell Her About It",
+    "performer": "Billy Joel"
+  },
+  {
+    "chart_date": "1983-09-24",
+    "rank": 15,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-10-01",
+    "rank": 1,
+    "title": "Total Eclipse Of The Heart",
+    "performer": "Bonnie Tyler"
+  },
+  {
+    "chart_date": "1983-10-01",
+    "rank": 20,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-10-08",
+    "rank": 1,
+    "title": "Total Eclipse Of The Heart",
+    "performer": "Bonnie Tyler"
+  },
+  {
+    "chart_date": "1983-10-08",
+    "rank": 26,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-10-15",
+    "rank": 1,
+    "title": "Total Eclipse Of The Heart",
+    "performer": "Bonnie Tyler"
+  },
+  {
+    "chart_date": "1983-10-15",
+    "rank": 34,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-10-22",
+    "rank": 1,
+    "title": "Total Eclipse Of The Heart",
+    "performer": "Bonnie Tyler"
+  },
+  {
+    "chart_date": "1983-10-22",
+    "rank": 55,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-10-29",
+    "rank": 1,
+    "title": "Islands In The Stream",
+    "performer": "Kenny Rogers Duet With Dolly Parton"
+  },
+  {
+    "chart_date": "1983-10-29",
+    "rank": 92,
+    "title": "Every Breath You Take",
+    "performer": "The Police"
+  },
+  {
+    "chart_date": "1983-11-05",
+    "rank": 1,
+    "title": "Islands In The Stream",
+    "performer": "Kenny Rogers Duet With Dolly Parton"
+  },
+  {
+    "chart_date": "1983-11-12",
+    "rank": 1,
+    "title": "All Night Long (All Night)",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1983-11-19",
+    "rank": 1,
+    "title": "All Night Long (All Night)",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1983-11-26",
+    "rank": 1,
+    "title": "All Night Long (All Night)",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1983-12-03",
+    "rank": 1,
+    "title": "All Night Long (All Night)",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1983-12-10",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1983-12-17",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1983-12-24",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1983-12-31",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1984-01-07",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1984-01-14",
+    "rank": 1,
+    "title": "Say Say Say",
+    "performer": "Paul McCartney And Michael Jackson"
+  },
+  {
+    "chart_date": "1984-01-21",
+    "rank": 1,
+    "title": "Owner Of A Lonely Heart",
+    "performer": "Yes"
+  },
+  {
+    "chart_date": "1984-01-28",
+    "rank": 1,
+    "title": "Owner Of A Lonely Heart",
+    "performer": "Yes"
+  },
+  {
+    "chart_date": "1984-01-28",
+    "rank": 56,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-02-04",
+    "rank": 1,
+    "title": "Karma Chameleon",
+    "performer": "Culture Club"
+  },
+  {
+    "chart_date": "1984-02-04",
+    "rank": 41,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-02-11",
+    "rank": 1,
+    "title": "Karma Chameleon",
+    "performer": "Culture Club"
+  },
+  {
+    "chart_date": "1984-02-11",
+    "rank": 36,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-02-18",
+    "rank": 1,
+    "title": "Karma Chameleon",
+    "performer": "Culture Club"
+  },
+  {
+    "chart_date": "1984-02-18",
+    "rank": 32,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-02-25",
+    "rank": 1,
+    "title": "Jump",
+    "performer": "Van Halen"
+  },
+  {
+    "chart_date": "1984-02-25",
+    "rank": 22,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-02-25",
+    "rank": 67,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-02-25",
+    "rank": 75,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-03",
+    "rank": 1,
+    "title": "Jump",
+    "performer": "Van Halen"
+  },
+  {
+    "chart_date": "1984-03-03",
+    "rank": 16,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-03-03",
+    "rank": 47,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-03-03",
+    "rank": 50,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-10",
+    "rank": 1,
+    "title": "Jump",
+    "performer": "Van Halen"
+  },
+  {
+    "chart_date": "1984-03-10",
+    "rank": 9,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-03-10",
+    "rank": 34,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-03-10",
+    "rank": 37,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-10",
+    "rank": 76,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-03-17",
+    "rank": 1,
+    "title": "Jump",
+    "performer": "Van Halen"
+  },
+  {
+    "chart_date": "1984-03-17",
+    "rank": 5,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-03-17",
+    "rank": 20,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-03-17",
+    "rank": 26,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-17",
+    "rank": 62,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-03-24",
+    "rank": 1,
+    "title": "Jump",
+    "performer": "Van Halen"
+  },
+  {
+    "chart_date": "1984-03-24",
+    "rank": 4,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-03-24",
+    "rank": 12,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-03-24",
+    "rank": 17,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-24",
+    "rank": 54,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-03-31",
+    "rank": 1,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-03-31",
+    "rank": 7,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-03-31",
+    "rank": 13,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-03-31",
+    "rank": 50,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-04-07",
+    "rank": 1,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-04-07",
+    "rank": 3,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-04-07",
+    "rank": 10,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-04-07",
+    "rank": 46,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-04-14",
+    "rank": 1,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-04-14",
+    "rank": 2,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-04-14",
+    "rank": 4,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-04-14",
+    "rank": 40,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-04-14",
+    "rank": 63,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-04-21",
+    "rank": 1,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-04-21",
+    "rank": 2,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-04-21",
+    "rank": 3,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-04-21",
+    "rank": 37,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-04-21",
+    "rank": 49,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-04-28",
+    "rank": 1,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-04-28",
+    "rank": 2,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-04-28",
+    "rank": 3,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-04-28",
+    "rank": 35,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-04-28",
+    "rank": 42,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 1,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 2,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 4,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 29,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 33,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-05-05",
+    "rank": 84,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 1,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 2,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 8,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 25,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 28,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-05-12",
+    "rank": 71,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 1,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 3,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 10,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 22,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 24,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 50,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-05-19",
+    "rank": 92,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 1,
+    "title": "Let's Hear It For The Boy",
+    "performer": "Deniece Williams"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 2,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 4,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 18,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 19,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 23,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 43,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-05-26",
+    "rank": 77,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 1,
+    "title": "Let's Hear It For The Boy",
+    "performer": "Deniece Williams"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 3,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 7,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 11,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 12,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 39,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 43,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 57,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-06-02",
+    "rank": 71,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 1,
+    "title": "Time After Time",
+    "performer": "Cyndi Lauper"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 7,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 9,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 11,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 12,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 36,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 38,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 52,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-06-09",
+    "rank": 57,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 1,
+    "title": "Time After Time",
+    "performer": "Cyndi Lauper"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 7,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 10,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 15,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 17,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 21,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 35,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 45,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 63,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-06-16",
+    "rank": 86,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 1,
+    "title": "The Reflex",
+    "performer": "Duran Duran"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 5,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 8,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 11,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 18,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 31,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 34,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 35,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 76,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 82,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-06-23",
+    "rank": 89,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 1,
+    "title": "The Reflex",
+    "performer": "Duran Duran"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 3,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 4,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 12,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 28,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 31,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 40,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 48,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 71,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 74,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-06-30",
+    "rank": 93,
+    "title": "Footloose",
+    "performer": "Kenny Loggins"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 1,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 4,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 15,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 24,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 27,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 53,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 56,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 60,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-07-07",
+    "rank": 62,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 1,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 6,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 19,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 20,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 23,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 45,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 46,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 61,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-07-14",
+    "rank": 69,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 1,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 15,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 16,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 17,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 30,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 36,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 39,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 73,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-07-21",
+    "rank": 75,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 1,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 9,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 13,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 17,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 29,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 36,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 52,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 75,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-07-28",
+    "rank": 84,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 1,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 5,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 10,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 21,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 31,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 56,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 92,
+    "title": "Hello",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1984-08-04",
+    "rank": 97,
+    "title": "Against All Odds (Take A Look At Me Now)",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 1,
+    "title": "Ghostbusters",
+    "performer": "Ray Parker Jr."
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 2,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 4,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 8,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 12,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 27,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 28,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-08-11",
+    "rank": 61,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 1,
+    "title": "Ghostbusters",
+    "performer": "Ray Parker Jr."
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 2,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 4,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 6,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 7,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 26,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 51,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-08-18",
+    "rank": 66,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 1,
+    "title": "Ghostbusters",
+    "performer": "Ray Parker Jr."
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 2,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 4,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 5,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 6,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 21,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 59,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-08-25",
+    "rank": 83,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 1,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 2,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 5,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 15,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 16,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 72,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-09-01",
+    "rank": 86,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 1,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 2,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 11,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 13,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 22,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 76,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-09-08",
+    "rank": 88,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 1,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 2,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 10,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 17,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 27,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 84,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-09-15",
+    "rank": 91,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 1,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 4,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 8,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 23,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 47,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 92,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-09-22",
+    "rank": 94,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 1,
+    "title": "Let's Go Crazy",
+    "performer": "Prince And The Revolution"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 2,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 6,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 8,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 46,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 56,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 97,
+    "title": "Self Control",
+    "performer": "Laura Branigan"
+  },
+  {
+    "chart_date": "1984-09-29",
+    "rank": 98,
+    "title": "Borderline",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 1,
+    "title": "Let's Go Crazy",
+    "performer": "Prince And The Revolution"
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 4,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 7,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 13,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 63,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-10-06",
+    "rank": 69,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 1,
+    "title": "I Just Called To Say I Love You",
+    "performer": "Stevie Wonder"
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 7,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 9,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 15,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 70,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-10-13",
+    "rank": 74,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 1,
+    "title": "I Just Called To Say I Love You",
+    "performer": "Stevie Wonder"
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 11,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 12,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 29,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 95,
+    "title": "I Can Dream About You",
+    "performer": "Dan Hartman"
+  },
+  {
+    "chart_date": "1984-10-20",
+    "rank": 96,
+    "title": "When Doves Cry",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1984-10-27",
+    "rank": 1,
+    "title": "I Just Called To Say I Love You",
+    "performer": "Stevie Wonder"
+  },
+  {
+    "chart_date": "1984-10-27",
+    "rank": 21,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-10-27",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-10-27",
+    "rank": 44,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-11-03",
+    "rank": 1,
+    "title": "Caribbean Queen (No More Love On The Run)",
+    "performer": "Billy Ocean"
+  },
+  {
+    "chart_date": "1984-11-03",
+    "rank": 26,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-11-03",
+    "rank": 34,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-11-03",
+    "rank": 54,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-11-10",
+    "rank": 1,
+    "title": "Caribbean Queen (No More Love On The Run)",
+    "performer": "Billy Ocean"
+  },
+  {
+    "chart_date": "1984-11-10",
+    "rank": 46,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-11-10",
+    "rank": 53,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-11-10",
+    "rank": 66,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-11-17",
+    "rank": 1,
+    "title": "Wake Me Up Before You Go-Go",
+    "performer": "Wham!"
+  },
+  {
+    "chart_date": "1984-11-17",
+    "rank": 62,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-11-17",
+    "rank": 64,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-11-17",
+    "rank": 78,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-11-24",
+    "rank": 1,
+    "title": "Wake Me Up Before You Go-Go",
+    "performer": "Wham!"
+  },
+  {
+    "chart_date": "1984-11-24",
+    "rank": 77,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-11-24",
+    "rank": 84,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-11-24",
+    "rank": 91,
+    "title": "What's Love Got To Do With It",
+    "performer": "Tina Turner"
+  },
+  {
+    "chart_date": "1984-12-01",
+    "rank": 1,
+    "title": "Wake Me Up Before You Go-Go",
+    "performer": "Wham!"
+  },
+  {
+    "chart_date": "1984-12-01",
+    "rank": 82,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1984-12-01",
+    "rank": 91,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-12-01",
+    "rank": 96,
+    "title": "Missing You",
+    "performer": "John Waite"
+  },
+  {
+    "chart_date": "1984-12-08",
+    "rank": 1,
+    "title": "Out Of Touch",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1984-12-08",
+    "rank": 72,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1984-12-08",
+    "rank": 100,
+    "title": "The Glamorous Life",
+    "performer": "Sheila E."
+  },
+  {
+    "chart_date": "1984-12-15",
+    "rank": 1,
+    "title": "Out Of Touch",
+    "performer": "Daryl Hall John Oates"
+  },
+  {
+    "chart_date": "1984-12-15",
+    "rank": 60,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1984-12-22",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-12-22",
+    "rank": 56,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1984-12-29",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1984-12-29",
+    "rank": 56,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-01-05",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1985-01-05",
+    "rank": 54,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-01-12",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1985-01-12",
+    "rank": 51,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-01-19",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1985-01-19",
+    "rank": 50,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-01-26",
+    "rank": 1,
+    "title": "Like A Virgin",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1985-01-26",
+    "rank": 46,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-02-02",
+    "rank": 1,
+    "title": "I Want To Know What Love Is",
+    "performer": "Foreigner"
+  },
+  {
+    "chart_date": "1985-02-02",
+    "rank": 51,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-02-09",
+    "rank": 1,
+    "title": "I Want To Know What Love Is",
+    "performer": "Foreigner"
+  },
+  {
+    "chart_date": "1985-02-09",
+    "rank": 51,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-02-16",
+    "rank": 1,
+    "title": "Careless Whisper",
+    "performer": "Wham! Featuring George Michael"
+  },
+  {
+    "chart_date": "1985-02-16",
+    "rank": 59,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-02-23",
+    "rank": 1,
+    "title": "Careless Whisper",
+    "performer": "Wham! Featuring George Michael"
+  },
+  {
+    "chart_date": "1985-02-23",
+    "rank": 54,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-03-02",
+    "rank": 1,
+    "title": "Careless Whisper",
+    "performer": "Wham! Featuring George Michael"
+  },
+  {
+    "chart_date": "1985-03-02",
+    "rank": 48,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-03-09",
+    "rank": 1,
+    "title": "Can't Fight This Feeling",
+    "performer": "REO Speedwagon"
+  },
+  {
+    "chart_date": "1985-03-09",
+    "rank": 34,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-03-16",
+    "rank": 1,
+    "title": "Can't Fight This Feeling",
+    "performer": "REO Speedwagon"
+  },
+  {
+    "chart_date": "1985-03-16",
+    "rank": 26,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-03-23",
+    "rank": 1,
+    "title": "Can't Fight This Feeling",
+    "performer": "REO Speedwagon"
+  },
+  {
+    "chart_date": "1985-03-23",
+    "rank": 19,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-03-30",
+    "rank": 1,
+    "title": "One More Night",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1985-03-30",
+    "rank": 15,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-04-06",
+    "rank": 1,
+    "title": "One More Night",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1985-04-06",
+    "rank": 13,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-04-13",
+    "rank": 1,
+    "title": "We Are The World",
+    "performer": "USA For Africa"
+  },
+  {
+    "chart_date": "1985-04-13",
+    "rank": 10,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-04-20",
+    "rank": 1,
+    "title": "We Are The World",
+    "performer": "USA For Africa"
+  },
+  {
+    "chart_date": "1985-04-20",
+    "rank": 10,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-04-27",
+    "rank": 1,
+    "title": "We Are The World",
+    "performer": "USA For Africa"
+  },
+  {
+    "chart_date": "1985-04-27",
+    "rank": 13,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-05-04",
+    "rank": 1,
+    "title": "We Are The World",
+    "performer": "USA For Africa"
+  },
+  {
+    "chart_date": "1985-05-04",
+    "rank": 23,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-05-11",
+    "rank": 1,
+    "title": "Crazy For You",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1985-05-11",
+    "rank": 44,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-05-18",
+    "rank": 1,
+    "title": "Don't You (Forget About Me)",
+    "performer": "Simple Minds"
+  },
+  {
+    "chart_date": "1985-05-18",
+    "rank": 54,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-05-25",
+    "rank": 1,
+    "title": "Everything She Wants",
+    "performer": "Wham!"
+  },
+  {
+    "chart_date": "1985-05-25",
+    "rank": 64,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-06-01",
+    "rank": 1,
+    "title": "Everything She Wants",
+    "performer": "Wham!"
+  },
+  {
+    "chart_date": "1985-06-01",
+    "rank": 95,
+    "title": "Missing You",
+    "performer": "Diana Ross"
+  },
+  {
+    "chart_date": "1985-06-08",
+    "rank": 1,
+    "title": "Everybody Wants To Rule The World",
+    "performer": "Tears For Fears"
+  },
+  {
+    "chart_date": "1985-06-15",
+    "rank": 1,
+    "title": "Everybody Wants To Rule The World",
+    "performer": "Tears For Fears"
+  },
+  {
+    "chart_date": "1985-06-22",
+    "rank": 1,
+    "title": "Heaven",
+    "performer": "Bryan Adams"
+  },
+  {
+    "chart_date": "1985-06-29",
+    "rank": 1,
+    "title": "Heaven",
+    "performer": "Bryan Adams"
+  },
+  {
+    "chart_date": "1985-07-06",
+    "rank": 1,
+    "title": "Sussudio",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1985-07-13",
+    "rank": 1,
+    "title": "A View To A Kill",
+    "performer": "Duran Duran"
+  },
+  {
+    "chart_date": "1985-07-20",
+    "rank": 1,
+    "title": "A View To A Kill",
+    "performer": "Duran Duran"
+  },
+  {
+    "chart_date": "1985-07-27",
+    "rank": 1,
+    "title": "Everytime You Go Away",
+    "performer": "Paul Young"
+  },
+  {
+    "chart_date": "1985-08-03",
+    "rank": 1,
+    "title": "Shout",
+    "performer": "Tears For Fears"
+  },
+  {
+    "chart_date": "1985-08-10",
+    "rank": 1,
+    "title": "Shout",
+    "performer": "Tears For Fears"
+  },
+  {
+    "chart_date": "1985-08-17",
+    "rank": 1,
+    "title": "Shout",
+    "performer": "Tears For Fears"
+  },
+  {
+    "chart_date": "1985-08-24",
+    "rank": 1,
+    "title": "The Power Of Love",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1985-08-31",
+    "rank": 1,
+    "title": "The Power Of Love",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1985-09-07",
+    "rank": 1,
+    "title": "St. Elmo's Fire (Man In Motion)",
+    "performer": "John Parr"
+  },
+  {
+    "chart_date": "1985-09-14",
+    "rank": 1,
+    "title": "St. Elmo's Fire (Man In Motion)",
+    "performer": "John Parr"
+  },
+  {
+    "chart_date": "1985-09-21",
+    "rank": 1,
+    "title": "Money For Nothing",
+    "performer": "Dire Straits"
+  },
+  {
+    "chart_date": "1985-09-28",
+    "rank": 1,
+    "title": "Money For Nothing",
+    "performer": "Dire Straits"
+  },
+  {
+    "chart_date": "1985-10-05",
+    "rank": 1,
+    "title": "Money For Nothing",
+    "performer": "Dire Straits"
+  },
+  {
+    "chart_date": "1985-10-12",
+    "rank": 1,
+    "title": "Oh Sheila",
+    "performer": "Ready For The World"
+  },
+  {
+    "chart_date": "1985-10-19",
+    "rank": 1,
+    "title": "Take On Me",
+    "performer": "a-ha"
+  },
+  {
+    "chart_date": "1985-10-26",
+    "rank": 1,
+    "title": "Saving All My Love For You",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1985-11-02",
+    "rank": 1,
+    "title": "Part-Time Lover",
+    "performer": "Stevie Wonder"
+  },
+  {
+    "chart_date": "1985-11-09",
+    "rank": 1,
+    "title": "Miami Vice Theme",
+    "performer": "Jan Hammer"
+  },
+  {
+    "chart_date": "1985-11-16",
+    "rank": 1,
+    "title": "We Built This City",
+    "performer": "Starship"
+  },
+  {
+    "chart_date": "1985-11-23",
+    "rank": 1,
+    "title": "We Built This City",
+    "performer": "Starship"
+  },
+  {
+    "chart_date": "1985-11-30",
+    "rank": 1,
+    "title": "Separate Lives",
+    "performer": "Phil Collins and Marilyn Martin"
+  },
+  {
+    "chart_date": "1985-12-07",
+    "rank": 1,
+    "title": "Broken Wings",
+    "performer": "Mr. Mister"
+  },
+  {
+    "chart_date": "1985-12-14",
+    "rank": 1,
+    "title": "Broken Wings",
+    "performer": "Mr. Mister"
+  },
+  {
+    "chart_date": "1985-12-21",
+    "rank": 1,
+    "title": "Say You, Say Me",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1985-12-28",
+    "rank": 1,
+    "title": "Say You, Say Me",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1986-01-04",
+    "rank": 1,
+    "title": "Say You, Say Me",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1986-01-11",
+    "rank": 1,
+    "title": "Say You, Say Me",
+    "performer": "Lionel Richie"
+  },
+  {
+    "chart_date": "1986-01-18",
+    "rank": 1,
+    "title": "That's What Friends Are For",
+    "performer": "Dionne & Friends"
+  },
+  {
+    "chart_date": "1986-01-25",
+    "rank": 1,
+    "title": "That's What Friends Are For",
+    "performer": "Dionne & Friends"
+  },
+  {
+    "chart_date": "1986-01-25",
+    "rank": 86,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-01-25",
+    "rank": 90,
+    "title": "Just Another Day",
+    "performer": "Oingo Boingo"
+  },
+  {
+    "chart_date": "1986-02-01",
+    "rank": 1,
+    "title": "That's What Friends Are For",
+    "performer": "Dionne & Friends"
+  },
+  {
+    "chart_date": "1986-02-01",
+    "rank": 77,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-02-01",
+    "rank": 88,
+    "title": "Just Another Day",
+    "performer": "Oingo Boingo"
+  },
+  {
+    "chart_date": "1986-02-08",
+    "rank": 1,
+    "title": "That's What Friends Are For",
+    "performer": "Dionne & Friends"
+  },
+  {
+    "chart_date": "1986-02-08",
+    "rank": 64,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-02-08",
+    "rank": 85,
+    "title": "Just Another Day",
+    "performer": "Oingo Boingo"
+  },
+  {
+    "chart_date": "1986-02-15",
+    "rank": 1,
+    "title": "How Will I Know",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1986-02-15",
+    "rank": 48,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-02-15",
+    "rank": 86,
+    "title": "Just Another Day",
+    "performer": "Oingo Boingo"
+  },
+  {
+    "chart_date": "1986-02-22",
+    "rank": 1,
+    "title": "How Will I Know",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1986-02-22",
+    "rank": 39,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-03-01",
+    "rank": 1,
+    "title": "Kyrie",
+    "performer": "Mr. Mister"
+  },
+  {
+    "chart_date": "1986-03-01",
+    "rank": 33,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-03-08",
+    "rank": 1,
+    "title": "Kyrie",
+    "performer": "Mr. Mister"
+  },
+  {
+    "chart_date": "1986-03-08",
+    "rank": 26,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-03-15",
+    "rank": 1,
+    "title": "Sara",
+    "performer": "Starship"
+  },
+  {
+    "chart_date": "1986-03-15",
+    "rank": 19,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-03-22",
+    "rank": 1,
+    "title": "These Dreams",
+    "performer": "Heart"
+  },
+  {
+    "chart_date": "1986-03-22",
+    "rank": 15,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-03-29",
+    "rank": 1,
+    "title": "Rock Me Amadeus",
+    "performer": "Falco"
+  },
+  {
+    "chart_date": "1986-03-29",
+    "rank": 11,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-04-05",
+    "rank": 1,
+    "title": "Rock Me Amadeus",
+    "performer": "Falco"
+  },
+  {
+    "chart_date": "1986-04-05",
+    "rank": 7,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-04-12",
+    "rank": 1,
+    "title": "Rock Me Amadeus",
+    "performer": "Falco"
+  },
+  {
+    "chart_date": "1986-04-12",
+    "rank": 3,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-04-19",
+    "rank": 1,
+    "title": "Kiss",
+    "performer": "Prince And The Revolution"
+  },
+  {
+    "chart_date": "1986-04-19",
+    "rank": 2,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-04-26",
+    "rank": 1,
+    "title": "Kiss",
+    "performer": "Prince And The Revolution"
+  },
+  {
+    "chart_date": "1986-04-26",
+    "rank": 4,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-05-03",
+    "rank": 1,
+    "title": "Addicted To Love",
+    "performer": "Robert Palmer"
+  },
+  {
+    "chart_date": "1986-05-03",
+    "rank": 10,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-05-10",
+    "rank": 1,
+    "title": "West End Girls",
+    "performer": "Pet Shop Boys"
+  },
+  {
+    "chart_date": "1986-05-10",
+    "rank": 18,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-05-17",
+    "rank": 1,
+    "title": "Greatest Love Of All",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1986-05-17",
+    "rank": 29,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-05-24",
+    "rank": 1,
+    "title": "Greatest Love Of All",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1986-05-24",
+    "rank": 40,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-05-31",
+    "rank": 1,
+    "title": "Greatest Love Of All",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1986-05-31",
+    "rank": 63,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-06-07",
+    "rank": 1,
+    "title": "Live To Tell",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1986-06-07",
+    "rank": 81,
+    "title": "Manic Monday",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-06-14",
+    "rank": 1,
+    "title": "On My Own",
+    "performer": "Patti LaBelle & Michael McDonald"
+  },
+  {
+    "chart_date": "1986-06-21",
+    "rank": 1,
+    "title": "On My Own",
+    "performer": "Patti LaBelle & Michael McDonald"
+  },
+  {
+    "chart_date": "1986-06-28",
+    "rank": 1,
+    "title": "On My Own",
+    "performer": "Patti LaBelle & Michael McDonald"
+  },
+  {
+    "chart_date": "1986-07-05",
+    "rank": 1,
+    "title": "There'll Be Sad Songs (To Make You Cry)",
+    "performer": "Billy Ocean"
+  },
+  {
+    "chart_date": "1986-07-12",
+    "rank": 1,
+    "title": "Holding Back The Years",
+    "performer": "Simply Red"
+  },
+  {
+    "chart_date": "1986-07-19",
+    "rank": 1,
+    "title": "Invisible Touch",
+    "performer": "Genesis"
+  },
+  {
+    "chart_date": "1986-07-26",
+    "rank": 1,
+    "title": "Sledgehammer",
+    "performer": "Peter Gabriel"
+  },
+  {
+    "chart_date": "1986-08-02",
+    "rank": 1,
+    "title": "Glory Of Love (Theme From \"The Karate Kid Part II\")",
+    "performer": "Peter Cetera"
+  },
+  {
+    "chart_date": "1986-08-09",
+    "rank": 1,
+    "title": "Glory Of Love (Theme From \"The Karate Kid Part II\")",
+    "performer": "Peter Cetera"
+  },
+  {
+    "chart_date": "1986-08-16",
+    "rank": 1,
+    "title": "Papa Don't Preach",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1986-08-23",
+    "rank": 1,
+    "title": "Papa Don't Preach",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1986-08-30",
+    "rank": 1,
+    "title": "Higher Love",
+    "performer": "Steve Winwood"
+  },
+  {
+    "chart_date": "1986-09-06",
+    "rank": 1,
+    "title": "Venus",
+    "performer": "Bananarama"
+  },
+  {
+    "chart_date": "1986-09-13",
+    "rank": 1,
+    "title": "Take My Breath Away (Love Theme From \"Top Gun\")",
+    "performer": "Berlin"
+  },
+  {
+    "chart_date": "1986-09-20",
+    "rank": 1,
+    "title": "Stuck With You",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1986-09-27",
+    "rank": 1,
+    "title": "Stuck With You",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1986-10-04",
+    "rank": 1,
+    "title": "Stuck With You",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1986-10-11",
+    "rank": 1,
+    "title": "When I Think Of You",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1986-10-18",
+    "rank": 1,
+    "title": "When I Think Of You",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1986-10-25",
+    "rank": 1,
+    "title": "True Colors",
+    "performer": "Cyndi Lauper"
+  },
+  {
+    "chart_date": "1986-11-01",
+    "rank": 1,
+    "title": "True Colors",
+    "performer": "Cyndi Lauper"
+  },
+  {
+    "chart_date": "1986-11-08",
+    "rank": 1,
+    "title": "Amanda",
+    "performer": "Boston"
+  },
+  {
+    "chart_date": "1986-11-15",
+    "rank": 1,
+    "title": "Amanda",
+    "performer": "Boston"
+  },
+  {
+    "chart_date": "1986-11-22",
+    "rank": 1,
+    "title": "Human",
+    "performer": "The Human League"
+  },
+  {
+    "chart_date": "1986-11-29",
+    "rank": 1,
+    "title": "You Give Love A Bad Name",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1986-12-06",
+    "rank": 1,
+    "title": "The Next Time I Fall",
+    "performer": "Peter Cetera With Amy Grant"
+  },
+  {
+    "chart_date": "1986-12-13",
+    "rank": 1,
+    "title": "The Way It Is",
+    "performer": "Bruce Hornsby & The Range"
+  },
+  {
+    "chart_date": "1986-12-20",
+    "rank": 1,
+    "title": "Walk Like An Egyptian",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1986-12-27",
+    "rank": 1,
+    "title": "Walk Like An Egyptian",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1987-01-03",
+    "rank": 1,
+    "title": "Walk Like An Egyptian",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1987-01-10",
+    "rank": 1,
+    "title": "Walk Like An Egyptian",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1987-01-17",
+    "rank": 1,
+    "title": "Shake You Down",
+    "performer": "Gregory Abbott"
+  },
+  {
+    "chart_date": "1987-01-24",
+    "rank": 1,
+    "title": "At This Moment",
+    "performer": "Billy Vera & The Beaters"
+  },
+  {
+    "chart_date": "1987-01-31",
+    "rank": 1,
+    "title": "At This Moment",
+    "performer": "Billy Vera & The Beaters"
+  },
+  {
+    "chart_date": "1987-02-07",
+    "rank": 1,
+    "title": "Open Your Heart",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1987-02-14",
+    "rank": 1,
+    "title": "Livin' On A Prayer",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1987-02-21",
+    "rank": 1,
+    "title": "Livin' On A Prayer",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1987-02-28",
+    "rank": 1,
+    "title": "Livin' On A Prayer",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1987-03-07",
+    "rank": 1,
+    "title": "Livin' On A Prayer",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1987-03-14",
+    "rank": 1,
+    "title": "Jacob's Ladder",
+    "performer": "Huey Lewis & The News"
+  },
+  {
+    "chart_date": "1987-03-21",
+    "rank": 1,
+    "title": "Lean On Me",
+    "performer": "Club Nouveau"
+  },
+  {
+    "chart_date": "1987-03-28",
+    "rank": 1,
+    "title": "Lean On Me",
+    "performer": "Club Nouveau"
+  },
+  {
+    "chart_date": "1987-04-04",
+    "rank": 1,
+    "title": "Nothing's Gonna Stop Us Now",
+    "performer": "Starship"
+  },
+  {
+    "chart_date": "1987-04-11",
+    "rank": 1,
+    "title": "Nothing's Gonna Stop Us Now",
+    "performer": "Starship"
+  },
+  {
+    "chart_date": "1987-04-18",
+    "rank": 1,
+    "title": "I Knew You Were Waiting (For Me)",
+    "performer": "Aretha Franklin & George Michael"
+  },
+  {
+    "chart_date": "1987-04-25",
+    "rank": 1,
+    "title": "I Knew You Were Waiting (For Me)",
+    "performer": "Aretha Franklin & George Michael"
+  },
+  {
+    "chart_date": "1987-05-02",
+    "rank": 1,
+    "title": "(I Just) Died In Your Arms",
+    "performer": "Cutting Crew"
+  },
+  {
+    "chart_date": "1987-05-09",
+    "rank": 1,
+    "title": "(I Just) Died In Your Arms",
+    "performer": "Cutting Crew"
+  },
+  {
+    "chart_date": "1987-05-16",
+    "rank": 1,
+    "title": "With or Without You",
+    "performer": "U2"
+  },
+  {
+    "chart_date": "1987-05-23",
+    "rank": 1,
+    "title": "With or Without You",
+    "performer": "U2"
+  },
+  {
+    "chart_date": "1987-05-30",
+    "rank": 1,
+    "title": "With or Without You",
+    "performer": "U2"
+  },
+  {
+    "chart_date": "1987-06-06",
+    "rank": 1,
+    "title": "You Keep Me Hangin' On",
+    "performer": "Kim Wilde"
+  },
+  {
+    "chart_date": "1987-06-13",
+    "rank": 1,
+    "title": "Always",
+    "performer": "Atlantic Starr"
+  },
+  {
+    "chart_date": "1987-06-20",
+    "rank": 1,
+    "title": "Head To Toe",
+    "performer": "Lisa Lisa And Cult Jam"
+  },
+  {
+    "chart_date": "1987-06-27",
+    "rank": 1,
+    "title": "I Wanna Dance With Somebody (Who Loves Me)",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1987-07-04",
+    "rank": 1,
+    "title": "I Wanna Dance With Somebody (Who Loves Me)",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1987-07-11",
+    "rank": 1,
+    "title": "Alone",
+    "performer": "Heart"
+  },
+  {
+    "chart_date": "1987-07-18",
+    "rank": 1,
+    "title": "Alone",
+    "performer": "Heart"
+  },
+  {
+    "chart_date": "1987-07-25",
+    "rank": 1,
+    "title": "Alone",
+    "performer": "Heart"
+  },
+  {
+    "chart_date": "1987-08-01",
+    "rank": 1,
+    "title": "Shakedown (From \"Beverly Hills Cop II\")",
+    "performer": "Bob Seger"
+  },
+  {
+    "chart_date": "1987-08-08",
+    "rank": 1,
+    "title": "I Still Haven't Found What I'm Looking For",
+    "performer": "U2"
+  },
+  {
+    "chart_date": "1987-08-15",
+    "rank": 1,
+    "title": "I Still Haven't Found What I'm Looking For",
+    "performer": "U2"
+  },
+  {
+    "chart_date": "1987-08-22",
+    "rank": 1,
+    "title": "Who's That Girl",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1987-08-29",
+    "rank": 1,
+    "title": "La Bamba",
+    "performer": "Los Lobos"
+  },
+  {
+    "chart_date": "1987-09-05",
+    "rank": 1,
+    "title": "La Bamba",
+    "performer": "Los Lobos"
+  },
+  {
+    "chart_date": "1987-09-12",
+    "rank": 1,
+    "title": "La Bamba",
+    "performer": "Los Lobos"
+  },
+  {
+    "chart_date": "1987-09-19",
+    "rank": 1,
+    "title": "I Just Can't Stop Loving You",
+    "performer": "Michael Jackson With Siedah Garrett"
+  },
+  {
+    "chart_date": "1987-09-26",
+    "rank": 1,
+    "title": "Didn't We Almost Have It All",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1987-10-03",
+    "rank": 1,
+    "title": "Didn't We Almost Have It All",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1987-10-10",
+    "rank": 1,
+    "title": "Here I Go Again",
+    "performer": "Whitesnake"
+  },
+  {
+    "chart_date": "1987-10-17",
+    "rank": 1,
+    "title": "Lost In Emotion",
+    "performer": "Lisa Lisa And Cult Jam"
+  },
+  {
+    "chart_date": "1987-10-24",
+    "rank": 1,
+    "title": "Bad",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1987-10-31",
+    "rank": 1,
+    "title": "Bad",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1987-11-07",
+    "rank": 1,
+    "title": "I Think We're Alone Now",
+    "performer": "Tiffany"
+  },
+  {
+    "chart_date": "1987-11-14",
+    "rank": 1,
+    "title": "I Think We're Alone Now",
+    "performer": "Tiffany"
+  },
+  {
+    "chart_date": "1987-11-21",
+    "rank": 1,
+    "title": "Mony Mony",
+    "performer": "Billy Idol"
+  },
+  {
+    "chart_date": "1987-11-28",
+    "rank": 1,
+    "title": "(I've Had) The Time Of My Life",
+    "performer": "Bill Medley & Jennifer Warnes"
+  },
+  {
+    "chart_date": "1987-12-05",
+    "rank": 1,
+    "title": "Heaven Is A Place On Earth",
+    "performer": "Belinda Carlisle"
+  },
+  {
+    "chart_date": "1987-12-12",
+    "rank": 1,
+    "title": "Faith",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1987-12-19",
+    "rank": 1,
+    "title": "Faith",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1987-12-26",
+    "rank": 1,
+    "title": "Faith",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-01-02",
+    "rank": 1,
+    "title": "Faith",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-01-09",
+    "rank": 1,
+    "title": "So Emotional",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1988-01-16",
+    "rank": 1,
+    "title": "Got My Mind Set On You",
+    "performer": "George Harrison"
+  },
+  {
+    "chart_date": "1988-01-23",
+    "rank": 1,
+    "title": "The Way You Make Me Feel",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1988-01-30",
+    "rank": 1,
+    "title": "Need You Tonight",
+    "performer": "INXS"
+  },
+  {
+    "chart_date": "1988-02-06",
+    "rank": 1,
+    "title": "Could've Been",
+    "performer": "Tiffany"
+  },
+  {
+    "chart_date": "1988-02-13",
+    "rank": 1,
+    "title": "Could've Been",
+    "performer": "Tiffany"
+  },
+  {
+    "chart_date": "1988-02-20",
+    "rank": 1,
+    "title": "Seasons Change",
+    "performer": "Expose"
+  },
+  {
+    "chart_date": "1988-02-27",
+    "rank": 1,
+    "title": "Father Figure",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-03-05",
+    "rank": 1,
+    "title": "Father Figure",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-03-12",
+    "rank": 1,
+    "title": "Never Gonna Give You Up",
+    "performer": "Rick Astley"
+  },
+  {
+    "chart_date": "1988-03-19",
+    "rank": 1,
+    "title": "Never Gonna Give You Up",
+    "performer": "Rick Astley"
+  },
+  {
+    "chart_date": "1988-03-26",
+    "rank": 1,
+    "title": "Man In The Mirror",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1988-04-02",
+    "rank": 1,
+    "title": "Man In The Mirror",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1988-04-09",
+    "rank": 1,
+    "title": "Get Outta My Dreams, Get Into My Car",
+    "performer": "Billy Ocean"
+  },
+  {
+    "chart_date": "1988-04-16",
+    "rank": 1,
+    "title": "Get Outta My Dreams, Get Into My Car",
+    "performer": "Billy Ocean"
+  },
+  {
+    "chart_date": "1988-04-23",
+    "rank": 1,
+    "title": "Where Do Broken Hearts Go",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1988-04-30",
+    "rank": 1,
+    "title": "Where Do Broken Hearts Go",
+    "performer": "Whitney Houston"
+  },
+  {
+    "chart_date": "1988-05-07",
+    "rank": 1,
+    "title": "Wishing Well",
+    "performer": "Terence Trent D'Arby"
+  },
+  {
+    "chart_date": "1988-05-14",
+    "rank": 1,
+    "title": "Anything For You",
+    "performer": "Gloria Estefan & Miami Sound Machine"
+  },
+  {
+    "chart_date": "1988-05-21",
+    "rank": 1,
+    "title": "Anything For You",
+    "performer": "Gloria Estefan & Miami Sound Machine"
+  },
+  {
+    "chart_date": "1988-05-28",
+    "rank": 1,
+    "title": "One More Try",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-06-04",
+    "rank": 1,
+    "title": "One More Try",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-06-11",
+    "rank": 1,
+    "title": "One More Try",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-06-18",
+    "rank": 1,
+    "title": "Together Forever",
+    "performer": "Rick Astley"
+  },
+  {
+    "chart_date": "1988-06-25",
+    "rank": 1,
+    "title": "Foolish Beat",
+    "performer": "Debbie Gibson"
+  },
+  {
+    "chart_date": "1988-07-02",
+    "rank": 1,
+    "title": "Dirty Diana",
+    "performer": "Michael Jackson"
+  },
+  {
+    "chart_date": "1988-07-09",
+    "rank": 1,
+    "title": "The Flame",
+    "performer": "Cheap Trick"
+  },
+  {
+    "chart_date": "1988-07-16",
+    "rank": 1,
+    "title": "The Flame",
+    "performer": "Cheap Trick"
+  },
+  {
+    "chart_date": "1988-07-23",
+    "rank": 1,
+    "title": "Hold On To The Nights",
+    "performer": "Richard Marx"
+  },
+  {
+    "chart_date": "1988-07-30",
+    "rank": 1,
+    "title": "Roll With It",
+    "performer": "Steve Winwood"
+  },
+  {
+    "chart_date": "1988-08-06",
+    "rank": 1,
+    "title": "Roll With It",
+    "performer": "Steve Winwood"
+  },
+  {
+    "chart_date": "1988-08-13",
+    "rank": 1,
+    "title": "Roll With It",
+    "performer": "Steve Winwood"
+  },
+  {
+    "chart_date": "1988-08-20",
+    "rank": 1,
+    "title": "Roll With It",
+    "performer": "Steve Winwood"
+  },
+  {
+    "chart_date": "1988-08-27",
+    "rank": 1,
+    "title": "Monkey",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-08-27",
+    "rank": 80,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-09-03",
+    "rank": 1,
+    "title": "Monkey",
+    "performer": "George Michael"
+  },
+  {
+    "chart_date": "1988-09-03",
+    "rank": 64,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-09-10",
+    "rank": 1,
+    "title": "Sweet Child O' Mine",
+    "performer": "Guns N' Roses"
+  },
+  {
+    "chart_date": "1988-09-10",
+    "rank": 50,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-09-17",
+    "rank": 1,
+    "title": "Sweet Child O' Mine",
+    "performer": "Guns N' Roses"
+  },
+  {
+    "chart_date": "1988-09-17",
+    "rank": 40,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-09-24",
+    "rank": 1,
+    "title": "Don't Worry, Be Happy (From \"Cocktail\")",
+    "performer": "Bobby McFerrin"
+  },
+  {
+    "chart_date": "1988-09-24",
+    "rank": 32,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-10-01",
+    "rank": 1,
+    "title": "Don't Worry, Be Happy (From \"Cocktail\")",
+    "performer": "Bobby McFerrin"
+  },
+  {
+    "chart_date": "1988-10-01",
+    "rank": 28,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-10-08",
+    "rank": 1,
+    "title": "Love Bites",
+    "performer": "Def Leppard"
+  },
+  {
+    "chart_date": "1988-10-08",
+    "rank": 19,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-10-15",
+    "rank": 1,
+    "title": "Red Red Wine",
+    "performer": "UB40"
+  },
+  {
+    "chart_date": "1988-10-15",
+    "rank": 17,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-10-22",
+    "rank": 1,
+    "title": "Groovy Kind Of Love",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1988-10-22",
+    "rank": 10,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-10-29",
+    "rank": 1,
+    "title": "Groovy Kind Of Love",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1988-10-29",
+    "rank": 7,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-11-05",
+    "rank": 1,
+    "title": "Kokomo (From\"Cocktail\" )",
+    "performer": "The Beach Boys"
+  },
+  {
+    "chart_date": "1988-11-05",
+    "rank": 4,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-11-12",
+    "rank": 1,
+    "title": "Wild, Wild West",
+    "performer": "The Escape Club"
+  },
+  {
+    "chart_date": "1988-11-12",
+    "rank": 3,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-11-19",
+    "rank": 1,
+    "title": "Bad Medicine",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1988-11-19",
+    "rank": 3,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-11-26",
+    "rank": 1,
+    "title": "Bad Medicine",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1988-11-26",
+    "rank": 10,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-12-03",
+    "rank": 1,
+    "title": "Baby, I Love Your Way/Freebird Medley",
+    "performer": "Will To Power"
+  },
+  {
+    "chart_date": "1988-12-03",
+    "rank": 19,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-12-10",
+    "rank": 1,
+    "title": "Look Away",
+    "performer": "Chicago"
+  },
+  {
+    "chart_date": "1988-12-10",
+    "rank": 30,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-12-17",
+    "rank": 1,
+    "title": "Look Away",
+    "performer": "Chicago"
+  },
+  {
+    "chart_date": "1988-12-17",
+    "rank": 42,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-12-24",
+    "rank": 1,
+    "title": "Every Rose Has Its Thorn",
+    "performer": "Poison"
+  },
+  {
+    "chart_date": "1988-12-24",
+    "rank": 50,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1988-12-31",
+    "rank": 1,
+    "title": "Every Rose Has Its Thorn",
+    "performer": "Poison"
+  },
+  {
+    "chart_date": "1988-12-31",
+    "rank": 50,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-01-07",
+    "rank": 1,
+    "title": "Every Rose Has Its Thorn",
+    "performer": "Poison"
+  },
+  {
+    "chart_date": "1989-01-07",
+    "rank": 56,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-01-14",
+    "rank": 1,
+    "title": "My Prerogative",
+    "performer": "Bobby Brown"
+  },
+  {
+    "chart_date": "1989-01-14",
+    "rank": 62,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-01-21",
+    "rank": 1,
+    "title": "Two Hearts",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1989-01-21",
+    "rank": 67,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-01-28",
+    "rank": 1,
+    "title": "Two Hearts",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1989-01-28",
+    "rank": 77,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-02-04",
+    "rank": 1,
+    "title": "When I'm With You",
+    "performer": "Sheriff"
+  },
+  {
+    "chart_date": "1989-02-04",
+    "rank": 78,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-02-11",
+    "rank": 1,
+    "title": "Straight Up",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-02-11",
+    "rank": 92,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-02-18",
+    "rank": 1,
+    "title": "Straight Up",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-02-18",
+    "rank": 89,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-02-25",
+    "rank": 1,
+    "title": "Straight Up",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-02-25",
+    "rank": 100,
+    "title": "The Loco-Motion",
+    "performer": "Kylie Minogue"
+  },
+  {
+    "chart_date": "1989-03-04",
+    "rank": 1,
+    "title": "Lost In Your Eyes",
+    "performer": "Debbie Gibson"
+  },
+  {
+    "chart_date": "1989-03-11",
+    "rank": 1,
+    "title": "Lost In Your Eyes",
+    "performer": "Debbie Gibson"
+  },
+  {
+    "chart_date": "1989-03-18",
+    "rank": 1,
+    "title": "Lost In Your Eyes",
+    "performer": "Debbie Gibson"
+  },
+  {
+    "chart_date": "1989-03-25",
+    "rank": 1,
+    "title": "The Living Years",
+    "performer": "Mike + The Mechanics"
+  },
+  {
+    "chart_date": "1989-04-01",
+    "rank": 1,
+    "title": "Eternal Flame",
+    "performer": "The Bangles"
+  },
+  {
+    "chart_date": "1989-04-08",
+    "rank": 1,
+    "title": "The Look",
+    "performer": "Roxette"
+  },
+  {
+    "chart_date": "1989-04-15",
+    "rank": 1,
+    "title": "She Drives Me Crazy",
+    "performer": "Fine Young Cannibals"
+  },
+  {
+    "chart_date": "1989-04-22",
+    "rank": 1,
+    "title": "Like A Prayer",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1989-04-29",
+    "rank": 1,
+    "title": "Like A Prayer",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1989-05-06",
+    "rank": 1,
+    "title": "Like A Prayer",
+    "performer": "Madonna"
+  },
+  {
+    "chart_date": "1989-05-13",
+    "rank": 1,
+    "title": "I'll Be There For You",
+    "performer": "Bon Jovi"
+  },
+  {
+    "chart_date": "1989-05-20",
+    "rank": 1,
+    "title": "Forever Your Girl",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-05-27",
+    "rank": 1,
+    "title": "Forever Your Girl",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-06-03",
+    "rank": 1,
+    "title": "Rock On (From \"Dream A Little Dream\")",
+    "performer": "Michael Damian"
+  },
+  {
+    "chart_date": "1989-06-10",
+    "rank": 1,
+    "title": "Wind Beneath My Wings (From \"Beaches\")",
+    "performer": "Bette Midler"
+  },
+  {
+    "chart_date": "1989-06-17",
+    "rank": 1,
+    "title": "I'll Be Loving You (Forever)",
+    "performer": "New Kids On The Block"
+  },
+  {
+    "chart_date": "1989-06-24",
+    "rank": 1,
+    "title": "Satisfied",
+    "performer": "Richard Marx"
+  },
+  {
+    "chart_date": "1989-07-01",
+    "rank": 1,
+    "title": "Baby Don't Forget My Number",
+    "performer": "Milli Vanilli"
+  },
+  {
+    "chart_date": "1989-07-08",
+    "rank": 1,
+    "title": "Good Thing",
+    "performer": "Fine Young Cannibals"
+  },
+  {
+    "chart_date": "1989-07-15",
+    "rank": 1,
+    "title": "If You Don't Know Me By Now",
+    "performer": "Simply Red"
+  },
+  {
+    "chart_date": "1989-07-22",
+    "rank": 1,
+    "title": "Toy Soldiers",
+    "performer": "Martika"
+  },
+  {
+    "chart_date": "1989-07-29",
+    "rank": 1,
+    "title": "Toy Soldiers",
+    "performer": "Martika"
+  },
+  {
+    "chart_date": "1989-08-05",
+    "rank": 1,
+    "title": "Batdance (From \"Batman\")",
+    "performer": "Prince"
+  },
+  {
+    "chart_date": "1989-08-12",
+    "rank": 1,
+    "title": "Right Here Waiting",
+    "performer": "Richard Marx"
+  },
+  {
+    "chart_date": "1989-08-19",
+    "rank": 1,
+    "title": "Right Here Waiting",
+    "performer": "Richard Marx"
+  },
+  {
+    "chart_date": "1989-08-26",
+    "rank": 1,
+    "title": "Right Here Waiting",
+    "performer": "Richard Marx"
+  },
+  {
+    "chart_date": "1989-09-02",
+    "rank": 1,
+    "title": "Cold Hearted",
+    "performer": "Paula Abdul"
+  },
+  {
+    "chart_date": "1989-09-09",
+    "rank": 1,
+    "title": "Hangin' Tough",
+    "performer": "New Kids On The Block"
+  },
+  {
+    "chart_date": "1989-09-16",
+    "rank": 1,
+    "title": "Don't Wanna Lose You",
+    "performer": "Gloria Estefan"
+  },
+  {
+    "chart_date": "1989-09-23",
+    "rank": 1,
+    "title": "Girl I'm Gonna Miss You",
+    "performer": "Milli Vanilli"
+  },
+  {
+    "chart_date": "1989-09-30",
+    "rank": 1,
+    "title": "Girl I'm Gonna Miss You",
+    "performer": "Milli Vanilli"
+  },
+  {
+    "chart_date": "1989-10-07",
+    "rank": 1,
+    "title": "Miss You Much",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1989-10-14",
+    "rank": 1,
+    "title": "Miss You Much",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1989-10-21",
+    "rank": 1,
+    "title": "Miss You Much",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1989-10-28",
+    "rank": 1,
+    "title": "Miss You Much",
+    "performer": "Janet Jackson"
+  },
+  {
+    "chart_date": "1989-11-04",
+    "rank": 1,
+    "title": "Listen To Your Heart",
+    "performer": "Roxette"
+  },
+  {
+    "chart_date": "1989-11-11",
+    "rank": 1,
+    "title": "When I See You Smile",
+    "performer": "Bad English"
+  },
+  {
+    "chart_date": "1989-11-18",
+    "rank": 1,
+    "title": "When I See You Smile",
+    "performer": "Bad English"
+  },
+  {
+    "chart_date": "1989-11-25",
+    "rank": 1,
+    "title": "Blame It On The Rain",
+    "performer": "Milli Vanilli"
+  },
+  {
+    "chart_date": "1989-12-02",
+    "rank": 1,
+    "title": "Blame It On The Rain",
+    "performer": "Milli Vanilli"
+  },
+  {
+    "chart_date": "1989-12-09",
+    "rank": 1,
+    "title": "We Didn't Start The Fire",
+    "performer": "Billy Joel"
+  },
+  {
+    "chart_date": "1989-12-16",
+    "rank": 1,
+    "title": "We Didn't Start The Fire",
+    "performer": "Billy Joel"
+  },
+  {
+    "chart_date": "1989-12-23",
+    "rank": 1,
+    "title": "Another Day In Paradise",
+    "performer": "Phil Collins"
+  },
+  {
+    "chart_date": "1989-12-30",
+    "rank": 1,
+    "title": "Another Day In Paradise",
+    "performer": "Phil Collins"
+  }
+]

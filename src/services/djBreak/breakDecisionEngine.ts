@@ -98,31 +98,108 @@ export function isWriterSameAsPerformer(writer: string, performer: string): bool
 }
 
 /**
- * Repository to query song_facts from sqlite.
+ * Repository to query song_facts, credits, band members, and aliases.
+ * Reads static JSON files from public/data/ or fallback SQLite database if present.
  */
 export class SongCreditRepository {
   private db: any = null;
+  private dataDir: string;
+  private isJsonAvailable = false;
+  private songFacts: any[] = [];
+  private bandMembers: any[] = [];
+  private artistAliases: any[] = [];
+  private songs: any[] = [];
+  private chartRepo?: ChartFactRepository;
 
-  constructor(dbPath?: string) {
+  constructor(customPathOrDir?: string, chartRepo?: ChartFactRepository) {
+    this.chartRepo = chartRepo;
     const homedir = process.env.HOME || '/root';
-    const targetPath = dbPath || path.join(homedir, 'retrofm', 'library.sqlite');
-    if (!fs.existsSync(targetPath)) return;
-    try {
-      const BunGlobal = (globalThis as any).Bun;
-      if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
-        this.db = BunGlobal.openDatabase(targetPath);
-      } else {
-        this.db = new DatabaseSync(targetPath);
+    this.dataDir = customPathOrDir && fs.existsSync(customPathOrDir) && fs.statSync(customPathOrDir).isDirectory()
+      ? customPathOrDir
+      : path.resolve(process.cwd(), 'public/data');
+
+    let songFactsFile = path.join(this.dataDir, 'song_facts.json');
+    if (!fs.existsSync(songFactsFile) && fs.existsSync(path.join(this.dataDir, 'sample', 'song_facts.json'))) {
+      this.dataDir = path.join(this.dataDir, 'sample');
+      songFactsFile = path.join(this.dataDir, 'song_facts.json');
+    }
+
+    if (fs.existsSync(songFactsFile)) {
+      this.isJsonAvailable = true;
+      try {
+        this.songFacts = JSON.parse(fs.readFileSync(songFactsFile, 'utf8'));
+      } catch {}
+
+      const bandMembersFile = path.join(this.dataDir, 'band_members.json');
+      if (fs.existsSync(bandMembersFile)) {
+        try {
+          this.bandMembers = JSON.parse(fs.readFileSync(bandMembersFile, 'utf8'));
+        } catch {}
       }
-      if (this.db && this.db.exec) {
-        this.db.exec('PRAGMA busy_timeout = 5000;');
+
+      const artistAliasesFile = path.join(this.dataDir, 'artist_aliases.json');
+      if (fs.existsSync(artistAliasesFile)) {
+        try {
+          this.artistAliases = JSON.parse(fs.readFileSync(artistAliasesFile, 'utf8'));
+        } catch {}
       }
-    } catch (e) {
-      console.warn('[SongCreditRepository] Failed to open database:', e);
+
+      let allSongs: any[] = [];
+      const mainSongsFile = path.join(this.dataDir, 'retrofm_library_youtube.json');
+      if (fs.existsSync(mainSongsFile)) {
+        try {
+          allSongs = allSongs.concat(JSON.parse(fs.readFileSync(mainSongsFile, 'utf8')));
+        } catch {}
+      }
+      const extraSongsFile = path.join(this.dataDir, 'songs_extra.json');
+      if (fs.existsSync(extraSongsFile)) {
+        try {
+          allSongs = allSongs.concat(JSON.parse(fs.readFileSync(extraSongsFile, 'utf8')));
+        } catch {}
+      }
+      this.songs = allSongs;
+    } else {
+      const targetPath = (customPathOrDir && fs.existsSync(customPathOrDir) && !fs.statSync(customPathOrDir).isDirectory())
+        ? customPathOrDir
+        : path.join(homedir, 'retrofm', 'library.sqlite');
+      if (fs.existsSync(targetPath)) {
+        try {
+          const BunGlobal = (globalThis as any).Bun;
+          if (BunGlobal && typeof BunGlobal.openDatabase === 'function') {
+            this.db = BunGlobal.openDatabase(targetPath);
+          } else {
+            this.db = new DatabaseSync(targetPath);
+          }
+          if (this.db && this.db.exec) {
+            this.db.exec('PRAGMA busy_timeout = 5000;');
+          }
+        } catch (e) {
+          console.warn('[SongCreditRepository] Failed to open database:', e);
+        }
+      }
     }
   }
 
   public getBandMembers(bandName: string, broadcastDate?: string): string[] {
+    if (this.isJsonAvailable) {
+      if (!bandName) return [];
+      const members: string[] = [];
+      const bcYear = broadcastDate ? broadcastDate.slice(0, 4) : null;
+      const target = bandName.toLowerCase();
+      for (const r of this.bandMembers) {
+        if ((r.band_name || '').toLowerCase() === target) {
+          const begin = r.begin_date ? r.begin_date.slice(0, 4) : null;
+          const end = r.end_date ? r.end_date.slice(0, 4) : null;
+          if (bcYear) {
+            if (begin && begin > bcYear) continue;
+            if (end && end < bcYear) continue;
+          }
+          members.push(r.member_name);
+        }
+      }
+      return members;
+    }
+
     if (!this.db || !bandName) return [];
     try {
       const query = `
@@ -149,6 +226,39 @@ export class SongCreditRepository {
   }
 
   public hasCrossArtistHit(writer: string, currentSongId: string, broadcastDate: string, performingBandName?: string): boolean {
+    if (this.isJsonAvailable) {
+      if (!writer) return false;
+      const writerLower = writer.toLowerCase();
+      const songMap = new Map(this.songs.map((s) => [s.id, s]));
+
+      for (const sf of this.songFacts) {
+        if (!sf.public_date || sf.public_date > broadcastDate) continue;
+        if (sf.song_id === currentSongId) continue;
+        if (!sf.fact_text || !sf.fact_text.toLowerCase().includes(writerLower)) continue;
+
+        const song = songMap.get(sf.song_id);
+        if (!song) continue;
+
+        const match = (sf.fact_text as string).match(/(?:Written|Composed|Lyrics) by ([^;.]+)/i);
+        if (!match) continue;
+        const hitWriters = match[1].split(/,\s*|\s+and\s+/i).map((w: string) => w.trim());
+        const isW = hitWriters.some((hw: string) => hw.toLowerCase() === writerLower);
+        if (!isW) continue;
+
+        const hitArtist = (song.artist || '').toLowerCase();
+        // Cannot be the same performer
+        if (isWriterSameAsPerformer(writer, song.artist || '')) {
+          continue;
+        }
+        // Cannot be the same band
+        if (performingBandName && (hitArtist === performingBandName.toLowerCase() || hitArtist.includes(performingBandName.toLowerCase()))) {
+          continue;
+        }
+        return true;
+      }
+      return false;
+    }
+
     if (!this.db || !writer) return false;
     try {
       const query = `
@@ -189,6 +299,14 @@ export class SongCreditRepository {
   }
 
   public getArtistAliases(artistName: string): string[] {
+    if (this.isJsonAvailable) {
+      if (!artistName) return [];
+      const target = artistName.toLowerCase();
+      return this.artistAliases
+        .filter((r) => (r.artist_name || '').toLowerCase() === target)
+        .map((r) => r.alias_name);
+    }
+
     if (!this.db || !artistName) return [];
     try {
       const query = `
@@ -204,6 +322,13 @@ export class SongCreditRepository {
   }
 
   public getEligibleCredits(songId: string, selectedDate: string): SongCreditFactRow[] {
+    if (this.isJsonAvailable) {
+      if (!songId) return [];
+      return this.songFacts.filter(
+        (f) => f.song_id === songId && f.public_date && f.public_date <= selectedDate && f.public_date.length >= 10
+      );
+    }
+
     if (!this.db || !songId) return [];
     try {
       const query = `
@@ -218,6 +343,37 @@ export class SongCreditRepository {
   }
 
   public getOriginalRecordingForAdaptation(workTitle: string, broadcastDate: string): { artist: string; title: string } | null {
+    if (this.isJsonAvailable) {
+      if (!workTitle) return null;
+      const wtLower = workTitle.toLowerCase();
+      // 1. Check in songs table
+      const matchingSongs = this.songs.filter((s) => {
+        const tLower = (s.title || '').toLowerCase();
+        if (tLower !== wtLower && !tLower.includes(wtLower)) return false;
+        const fcd = s.first_chart_date;
+        const rd = s.release_date;
+        return (fcd && fcd <= broadcastDate) || (rd && rd <= broadcastDate);
+      });
+
+      if (matchingSongs.length > 0) {
+        matchingSongs.sort((a, b) => {
+          const dateA = a.first_chart_date || a.release_date || '9999';
+          const dateB = b.first_chart_date || b.release_date || '9999';
+          return dateA.localeCompare(dateB);
+        });
+        return { artist: matchingSongs[0].artist, title: matchingSongs[0].title };
+      }
+
+      // 2. Check in weekly_chart via chartRepo if available
+      if (this.chartRepo && typeof (this.chartRepo as any).getSongHistory === 'function') {
+        const dummyHistory = this.chartRepo.getSongHistory({ title: workTitle, artist: '' }, broadcastDate);
+        if (dummyHistory.length > 0) {
+          return { artist: dummyHistory[0].performer, title: dummyHistory[0].title };
+        }
+      }
+      return null;
+    }
+
     if (!this.db || !workTitle) return null;
     try {
       // 1. Check in songs table
@@ -256,6 +412,7 @@ export class SongCreditRepository {
     }
   }
 }
+
 
 export interface BreakDecisionInput {
   prevSong: EngineSongInput | null;
