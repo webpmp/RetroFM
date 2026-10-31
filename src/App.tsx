@@ -590,7 +590,7 @@ export default function App() {
         return stored;
       }
     }
-    return 'every';
+    return 'often';
   });
 
   const handleDjTalkFrequencyChange = (freq: 'every' | 'often' | 'sometimes' | 'rarely') => {
@@ -4265,11 +4265,11 @@ export default function App() {
       // Segment Break Pipeline: query rich segment endpoint (/api/dj/segment-break)
       const freqMap: Record<'every' | 'often' | 'sometimes' | 'rarely', number> = {
         every: 1.0,
-        often: 0.70,
-        sometimes: 0.40,
-        rarely: 0.15,
+        often: 0.85,
+        sometimes: 0.60,
+        rarely: 0.30,
       };
-      const freqSetting = freqMap[djTalkFrequency] ?? 0.40;
+      const freqSetting = freqMap[djTalkFrequency] ?? 0.85;
 
       const aiProvider = ((typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio') || 'gemini';
       const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || getEnv('LM_STUDIO_ENDPOINT') || 'http://localhost:1234/v1';

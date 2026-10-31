@@ -181,7 +181,7 @@ export function DJBreakGeneratorTest({
         return stored;
       }
     }
-    return 'every';
+    return 'often';
   });
 
   useEffect(() => {

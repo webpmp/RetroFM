@@ -451,12 +451,33 @@ export function validateSegmentBreakOutput(
     if (COMMON_CHART_PHRASES.some((cp) => phrase.includes(cp) || cp.includes(phrase))) {
       return true;
     }
-    // Check if phrase contains the target song title or artist
-    if (context.factPacket.targetSongTitle && phrase.includes(context.factPacket.targetSongTitle.toLowerCase())) {
-      return true;
+    // Check if phrase contains or overlaps with the target song title or artist (normalized for punctuation)
+    if (context.factPacket.targetSongTitle) {
+      const normTitle = context.factPacket.targetSongTitle.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const strippedPhrase = phrase.replace(/^(?:that was|you ve been listening to|this was)\s+/i, '').trim();
+      if (phrase.includes(normTitle) || normTitle.includes(phrase) || normTitle.includes(strippedPhrase)) {
+        return true;
+      }
     }
-    if (context.factPacket.targetSongArtist && phrase.includes(context.factPacket.targetSongArtist.toLowerCase())) {
-      return true;
+    if (context.factPacket.targetSongArtist) {
+      const normArtist = context.factPacket.targetSongArtist.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const strippedPhrase = phrase.replace(/^(?:that was|you ve been listening to|this was)\s+/i, '').trim();
+      if (phrase.includes(normArtist) || normArtist.includes(phrase) || normArtist.includes(strippedPhrase)) {
+        return true;
+      }
+    }
+    // Check if phrase is composed almost entirely of title/artist tokens and common attribution words
+    if (context.factPacket.targetSongTitle || context.factPacket.targetSongArtist) {
+      const normTitle = (context.factPacket.targetSongTitle || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const normArtist = (context.factPacket.targetSongArtist || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const titleWords = new Set(normTitle.split(' ').filter(Boolean));
+      const artistWords = new Set(normArtist.split(' ').filter(Boolean));
+      const attributionWords = new Set(['that', 'was', 'by', 'with', 'you', 've', 'been', 'listening', 'to', 'this', 'is', 'here']);
+      const tokens = phrase.split(' ');
+      const matchCount = tokens.filter(t => titleWords.has(t) || artistWords.has(t) || attributionWords.has(t)).length;
+      if (matchCount >= tokens.length - 1) {
+        return true;
+      }
     }
     // Check if tokens are mostly numbers, dates, or months
     const tokens = phrase.split(' ');

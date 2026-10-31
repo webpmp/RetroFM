@@ -56,6 +56,10 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
 
 ## Getting Started (Local Node/npm)
 
+### Prerequisites
+- Node.js `>=20.19.0` (tested with Node `v26.11.1` and `npm v11.20.0`) or Bun `1.x`
+- Google Chrome (to load the companion Chrome extension bridge)
+
 1. Install dependencies:
    ```bash
    npm install # or bun install
@@ -113,10 +117,19 @@ For power users and contributors wanting the entire 70-year library (~1,800 veri
 
 1. **SQLite Database Warehouse**:
    The authoritative historical data is maintained in an SQLite database at `~/retrofm/library.sqlite` (containing `songs`, `song_facts`, `band_members`, `artist_aliases`, and `weekly_chart`).
-   * The `weekly_chart` data originates from open-source Billboard Hot 100 historical datasets (3,558 consecutive chart weeks from 1958 through today).
-   * Music metadata and credits are enriched via MusicBrainz and Wikipedia using the maintenance builder scripts in `scripts/`:
-     * `bun run scripts/populate-library-credits.ts`: queries MusicBrainz for songwriter/producer credits.
-     * `bun run scripts/populate-band-members.ts`: queries MusicBrainz for band member line-up history with join/leave years.
+   * **Weekly Chart Data (`weekly_chart`)**:
+     * **Source**: Scraped Billboard Hot 100 weekly chart compilation from the open-source repository [`utdata/rwd-billboard-data`](https://github.com/utdata/rwd-billboard-data) maintained by the University of Texas at Austin School of Journalism data journalism program. Specifically fetched from `https://raw.githubusercontent.com/utdata/rwd-billboard-data/main/data-out/hot-100-current.csv` via `~/retrofm/import_charts.py`.
+     * **Fetched Date**: October 11, 2026 (355,800 weekly rank rows covering 3,558 consecutive chart weeks from August 4, 1958 through October 10, 2026).
+     * **Update Mechanism**: An automated GitHub Actions workflow (`action_scrape_charts.R`) runs weekly in the upstream repository, scraping the latest weekly Billboard Hot 100 chart from Billboard.com and committing updated rows to `data-out/hot-100-current.csv`. Re-running `~/retrofm/import_charts.py` downloads the latest CSV and repopulates `weekly_chart`.
+     * **License / Terms**: The `utdata/rwd-billboard-data` code and compilation are licensed under the **MIT License**. The underlying historical chart rankings are factual historical records published by *Billboard* (Penske Media Corporation).
+   * **MusicBrainz Metadata**:
+     * Used for canonical track durations, release dates, recording IDs (`recording_mbid`), songwriter and producer credits, and band member line-ups.
+     * `bun run scripts/populate-library-credits.ts` queries the MusicBrainz API (`https://musicbrainz.org/ws/2/recording/${mbid}?inc=artist-rels+work-rels+recording-rels&fmt=json`) to populate songwriter (`written by`, `composed by`, `lyrics by`) and production credits into `song_credits`.
+     * `bun run scripts/populate-band-members.ts` queries the MusicBrainz Artist API (`https://musicbrainz.org/ws/2/artist/${mbid}?inc=artist-rels&fmt=json`) to populate band membership history (member names, begin/end join years, active line-up states).
+     * `src/services/music/songStoryCardService.ts` and `src/services/music/songSearch.ts` query MusicBrainz for canonical release years and artist origins.
+   * **Wikipedia Data**:
+     * Used by `src/services/music/songStoryCardService.ts` via the MediaWiki Action API (`action=query&prop=extracts|revisions`) to fetch page summaries and wikitext for song articles (or artist articles if no standalone song article exists).
+     * Parses behind-the-scenes writing history, recording trivia, cover song origins, sample/interpolation sources, and cultural impact to build rich DJ story cards evaluated by Gemini and LM Studio commentary prompts.
 
 2. **Deterministic Exporter Command**:
    Whenever you enrich or build `library.sqlite`, run:
