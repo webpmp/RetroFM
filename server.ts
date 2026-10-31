@@ -41,7 +41,7 @@ import { getOrBuildAlmanac, resolveRelativeTimeWords } from './src/services/news
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
-import { buildHandoff, resolveOrphanPronounOpening } from './src/services/djBreak/handoffBank.js';
+import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
 
 dotenv.config();
 
@@ -792,8 +792,11 @@ async function startServer() {
         blacklistedFactKeys,
         lastTopic,
         breaksSinceLastRetroFm,
+        breaksSinceLastMusicNews,
         lastHandoffGroup,
         recentHandoffTemplates,
+        lastShortCloser,
+        totalBreaksSession,
         provider,
         endpoint,
         model,
@@ -809,6 +812,9 @@ async function startServer() {
 
       const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number' ? breaksSinceLastRetroFm : 4;
       const allowRetroFm = sinceRetroFm >= 4;
+      const sinceMusicNews = typeof breaksSinceLastMusicNews === 'number' ? breaksSinceLastMusicNews : 8;
+      const allowMusicNewsPast = sinceMusicNews >= 8;
+      const isFirstBreak = (typeof totalBreaksSession === 'number' ? totalBreaksSession : 0) === 0;
 
       const usedKeysSet = new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []);
       const blacklistedKeysSet = new Set<string>(Array.isArray(blacklistedFactKeys) ? blacklistedFactKeys : []);
@@ -822,6 +828,7 @@ async function startServer() {
       let sessionRecentHandoffTemplates: string[] = Array.isArray(recentHandoffTemplates) ? recentHandoffTemplates : [];
       let chosenHandoffGroup: number | null = null;
       let chosenHandoffTemplate: string | null = null;
+      let chosenShortCloser: string | null = null;
 
       // Load almanac and next song story card
       const almanac = await getOrBuildAlmanac(selectedDate);
@@ -1054,9 +1061,21 @@ async function startServer() {
       }
 
       // 2. Music News Candidates (Up to 3 distinct items from almanac music category)
+      // Freshness: Must be within 14 days before the broadcast date, unless phrased as a dated past event, at most 1 in 8 breaks.
       const musicNewsCandidates: CandidateEval[] = [];
+      const bDateMs = new Date(selectedDate + 'T00:00:00Z').getTime();
+
       const musicAlmanacEntries = (almanac.entries || [])
-        .filter((e) => e.category === 'music' && !isKeyBlocked(`almanac:${e.id}`))
+        .filter((e) => {
+          if (e.category !== 'music' || isKeyBlocked(`almanac:${e.id}`)) return false;
+          if (!e.eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(e.eventDate)) return false;
+          const eDateMs = new Date(e.eventDate + 'T00:00:00Z').getTime();
+          const diffDays = (bDateMs - eDateMs) / (1000 * 60 * 60 * 24);
+          if (diffDays < 0) return false; // future event
+          if (diffDays <= 14) return true; // recent event within 14 days
+          // If > 14 days, allowed ONLY if rate-limit allows (at most 1 in 8 breaks)
+          return allowMusicNewsPast;
+        })
         .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
         .slice(0, 3);
 
@@ -1421,8 +1440,18 @@ async function startServer() {
 
               // Final check for acceptance of model draft
               if (valResult && valResult.valid && unsupportedClaims.length === 0) {
-                // Code adds exactly one hand-off from handoffBank
-                if (nextSong) {
+                // Code adds hand-off or short closer:
+                // If body names the song, close with a short no-name closer instead of a full hand-off.
+                // If body does not name the song, use the full hand-off from the bank.
+                let closerText = '';
+                const bodyLower = scriptText.toLowerCase();
+                const songTitleLower = (nextSong?.title || '').toLowerCase();
+                const bodyNamesSong = nextSong?.title ? bodyLower.includes(songTitleLower) : false;
+
+                if (bodyNamesSong) {
+                  chosenShortCloser = getShortNoNameCloser(Date.now(), req.body?.lastShortCloser);
+                  closerText = chosenShortCloser;
+                } else if (nextSong) {
                   const handoffObj = buildHandoff({
                     songTitle: nextSong.title,
                     artistName: nextSong.artist,
@@ -1434,11 +1463,15 @@ async function startServer() {
                   });
                   chosenHandoffGroup = handoffObj.chosenGroup;
                   chosenHandoffTemplate = handoffObj.chosenTemplate;
-
-                  // Optional station ID: keep limit of one RetroFM mention in 4 breaks as a separate optional station ID
-                  const stationIdPrefix = allowRetroFm ? 'RetroFM. ' : '';
-                  scriptText = `${scriptText} ${stationIdPrefix}${handoffObj.text}`.trim();
+                  closerText = handoffObj.text;
                 }
+
+                // Station ID: Replace "RetroFM." with full-phrase station IDs, at most once in 4 breaks.
+                // Dated version on first break of session, or rotating variants.
+                const stationIdPhrase = allowRetroFm
+                  ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now()) + ' '
+                  : '';
+                scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
 
                 // Final post-handoff validation
                 const finalVal = validateSegmentBreakOutput(scriptText, {
@@ -1511,8 +1544,10 @@ async function startServer() {
           chosenHandoffGroup = handoffObj.chosenGroup;
           chosenHandoffTemplate = handoffObj.chosenTemplate;
 
-          const stationIdPrefix = allowRetroFm ? 'RetroFM. ' : '';
-          const introHandoff = `${stationIdPrefix}${handoffObj.text}`.trim();
+          const stationIdPhrase = allowRetroFm
+            ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now()) + ' '
+            : '';
+          const introHandoff = `${stationIdPhrase}${handoffObj.text}`.trim();
 
           chosenCandidate = {
             type: 'plain_intro',
@@ -1576,6 +1611,7 @@ async function startServer() {
         blacklistedKeys: newlyBlacklistedKeys,
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,
+        shortCloser: chosenShortCloser,
       });
     } catch (err: any) {
       const elapsedMs = Date.now() - startTime;

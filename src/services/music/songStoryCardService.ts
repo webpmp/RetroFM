@@ -50,7 +50,7 @@ const SONG_CARD_CACHE_DIR = path.join(process.cwd(), 'cache', 'song_cards');
 /**
  * Hindsight language that implies post-broadcast knowledge or retrospective evaluations.
  */
-export const HINDSIGHT_REGEX = /\b(peaked|peaking|peaks|reached number|reached no|topped|topping|went on to|later|eventually|since|would|won|winning|nominated|nominating|certified|certification|platinum|gold record|multi-platinum|riaa|year-end|best-selling|best selling|has earned|sold over|covered by|regarded as|regarded for|one of the best of all time|one of the best mastered|signature song|signature sound|acclaim|acclaimed|posthumous|inducted|hall of fame|grammy|most commercially successful|highest-grossing|greatest songs?)\b/i;
+export const HINDSIGHT_REGEX = /\b(peaked|peaking|peaks|reached number|reached no|topped|topping|went on to|later|eventually|since|would|won|winning|nominated|nominating|certified|certification|platinum|gold record|multi-platinum|riaa|year-end|best-selling|best selling|has earned|sold over|covered by|regarded as|regarded for|one of the best of all time|one of the best mastered|signature song|signature sound|acclaim|acclaimed|posthumous|inducted|hall of fame|grammy|most commercially successful|highest-grossing|greatest songs?|a feat unmatched)\b/i;
 
 /**
  * Filter facts to strictly those knowable on or before broadcastDate.

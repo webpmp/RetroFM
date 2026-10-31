@@ -245,13 +245,19 @@ export class ChartFactRepository {
  */
 export function cleanDuetArtist(name: string): string {
   if (!name) return '';
-  return name
+  let s = name
     .replace(/\s*\/\s*/g, ' and ')
     .replace(/\s+A Duet With\s+/gi, ' and ')
+    .replace(/\s+Duet With\s+/gi, ' and ')
+    .replace(/\s+Duet\s+/gi, ' and ')
     .replace(/\s+With\s+/gi, ' and ')
     .replace(/\s+(?:Featuring|Feat\.)\s+/gi, ' and ')
+    .replace(/\s*&\s*/g, ' and ')
+    .replace(/\s+and\s+and\s+/gi, ' and ')
     .replace(/\s\s+/g, ' ')
     .trim();
+  s = s.replace(/^\s*and\s+/i, '').replace(/\s+and\s*$/i, '').trim();
+  return s;
 }
 
 export function computeChartFacts(

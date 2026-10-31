@@ -19,6 +19,8 @@
  * 5. A rejected break becomes SILENCE, never a retry loop.
  */
 
+import { splitVerbatimSentences } from '../news/almanacService.js';
+
 export function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -32,7 +34,8 @@ export interface FactPacketData {
 export interface SegmentValidationContext {
   selectedDate: string; // YYYY-MM-DD
   factPacket: {
-    facts: Array<{ text: string; source?: string; date?: string }>;
+    topic?: string;
+    facts: Array<{ text: string; source?: string; date?: string; eventDate?: string; printDate?: string }>;
     targetSongTitle?: string;
     targetSongArtist?: string;
   };
@@ -130,20 +133,54 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // Check if target song title appears in more than one hand-off or ending sentence
-  if (context.factPacket.targetSongTitle) {
-    const titleRegex = new RegExp(escapeRegex(context.factPacket.targetSongTitle), 'i');
-    const handoffSentencesWithTitle = sentencesInSegment.filter((s) => {
-      const isHandoffStyle = /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|right now|playing now)\b/i.test(s) ||
-        HANDOFF_PHRASE_PATTERNS.some((pat) => pat.test(s));
-      return isHandoffStyle && titleRegex.test(s);
-    });
-    if (handoffSentencesWithTitle.length > 1) {
+  // 3a3. Check: No break contains the song title more than once
+  if (!context.isModelDraft && context.factPacket.targetSongTitle) {
+    const titleRegex = new RegExp(escapeRegex(context.factPacket.targetSongTitle), 'gi');
+    const titleMatches = trimmed.match(titleRegex) || [];
+    if (titleMatches.length > 1) {
       return {
         valid: false,
-        rejectedReason: `Target song title appears in ${handoffSentencesWithTitle.length} hand-off sentences`,
+        rejectedReason: `Target song title ("${context.factPacket.targetSongTitle}") appears ${titleMatches.length} times in break (maximum allowed is 1)`,
         sanitizedText: '',
       };
+    }
+  }
+
+  // 3a4. Incomplete sentence check (e.g. bare artist name like "Ray Parker Jr." on its own)
+  // Split also on periods before capitalized sentence starters to catch bare names ending with abbreviations like "Jr."
+  const splitCandidateSentences = (text: string): string[] => {
+    const raw = text.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    return raw.map(s => s.trim()).filter(Boolean);
+  };
+  const allSentences = splitCandidateSentences(trimmed);
+  for (const s of allSentences) {
+    const cleanS = s.trim().replace(/^["']|["']$/g, '').trim();
+    // Incomplete sentence: matches artist name or bare name on its own
+    if (context.factPacket.targetSongArtist) {
+      const artClean = context.factPacket.targetSongArtist.trim();
+      const artCleanDot = `${artClean}.`;
+      if (
+        cleanS.toLowerCase() === artClean.toLowerCase() ||
+        cleanS.toLowerCase() === artCleanDot.toLowerCase() ||
+        cleanS.toLowerCase() === artClean.replace(/\.+$/, '').toLowerCase()
+      ) {
+        return {
+          valid: false,
+          rejectedReason: `Incomplete sentence: bare artist name "${cleanS}" on its own`,
+          sanitizedText: '',
+        };
+      }
+    }
+    const sentWords = cleanS.split(/\s+/).filter(Boolean);
+    if (sentWords.length < 3) {
+      const commonShortComplete = /^(here it is|take a listen|turn it up|here we go|this is retrofm)\.?$/i;
+      if (!commonShortComplete.test(cleanS)) {
+        return {
+          valid: false,
+          rejectedReason: `Incomplete sentence: "${cleanS}" (${sentWords.length} words)`,
+          sanitizedText: '',
+        };
+      }
     }
   }
 
@@ -248,6 +285,13 @@ export function validateSegmentBreakOutput(
     /\b(?:total vibe|good vibes)\b/i,
     /\b(?:astonishing|amazing|incredible|unique|remarkable|stunning|surprising)\b/i,
     /\b(?:fresh|pretty unique)\b/i,
+    /\bwhopping\b/i,
+    /\bheartfelt\b/i,
+    /\byou might be surprised\b/i,
+    /\bshowcasing its lasting appeal\b/i,
+    /\bhimself\b/i,
+    /\blasting appeal\b/i,
+    /\ba feat unmatched\b/i,
   ];
   for (const pat of BANNED_HYPE) {
     if (pat.test(trimmed)) {
@@ -259,19 +303,77 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // 3b. Check unconverted relative time words from newspaper reporting
-  // Note: "this week" is legitimate for radio DJs referring to the weekly chart ("Hot 100 this week");
-  // unconverted news-report relative time terms are "last night", "yesterday", "this morning", "today", "tomorrow".
-  const RELATIVE_TIME_WORDS = [
-    /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i,
-  ];
-  for (const pat of RELATIVE_TIME_WORDS) {
-    if (pat.test(trimmed)) {
+  // Check "record-breaking" unless it appears in fact packet
+  if (/\brecord-breaking\b/i.test(trimmed)) {
+    const packetFacts = context.factPacket?.facts || [];
+    const inPacket = packetFacts.some((f: any) => {
+      const txt = typeof f === 'string' ? f : (f.text || f.factText || '');
+      return /\brecord-breaking\b/i.test(txt);
+    });
+    if (!inPacket) {
       return {
         valid: false,
-        rejectedReason: `Contains unconverted relative time word: ${pat}`,
+        rejectedReason: 'Contains "record-breaking" but it does not appear in fact packet',
         sanitizedText: '',
       };
+    }
+  }
+
+  // 3b. Check freshness and relative time words
+  // "this week", "this Friday", "tonight", "today", "last night", "this morning" etc.
+  // Rule: A relative word is allowed only if the event date is within 7 days before the broadcast date
+  // and the script's weekday/date matches.
+  // Exception: Chart "this week" wording stays allowed for chart sentences built from the latest chart on/before broadcast date.
+  const RELATIVE_TIME_WORDS = [
+    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow)\b/i,
+  ];
+  for (const pat of RELATIVE_TIME_WORDS) {
+    const match = trimmed.match(pat);
+    if (match) {
+      const relWord = match[0].toLowerCase();
+      // Chart "this week" exception:
+      const isChartTopic = context.factPacket?.topic === 'chart' || context.factPacket?.topic === 'chart_story' || context.factPacket?.topic === 'next_song_story';
+      const isChartSentence = relWord === 'this week' && isChartTopic;
+
+      if (!isChartSentence) {
+        // Must verify event date is within 7 days before broadcast date and weekday/date matches
+        let isEligible = false;
+        if (context.selectedDate && context.factPacket?.facts) {
+          const bDate = new Date(context.selectedDate + 'T00:00:00Z');
+          const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const bWeekday = weekdays[bDate.getUTCDay()];
+
+          for (const fact of context.factPacket.facts) {
+            const eDateStr = (fact as any).eventDate || (fact as any).date || (fact as any).printDate;
+            if (eDateStr && /^\d{4}-\d{2}-\d{2}$/.test(eDateStr)) {
+              const eDate = new Date(eDateStr + 'T00:00:00Z');
+              const diffDays = (bDate.getTime() - eDate.getTime()) / (1000 * 60 * 60 * 24);
+              if (diffDays >= 0 && diffDays <= 7) {
+                // If relative word is specific weekday like "this friday", verify weekday
+                const matchedWeekday = weekdays.find(w => relWord.includes(w));
+                if (matchedWeekday) {
+                  const eWeekday = weekdays[eDate.getUTCDay()];
+                  if (matchedWeekday === eWeekday) {
+                    isEligible = true;
+                    break;
+                  }
+                } else {
+                  isEligible = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        if (!isEligible) {
+          return {
+            valid: false,
+            rejectedReason: `Contains relative time word "${match[0]}" but event is not within 7 days of broadcast date (${context.selectedDate}) or weekday mismatch`,
+            sanitizedText: '',
+          };
+        }
+      }
     }
   }
 
@@ -1055,18 +1157,49 @@ export function validateBreakOutput(
     }
   }
 
-  // 3c2. Check unconverted relative time words from newspaper reporting
-  // "this week" is legitimate for radio DJs referring to the weekly chart
+  // 3c2. Check freshness and relative time words
   const REL_WORDS = [
-    /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i,
+    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow)\b/i,
   ];
   for (const rel of REL_WORDS) {
-    if (rel.test(trimmed)) {
-      return {
-        valid: false,
-        rejectedReason: `Contains unconverted relative time word: ${rel}`,
-        sanitizedText: '',
-      };
+    const match = trimmed.match(rel);
+    if (match) {
+      const relWord = match[0].toLowerCase();
+      const isChartSentence = relWord === 'this week';
+      if (!isChartSentence) {
+        let isEligible = false;
+        if (context.selectedDate && (context.factPacket as any)?.facts) {
+          const bDate = new Date(context.selectedDate + 'T00:00:00Z');
+          const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          for (const fact of (context.factPacket as any).facts) {
+            const eDateStr = (fact as any).eventDate || (fact as any).date || (fact as any).printDate;
+            if (eDateStr && /^\d{4}-\d{2}-\d{2}$/.test(eDateStr)) {
+              const eDate = new Date(eDateStr + 'T00:00:00Z');
+              const diffDays = (bDate.getTime() - eDate.getTime()) / (1000 * 60 * 60 * 24);
+              if (diffDays >= 0 && diffDays <= 7) {
+                const matchedWeekday = weekdays.find(w => relWord.includes(w));
+                if (matchedWeekday) {
+                  const eWeekday = weekdays[eDate.getUTCDay()];
+                  if (matchedWeekday === eWeekday) {
+                    isEligible = true;
+                    break;
+                  }
+                } else {
+                  isEligible = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (!isEligible) {
+          return {
+            valid: false,
+            rejectedReason: `Contains relative time word "${match[0]}" but event is not within 7 days of broadcast date (${context.selectedDate}) or weekday mismatch`,
+            sanitizedText: '',
+          };
+        }
+      }
     }
   }
 

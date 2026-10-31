@@ -848,29 +848,6 @@ Respond strictly with JSON schema:
       }
     }
 
-    // Requirement 3: Allow "RetroFM" at most once in every 4 breaks, and "Now on RetroFM, here is" at most once in 5.
-    const allowRetroFm = input.allowRetroFm ?? false;
-    const allowNowOnRetroFm = input.allowNowOnRetroFm ?? false;
-
-    let songHandoff = '';
-    if (input.targetSongTitle && input.targetSongArtist) {
-      if (allowNowOnRetroFm) {
-        songHandoff = `Now on RetroFM, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`;
-      } else if (allowRetroFm) {
-        songHandoff = `Here on RetroFM, let's hear "${input.targetSongTitle}" by ${input.targetSongArtist}.`;
-      } else {
-        const HANDOFF_VARIANTS = [
-          `Right now, here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-          `Spinning now, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-          `Let's hear "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-          `Here is "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-          `Next up, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-          `Coming up, "${input.targetSongTitle}" by ${input.targetSongArtist}.`,
-        ];
-        songHandoff = HANDOFF_VARIANTS[seed % HANDOFF_VARIANTS.length];
-      }
-    }
-
     const systemPromptStep1 = `You are ${persona.name}, a genuine Top 40 radio DJ broadcasting on ${fullDateSpoken}.
 You deliver a natural, engaging spoken radio segment between records.
 
@@ -887,7 +864,7 @@ Exemplar 3:
 STRICT STYLE RULES:
 1. Short spoken sentences with direct address and varied rhythm. Talk straight to the listener.
 2. ABSOLUTELY NO CONNECTOR WORDS. Never use: "Furthermore", "Meanwhile", "In addition", "At the same time", "On that note", "Along with that", "Adding to that", "Beyond that".
-3. STRICTLY BANNED PHRASES: Never use "making waves", "latest news", "music scene", "epic", "insane", "mind-blowing". Never say a band or group was "formed" unless the word "formed" appears directly in the Fact Sheet.
+3. STRICTLY BANNED PHRASES: Never use "making waves", "latest news", "music scene", "epic", "insane", "mind-blowing", "whopping", "heartfelt", "you might be surprised", "showcasing its lasting appeal", "himself", "lasting appeal", "a feat unmatched". Never use "record-breaking" unless the word "record-breaking" appears directly in the Fact Sheet. Never say a band or group was "formed" unless the word "formed" appears directly in the Fact Sheet.
 4. PARAPHRASE ALL SOURCE FACTS: Never copy more than 6 consecutive words from the Fact Sheet (or 12 for short credits). Put facts into your own natural spoken words.
 5. LOCKED CHART SENTENCES: Any chart sentence (e.g. "It reached number one on the Hot 100 in May 1975." or "It spent 21 weeks on the chart.") is code-locked: you MUST keep it verbatim or omit it entirely. NEVER paraphrase or merge chart facts. Never say "topped the charts" or "staying there for X weeks". Weeks at number one and weeks on the chart must never be mixed.
 6. In any news or review break, name the person or event in your very first sentence.
@@ -942,7 +919,7 @@ Write the complete spoken radio segment monologue following all rules. Output ON
 
     if (!rawDraft) {
       // Fallback: build natural script from facts
-      rawDraft = `${hook ? hook + ' ' : ''}${factItems.map(f => f.text).join(' ')} ${songHandoff}`.trim();
+      rawDraft = `${hook ? hook + ' ' : ''}${factItems.map(f => f.text).join(' ')}`.trim();
     }
 
     // Fix comma capitalization bug
@@ -965,10 +942,19 @@ Write the complete spoken radio segment monologue following all rules. Output ON
 
     // Filter out pure song handoffs (title and artist of the next song) or opener from strict claim check
     // Requirement 3: Exclude the hand-off line (title and artist of the next song) from the claim audit.
+    const HANDOFF_PATTERNS = [
+      /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|next up|coming up|switching gears|turning to|right now|playing now)\b/i,
+      /\b(?:coming up|this one's from|up next|here's a good one|time for|let's get back to the music|check this one out)\b/i,
+      /\b(?:we've got|let's give|turn it up|got a great track|let's take a listen|this is)\b/i,
+      /\b(?:get ready for|coming your way|don't touch that dial|let's crank it up|this one's got some energy)\b/i,
+      /\b(?:let's ease into|enjoy|settling in with|a little something from|let's spend a few minutes|coming through the speakers|take a listen to)\b/i,
+      /\b(?:coming at you with|listen to|let's hear it for)\b/i,
+      /\b(?:straight from|on the turntable|making its way onto the playlist|let's roll with|another great track from|taking us back with)\b/i,
+    ];
     const claimsToCheck: Array<{ sentence: string; index: number }> = [];
     sentences.forEach((s, idx) => {
       if (input.targetSongTitle && s.includes(input.targetSongTitle)) return;
-      if (s.includes('Now on RetroFM') || s.includes('Spinning now') || s.includes('let\'s hear') || s.includes('Here is') || s.includes('Next up')) return;
+      if (HANDOFF_PATTERNS.some((pat) => pat.test(s))) return;
       claimsToCheck.push({ sentence: s, index: idx });
     });
 
@@ -1036,15 +1022,6 @@ VERDICTS:`;
 
     // Strip every hand-off the model wrote (any sentence containing target song title,
     // or phrases like "let's hear", "next up", "here is", "now on retrofm", "here on retrofm", "spinning now", "switching gears", "turning to", etc.)
-    const HANDOFF_PATTERNS = [
-      /\b(?:now on retrofm|here on retrofm|spinning now|let's hear|here is|next up|coming up|switching gears|turning to|right now|playing now)\b/i,
-      /\b(?:coming up|this one's from|up next|here's a good one|time for|let's get back to the music|check this one out)\b/i,
-      /\b(?:we've got|let's give|turn it up|got a great track|let's take a listen|this is)\b/i,
-      /\b(?:get ready for|coming your way|don't touch that dial|let's crank it up|this one's got some energy)\b/i,
-      /\b(?:let's ease into|enjoy|settling in with|a little something from|let's spend a few minutes|coming through the speakers|take a listen to)\b/i,
-      /\b(?:coming at you with|listen to|let's hear it for)\b/i,
-      /\b(?:straight from|on the turntable|making its way onto the playlist|let's roll with|another great track from|taking us back with)\b/i,
-    ];
     const isModelHandoff = (s: string) => {
       if (input.targetSongTitle && s.toLowerCase().includes(input.targetSongTitle.toLowerCase())) return true;
       return HANDOFF_PATTERNS.some((pat) => pat.test(s));
@@ -1066,7 +1043,7 @@ VERDICTS:`;
       rawResponse: `--- PROMPT ---\n${systemPromptStep1}\n${userPromptStep1}\n\n--- RAW OUTPUT ---\n${rawDraft}\n\n--- AUDIT ---\n${unsupportedClaims.join('\n') || 'None'}`,
       unsupportedClaims,
       openerUsed: hook || 'None',
-      closerUsed: songHandoff,
+      closerUsed: '',
     };
   }
 }

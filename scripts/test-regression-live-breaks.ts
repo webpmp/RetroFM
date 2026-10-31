@@ -10,6 +10,8 @@
  */
 
 import { validateSegmentBreakOutput } from '../src/services/djBreak/breakValidator.js';
+import { cleanDuetArtist } from '../src/services/djBreak/chartFacts.js';
+import { buildHandoff, isSongOld, resolveOrphanPronounOpening } from '../src/services/djBreak/handoffBank.js';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import os from 'os';
@@ -68,7 +70,7 @@ async function runTests() {
       },
     }
   );
-  assert('Rejects target song title in multiple hand-off sentences', !duplicateHandoffRes.valid && /Target song title appears in 2 hand-off/i.test(duplicateHandoffRes.rejectedReason || ''), duplicateHandoffRes);
+  assert('Rejects target song title in multiple hand-off sentences', !duplicateHandoffRes.valid && (/Target song title appears in 2 hand-off/i.test(duplicateHandoffRes.rejectedReason || '') || /Target song title .* appears 2 times/i.test(duplicateHandoffRes.rejectedReason || '')), duplicateHandoffRes);
 
   // Test: banned intensifiers & transitions
   const bannedIntensifiers = ['astonishing', 'amazing', 'incredible', 'unique', 'remarkable', 'stunning', 'surprising', 'fresh', 'pretty unique', 'next up', 'switching gears'];
@@ -223,6 +225,66 @@ async function runTests() {
     }
   );
   assert('Validator rejects model draft containing next song\'s title', !modelDraftWithTitle.valid && /only code adds hand-offs/i.test(modelDraftWithTitle.rejectedReason || ''), modelDraftWithTitle);
+
+  console.log('\n--- 6. Duet Cleaning Tests ---');
+  assert('Cleans Kenny Rogers Duet With Dolly Parton', cleanDuetArtist('Kenny Rogers Duet With Dolly Parton') === 'Kenny Rogers and Dolly Parton');
+  assert('Cleans Patti Austin A Duet With James Ingram', cleanDuetArtist('Patti Austin A Duet With James Ingram') === 'Patti Austin and James Ingram');
+  assert('Cleans Wham! Featuring George Michael', cleanDuetArtist('Wham! Featuring George Michael') === 'Wham! and George Michael');
+
+  console.log('\n--- 7. Incomplete Sentences and Bare Names ---');
+  const bareNameRes = validateSegmentBreakOutput(
+    'Ray Parker Jr. This track spent 21 weeks on the chart.',
+    {
+      selectedDate: '1996-11-15',
+      factPacket: {
+        facts: [{ text: 'Ray Parker Jr. wrote this track.' }, { text: 'This track spent 21 weeks on the chart.' }],
+        targetSongTitle: 'Ghostbusters',
+        targetSongArtist: 'Ray Parker Jr.',
+      },
+      isModelDraft: false,
+    }
+  );
+  assert('Rejects bare name on its own as incomplete sentence', !bareNameRes.valid && /bare artist name/i.test(bareNameRes.rejectedReason || ''), bareNameRes);
+
+  console.log('\n--- 8. writeSegmentBreakScript Contains No Old Hand-off Phrases ---');
+  const { GeminiScriptWriterProvider } = await import('../src/services/djBreak/GeminiScriptWriterProvider.js');
+  const { LMStudioScriptWriterProvider } = await import('../src/services/djBreak/LMStudioScriptWriterProvider.js');
+
+  const geminiProvider = new GeminiScriptWriterProvider();
+  const lmProvider = new LMStudioScriptWriterProvider({ endpoint: 'http://localhost:1234/v1' });
+
+  const geminiRes = await geminiProvider.writeSegmentBreakScript({
+    topic: 'next_song_story',
+    topicTitle: 'Test Song Story',
+    targetDate: '1996-11-15',
+    targetSongTitle: 'Ghostbusters',
+    targetSongArtist: 'Ray Parker Jr.',
+    personality: 'mike',
+    facts: [{ text: 'Ray Parker Jr. recorded this track in 1984.' }],
+  });
+
+  const lmRes = await lmProvider.writeSegmentBreakScript({
+    topic: 'next_song_story',
+    topicTitle: 'Test Song Story',
+    targetDate: '1996-11-15',
+    targetSongTitle: 'Ghostbusters',
+    targetSongArtist: 'Ray Parker Jr.',
+    personality: 'mike',
+    facts: [{ text: 'Ray Parker Jr. recorded this track in 1984.' }],
+  });
+
+  const BANNED_OLD_HANDOFFS = [
+    /now on retrofm/i,
+    /here on retrofm/i,
+    /spinning now/i,
+    /let's hear "(?:[^"]+)" by/i,
+    /let's hear/i,
+  ];
+
+  const geminiHasOldHandoff = BANNED_OLD_HANDOFFS.some((pat) => pat.test(geminiRes.scriptText));
+  const lmHasOldHandoff = BANNED_OLD_HANDOFFS.some((pat) => pat.test(lmRes.scriptText));
+  assert('Gemini writeSegmentBreakScript output contains no old hand-off phrases', !geminiHasOldHandoff, geminiRes.scriptText);
+  assert('LMStudio writeSegmentBreakScript output contains no old hand-off phrases', !lmHasOldHandoff, lmRes.scriptText);
 
   console.log(`\n========================================`);
   console.log(`Total tests: ${passed + failed} | Passed: ${passed} | Failed: ${failed}`);

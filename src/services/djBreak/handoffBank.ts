@@ -139,6 +139,54 @@ export interface HandoffResult {
   chosenTemplate: string;
 }
 
+export const SHORT_NO_NAME_CLOSERS = [
+  "Here it is.",
+  "Take a listen.",
+  "Turn it up.",
+  "Here we go.",
+];
+
+export function getShortNoNameCloser(seed?: number, lastCloser?: string): string {
+  const available = SHORT_NO_NAME_CLOSERS.filter(c => c !== lastCloser);
+  const pool = available.length > 0 ? available : SHORT_NO_NAME_CLOSERS;
+  const idx = typeof seed === 'number' ? Math.abs(seed) % pool.length : Math.floor(Math.random() * pool.length);
+  return pool[idx];
+}
+
+/**
+ * Builds a dated station ID using the weekday and full date from code:
+ * e.g. "It's Friday, November 15th, 1996 on RetroFM."
+ */
+export function buildDatedStationId(broadcastDate: string): string {
+  const [y, m, d] = broadcastDate.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const weekday = weekdays[dt.getUTCDay()];
+  const month = months[dt.getUTCMonth()];
+  const day = dt.getUTCDate();
+  const suffix = (day >= 11 && day <= 13) ? 'th' : ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][day % 10] || 'th';
+  return `It's ${weekday}, ${month} ${day}${suffix}, ${y} on RetroFM.`;
+}
+
+export const STATION_ID_VARIANTS = [
+  "You're listening to RetroFM.",
+  "This is RetroFM.",
+];
+
+export function getStationIdPhrase(broadcastDate: string, isFirstBreak: boolean = false, seed?: number): string {
+  if (isFirstBreak) {
+    return buildDatedStationId(broadcastDate);
+  }
+  const pool = [
+    buildDatedStationId(broadcastDate),
+    "You're listening to RetroFM.",
+    "This is RetroFM.",
+  ];
+  const idx = typeof seed === 'number' ? Math.abs(seed) % pool.length : Math.floor(Math.random() * pool.length);
+  return pool[idx];
+}
+
 /**
  * Builds a single hand-off string obeying group alternation and 12-break template recency.
  */
@@ -265,18 +313,19 @@ export function resolveOrphanPronounOpening(
       replacement = cleaned.endsWith('s') ? `${cleaned}'` : `${cleaned}'s`;
     }
   } else if (['it', 'this', 'these', 'its'].includes(pronounLower)) {
-    // If first sentence talks about track/song/cut or album, antecedent is the song
-    if (/\b(?:track|song|single|cut|album|record)\b/i.test(firstSent)) {
+    // If first sentence starts with "This track", "This song", "This one", etc.
+    if (/^This\s+(?:one|track|song|single|cut|record)\b/i.test(firstSent)) {
+      replacement = title ? `"${title}"` : (artist ? cleanDuetArtist(artist) : '');
+    } else if (/\b(?:track|song|single|cut|album|record)\b/i.test(firstSent)) {
       if (pronounLower === 'its') {
         replacement = title ? `"${title}"'s` : (artist ? `${artist}'s` : '');
       } else {
         replacement = title ? `"${title}"` : (artist ? cleanDuetArtist(artist) : '');
       }
-    } else if (artist) {
-      // e.g. band referred to as "This" or "It"
-      replacement = cleanDuetArtist(artist);
     } else if (title) {
       replacement = `"${title}"`;
+    } else if (artist) {
+      replacement = cleanDuetArtist(artist);
     }
   }
 
@@ -284,8 +333,13 @@ export function resolveOrphanPronounOpening(
     return { resolvedText: scriptText, replaced: false, reason: `Antecedent not clear for orphan pronoun "${pronoun}"` };
   }
 
-  // Replace leading pronoun in first sentence
-  const newFirstSent = firstSent.replace(/^(They|He|She|It|Their|His|Her|Its|This|These)\b/i, replacement);
+  // Replace leading pronoun in first sentence without leaving broken phrases
+  let newFirstSent = firstSent;
+  if (/^This\s+(?:one|track|song|single|cut|record)\b/i.test(firstSent)) {
+    newFirstSent = firstSent.replace(/^This\s+(?:one|track|song|single|cut|record)\b/i, replacement);
+  } else {
+    newFirstSent = firstSent.replace(/^(They|He|She|It|Their|His|Her|Its|This|These)\b/i, replacement);
+  }
   sentences[0] = newFirstSent;
   const resolvedText = sentences.join(' ');
 
