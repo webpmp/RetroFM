@@ -14,9 +14,9 @@ Rather than streaming pre-recorded podcasts or static playlists, RetroFM simulat
 
 ### High-Level Component Interaction
 The system is divided into four distinct runtime domains:
-- **Client Web Application (`src/App.tsx`)**: The central coordinator running in Google Chrome on `http://localhost:3003`. It maintains session state, schedules songs, triggers ahead-of-time DJ commentary pipelines, manages audio ducking sequences, and renders diagnostic controls.
+- **Client Web Application (`src/App.tsx`)**: The central coordinator running in Google Chrome on `http://localhost:3003` (with Docker) or on the local port printed by `npm run dev` (without Docker). It maintains session state, schedules songs, triggers ahead-of-time DJ commentary pipelines, manages audio ducking sequences, and renders diagnostic controls.
 - **Companion Chrome Extension (`extension/`)**: A Manifest V3 extension with a background service worker (`background.js`), content script bridges (`content_retrofm.js`, `content_youtube.js`), an isolated main-world audio engine (`player/yt_main_world.js`), and a standalone skeuomorphic player interface (`player/player.js` / Boom Box).
-- **Node.js/Bun Backend Server (`server.ts`)**: An Express and Vite development server listening on port 3000 (mapped to host 3003). It interfaces with local SQLite databases, external news APIs, Gemini and LM Studio LLM providers, and TTS engines.
+- **Node.js/Bun Backend Server (`server.ts`)**: An Express and Vite development server listening on port 3000 (mapped to host 3003 in Docker, or running directly on port 3000/PORT locally). It interfaces with local SQLite databases or static JSON catalogs, external news APIs, Gemini and LM Studio LLM providers, and TTS engines.
 - **Data Repositories & External Services**: A local SQLite database (`~/retrofm/library.sqlite`), pre-compiled JSON catalog files (`/public/data/retrofm_library_youtube.json`), the New York Times Archive API, YouTube Data API v3, Google Gemini Flash models, and local Kokoro TTS servers.
 
 ---

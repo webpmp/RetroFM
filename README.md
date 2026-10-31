@@ -48,9 +48,18 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
   docker compose up --build
   ```
 
+### Port and Local Access
+- **With Docker**: RetroFM runs at [http://localhost:3003](http://localhost:3003) (mapped from container port `3000`).
+- **Without Docker (`npm run dev`)**: RetroFM runs on the port printed by `npm run dev` (typically [http://localhost:3000](http://localhost:3000), or another available port). The companion extension and app communication automatically adapt to whatever port is in use.
+
 ---
 
 ## Getting Started (Local Node/npm)
+
+1. Install dependencies:
+   ```bash
+   npm install # or bun install
+   ```
 
 2. Configure environment variables:
    Copy the example environment file:
@@ -63,9 +72,10 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
    ```bash
    npm run dev
    ```
-   Open [http://localhost:3000](http://localhost:3000) in Google Chrome.
+   Open the application in Google Chrome at the URL printed in the terminal (e.g. `http://localhost:3000`).
 
 4. Build for production:
+
    ```bash
    npm run build
    npm run start
@@ -93,7 +103,8 @@ cp .env.example .env
 # 3. Launch the development server
 npm run dev # or docker compose up -d
 ```
-Open [http://localhost:3003](http://localhost:3003) (Docker) or [http://localhost:3000](http://localhost:3000) (local npm). The DJ commentary, era-accurate chart trivia, and song stories will work out of the box using the sample dataset.
+Open the URL in Google Chrome ([http://localhost:3003](http://localhost:3003) when running Docker, or the port `npm run dev` prints when running locally). The DJ commentary, era-accurate chart trivia, and song stories will work out of the box using the sample dataset.
+
 
 ---
 

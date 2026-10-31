@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RetroFM",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "author": "Chris Adkins",
   "homepage_url": "https://github.com/webpmp/RetroFM",
   "description": "Connects the RetroFM app to a YouTube tab for audio ducking and playback control.",

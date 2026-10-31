@@ -1059,7 +1059,7 @@ export async function searchYouTubeForSong(
           const vRes = await fetch(vUrl, {
             headers: {
               Accept: 'application/json',
-              Referer: process.env.YOUTUBE_REFERER || 'http://localhost:3000/',
+              Referer: process.env.YOUTUBE_REFERER || process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}/`,
             },
           });
           if (vRes.ok) {
@@ -1136,7 +1136,7 @@ export async function searchYouTubeForSong(
 
     const apiHeaders: Record<string, string> = {
       Accept: 'application/json',
-      Referer: process.env.YOUTUBE_REFERER || 'http://localhost:3000/',
+      Referer: process.env.YOUTUBE_REFERER || process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}/`,
     };
 
     const searchResponse = await fetch(searchUrl, { headers: apiHeaders });

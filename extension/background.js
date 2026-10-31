@@ -184,10 +184,11 @@ async function resolveRetroFmTab(requestedTabId) {
     const tabs = await chrome.tabs.query({});
     const appTab = tabs.find(t =>
       t.url &&
-      (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
+      (t.url.startsWith('http://localhost') || t.url.startsWith('http://127.0.0.1') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
       !t.url.includes('player/index.html') &&
       !t.url.includes('youtube.com')
     );
+
     if (appTab && appTab.id) {
       await setStoredRegisteredAppTabId(appTab.id);
       return appTab.id;
@@ -1013,13 +1014,14 @@ function handleIncomingRequest(request, sender, sendResponse) {
           }
 
           if (!retroFmTab) {
-            // Find tab matching sender URL or localhost:3003
+            // Find tab matching sender URL or localhost / 127.0.0.1 on any port
             try {
               const allTabs = await chrome.tabs.query({});
               retroFmTab = allTabs.find(t =>
                 t.url &&
-                (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003')) &&
-                !t.url.includes('player/index.html')
+                (t.url.startsWith('http://localhost') || t.url.startsWith('http://127.0.0.1') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
+                !t.url.includes('player/index.html') &&
+                !t.url.includes('youtube.com')
               ) || null;
             } catch (e) {}
           }
@@ -1037,12 +1039,26 @@ function handleIncomingRequest(request, sender, sendResponse) {
             retroFmTab = allTabs.find(t => !t.url?.includes('player/index.html') && !t.url?.includes('youtube.com')) || allTabs[0];
           }
 
-          // If the resolved tab is blank or new tab, ensure it is directed to RetroFM test page
+          // If the resolved tab is blank or new tab, ensure it is directed to the sender's origin or registered app tab origin
           if (retroFmTab && retroFmTab.id && (!retroFmTab.url || retroFmTab.url === 'about:blank' || retroFmTab.url.startsWith('chrome://'))) {
             try {
-              await chrome.tabs.update(retroFmTab.id, { url: 'http://localhost:3003/' });
+              let targetOrigin = sender?.origin;
+              if (!targetOrigin && sender?.url) {
+                try { targetOrigin = new URL(sender.url).origin; } catch (e) {}
+              }
+              if (!targetOrigin && registeredId) {
+                try {
+                  const regTab = await chrome.tabs.get(registeredId);
+                  if (regTab?.url) targetOrigin = new URL(regTab.url).origin;
+                } catch (e) {}
+              }
+              if (!targetOrigin) {
+                targetOrigin = 'http://localhost:3000';
+              }
+              await chrome.tabs.update(retroFmTab.id, { url: targetOrigin.endsWith('/') ? targetOrigin : `${targetOrigin}/` });
             } catch (e) {}
           }
+
 
           if (retroFmTab && retroFmTab.id) {
             await setStoredRegisteredAppTabId(retroFmTab.id);
