@@ -43,9 +43,9 @@ export const newDjState = (seed: number = Math.floor(Math.random() * 1e9)): DjSt
 export interface TalkOptions { talkChance: number; maxSilentBreaks: number }
 export const TALK_PRESETS: Record<"every" | "often" | "sometimes" | "rarely", TalkOptions> = {
   every:     { talkChance: 1.0,  maxSilentBreaks: 0 },  // every song change (100%)
-  often:     { talkChance: 0.70, maxSilentBreaks: 2 },  // ~70%
-  sometimes: { talkChance: 0.40, maxSilentBreaks: 4 },  // ~40%
-  rarely:    { talkChance: 0.15, maxSilentBreaks: 8 },  // ~15%
+  often:     { talkChance: 0.85, maxSilentBreaks: 1 },  // ~85%
+  sometimes: { talkChance: 0.60, maxSilentBreaks: 2 },  // ~60%
+  rarely:    { talkChance: 0.30, maxSilentBreaks: 4 },  // ~30%
 };
 
 /** How much the DJ says about a song: one sentence, sometimes two or three, or usually two or three. */

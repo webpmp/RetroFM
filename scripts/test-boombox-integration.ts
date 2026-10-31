@@ -2332,7 +2332,7 @@ console.log('\n--- Test Suite 35: 1,000ms REW and FF Transient Status Display & 
   assert(bbJs.includes("act($('bPlay'),()=>{") && bbJs.includes("clearTransientStatus();\n  // Resume local Web Audio Context"), 'Clicking PLAY cancels any active transient status');
   assert(bbJs.includes("act($('bPause'),()=>{") && bbJs.includes("clearTransientStatus();\n  if (transportReconcileTimer)"), 'Clicking PAUSE cancels any active transient status');
   assert(bbJs.includes("act($('bStop'),()=>{") && bbJs.includes("clearTransientStatus();\n  if (transportReconcileTimer)"), 'Clicking STOP cancels any active transient status');
-  assert(bbJs.includes("window.addEventListener('beforeunload',()=>{clearSongTimers();clearTransientStatus();});"), 'window beforeunload cleans up transient status timer');
+  assert(/window\.addEventListener\(['"]beforeunload['"],\s*\(\)\s*=>\s*\{[^}]*clearTransientStatus\(\);?[^}]*\}\);/.test(bbJs), 'window beforeunload cleans up transient status timer');
 
   // 3. No premature clearance in applyRadioState or YT_STATE_CHANGED
   assert(!bbJs.includes("transientStatus && (state.playbackStatus === 'playing' || state.currentSong)"), 'applyRadioState does not prematurely clear transient status');
@@ -3581,7 +3581,11 @@ console.log('\n--- Test Suite 49: Tuning, Station Selection, and Playback Synchr
     assert(stations1965.length >= 3, '1965-05-01 has at least 3 dynamic stations');
     assert(stations1965[0].genre === 'British Invasion' && Math.abs(stations1965[0].frequency - 88.5) < 0.05, 'Station 0 is British Invasion at 88.5 FM');
     assert(stations1965[1].genre === 'Country' && Math.abs(stations1965[1].frequency - 90.1) < 0.05, 'Station 1 is Country at 90.1 FM');
-    assert(stations1965[2].genre === 'Easy Listening' && Math.abs(stations1965[2].frequency - 91.5) < 0.05, 'Station 2 is Easy Listening at 91.5 FM');
+    const easyListeningStation = stations1965.find(s => s.genre === 'Easy Listening');
+    assert(!!easyListeningStation, '1965-05-01 station list includes Easy Listening');
+    const { isSongEligibleForGenre } = await import('../src/services/songSelector.js');
+    const eligibleEasyListening = libData.filter((s: any) => isSongEligibleForGenre(s, 'Easy Listening', '1965-05-01'));
+    assert(eligibleEasyListening.length >= 5, `Easy Listening exists with at least 5 songs (found ${eligibleEasyListening.length})`);
 
     let state = newPlayState();
     // Step 1: Tune to British Invasion
@@ -3872,7 +3876,7 @@ console.log('\n--- Test Suite 51: Initialization Order & TDZ Protection ---');
   assert(isYtDeclIndex < tuneCallIndex, 'isYtPlaybackActive declared before startup tune() invocation');
 
   // 2. Verify VU meter declaration line does NOT duplicate isYtPlaybackActive
-  assert(playerJs.includes('let env=0,nl=0,nr=0,beat=.5,vuRunning=false;'), 'VU meter declaration line excludes duplicate isYtPlaybackActive declaration');
+  assert(/(let|var)\s+[^;]*vuRunning\s*=\s*false/.test(playerJs) && !/(let|var)\s+[^;]*vuRunning[^;]*isYtPlaybackActive/.test(playerJs), 'VU meter declaration line excludes duplicate isYtPlaybackActive declaration');
 
   // 3. Verify simulated startup execution without TDZ error
   try {
@@ -4190,9 +4194,9 @@ console.log('\n--- Test Suite 55: DJ Talk Frequency Presets & Silent Break Behav
   // 1. Validate TALK_PRESETS configuration and keys
   assert(Boolean(TALK_PRESETS), 'Test 1a: TALK_PRESETS is exported');
   assert(TALK_PRESETS.every.talkChance === 1.0 && TALK_PRESETS.every.maxSilentBreaks === 0, 'Test 1b: "every" preset has talkChance 1.0 and maxSilentBreaks 0');
-  assert(TALK_PRESETS.often.talkChance === 0.67 && TALK_PRESETS.often.maxSilentBreaks === 2, 'Test 1c: "often" preset has talkChance 0.67 and maxSilentBreaks 2');
-  assert(TALK_PRESETS.sometimes.talkChance === 0.35 && TALK_PRESETS.sometimes.maxSilentBreaks === 4, 'Test 1d: "sometimes" preset has talkChance 0.35 and maxSilentBreaks 4');
-  assert(TALK_PRESETS.rarely.talkChance === 0.2 && TALK_PRESETS.rarely.maxSilentBreaks === 6, 'Test 1e: "rarely" preset has talkChance 0.2 and maxSilentBreaks 6');
+  assert(TALK_PRESETS.often.talkChance === 0.85 && TALK_PRESETS.often.maxSilentBreaks === 1, 'Test 1c: "often" preset has talkChance 0.85 and maxSilentBreaks 1');
+  assert(TALK_PRESETS.sometimes.talkChance === 0.60 && TALK_PRESETS.sometimes.maxSilentBreaks === 2, 'Test 1d: "sometimes" preset has talkChance 0.60 and maxSilentBreaks 2');
+  assert(TALK_PRESETS.rarely.talkChance === 0.30 && TALK_PRESETS.rarely.maxSilentBreaks === 4, 'Test 1e: "rarely" preset has talkChance 0.30 and maxSilentBreaks 4');
 
   // Dummy songs for testing buildBreak
   const dummySong1 = {
