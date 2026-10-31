@@ -42,6 +42,7 @@ import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardServi
 import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
+import { getEffectiveAppUrl, logStartupEnvironmentStatus } from './src/services/envUtil.js';
 
 dotenv.config();
 
@@ -50,7 +51,9 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const rawPort = process.env.PORT?.trim();
+  const parsedPort = rawPort ? Number(rawPort) : NaN;
+  const PORT = (!isNaN(parsedPort) && parsedPort > 0) ? parsedPort : 3000;
 
   app.use(express.json());
 
@@ -441,7 +444,7 @@ async function startServer() {
   // API Route: Check LM Studio connection and discover available models
   app.post('/api/ai/lmstudio/status', async (req, res) => {
     try {
-      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
       let endpoint = req.body?.endpoint || defaultEndpoint;
       // If user typed localhost inside browser, resolve appropriately for Docker container backend
       if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
@@ -478,7 +481,7 @@ async function startServer() {
   // API Route: Send a test prompt to LM Studio and verify chat-completions
   app.post('/api/ai/lmstudio/test', async (req, res) => {
     try {
-      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
       let endpoint = req.body?.endpoint || defaultEndpoint;
       if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
         endpoint = endpoint.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
@@ -538,7 +541,7 @@ async function startServer() {
   // Helper to map and sanitize provider endpoints
   function resolveProviderEndpoint(provider?: string, endpoint?: string) {
     if (provider !== 'lmstudio') return undefined;
-    let ep = endpoint || process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+    let ep = endpoint || process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
     if (ep.includes('localhost:1234') || ep.includes('127.0.0.1:1234')) {
       ep = ep.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
     }
@@ -1719,7 +1722,9 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[RetroFM Server] Server running at http://0.0.0.0:${PORT}`);
+    const appUrl = getEffectiveAppUrl(PORT);
+    console.log(`[RetroFM Server] Server running at http://0.0.0.0:${PORT} (App URL: ${appUrl})`);
+    logStartupEnvironmentStatus();
   });
 }
 

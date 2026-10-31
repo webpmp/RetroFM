@@ -21,7 +21,8 @@ export class KokoroTTSProvider implements TTSProvider {
   private baseUrl: string;
 
   constructor(customBaseUrl?: string) {
-    this.baseUrl = customBaseUrl || process.env.KOKORO_BASE_URL || 'http://127.0.0.1:8880';
+    const envUrl = process.env.KOKORO_BASE_URL?.trim();
+    this.baseUrl = customBaseUrl || (envUrl ? envUrl : 'http://127.0.0.1:8880');
   }
 
   /**

@@ -19,7 +19,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 const homedir = process.env.HOME || os.homedir();
-const dbPath = process.env.SQLITE_PATH || path.join(homedir, 'retrofm', 'library.sqlite');
+const dbPath = process.env.SQLITE_PATH?.trim() || path.join(homedir, 'retrofm', 'library.sqlite');
 const outputDir = path.resolve(process.cwd(), 'public/data');
 const cacheSongCardsDir = path.resolve(process.cwd(), '.cache/song-cards');
 

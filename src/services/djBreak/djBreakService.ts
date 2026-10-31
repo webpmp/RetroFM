@@ -27,8 +27,8 @@ import { buildFactPacket } from '../news/factPacketService.js';
 import { FactItem } from '../news/types.js';
 
 // Default model can be configured via environment or default setting
-const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
-const FALLBACK_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_FALLBACK;
+const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
+const FALLBACK_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || undefined;
 
 export {
   getDefaultGeminiWriter,
