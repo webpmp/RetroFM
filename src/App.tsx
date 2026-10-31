@@ -44,7 +44,7 @@ import { generateTTS, fetchKokoroStatus, KokoroVoice } from './services/ttsClien
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
-import { loadLibrary, newPlayState, pickSong, getAvailableGenres, isStrictlyReleasedBefore, isReleasedOnOrBefore, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
+import { loadLibrary, assignPrimaryGenres, newPlayState, pickSong, hasGenre, getAvailableGenres, isSongEligibleForGenre, isStrictlyReleasedBefore, isReleasedOnOrBefore, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
 import {
   buildBreak,
   newDjState,
@@ -315,6 +315,37 @@ export function calculateDynamicStationsForDate(
     }
   }
   return STATIONS_BY_DECADE[decade] || [];
+}
+
+/**
+ * Returns the list of active station genre names for a given decade and optional date.
+ */
+export function getStationGenresForDecade(
+  library: LibrarySong[],
+  decade: number,
+  broadcastDate?: string
+): string[] {
+  const dyn = broadcastDate
+    ? calculateDynamicStationsForDate(library, broadcastDate, decade)
+    : [];
+  const stations = dyn.length > 0 ? dyn : (STATIONS_BY_DECADE[decade] || []);
+  return stations.map((s) => s.genre);
+}
+
+/**
+ * Logs the year range and song pool size for each available genre station for a date.
+ */
+export function logStationPools(date: string, library: LibrarySong[]): void {
+  if (!date || library.length === 0) return;
+  const year = parseInt(date.slice(0, 4), 10);
+  const startYear = !isNaN(year) ? year - 2 : date.slice(0, 4);
+  const endYear = !isNaN(year) ? year : date.slice(0, 4);
+  const availableGenres = getAvailableGenres(library, date);
+  const poolSizes: Record<string, number> = {};
+  for (const g of availableGenres) {
+    poolSizes[g] = library.filter((s) => isSongEligibleForGenre(s, g, date)).length;
+  }
+  console.log(`[Station Pools] Date: ${date} | Year range: ${startYear} - ${endYear} | Pools:`, poolSizes);
 }
 
 /**
@@ -1026,9 +1057,13 @@ export default function App() {
     songPlayStateRef.current = newPlayState();
     loadLibrary()
       .then((lib) => {
+        assignPrimaryGenres(lib);
         songLibraryRef.current = lib;
         logMessage(`[Song Selector] Loaded historical song library (${lib.length} tracks).`);
         setIsLibraryLoaded(true);
+        if (activeDateRef.current) {
+          logStationPools(activeDateRef.current, lib);
+        }
       })
       .catch((err) => {
         logMessage(`[Song Selector Error] Failed to load song library: ${err?.message || err}`);
@@ -1546,7 +1581,14 @@ export default function App() {
             const stationCfg = stationsForDecade.find(s => s.genre === genre || (freq !== null && Math.abs(s.frequency - freq) <= 0.15));
             nextSongRef.current = null;
 
-            const cached = stationPlaybackCacheRef.current[genre];
+            const cachedRaw = stationPlaybackCacheRef.current[genre];
+            // Ensure cached song is actually historically eligible for activeDateRef
+            const cachedSongObj = cachedRaw && songLibraryRef.current.find(s => s.streaming?.youtube?.id === cachedRaw.videoId);
+            const isCachedValidForDate = cachedRaw && (!cachedSongObj || isSongEligibleForGenre(cachedSongObj, genre, activeDateRef.current));
+            if (cachedRaw && !isCachedValidForDate) {
+              delete stationPlaybackCacheRef.current[genre];
+            }
+            const cached = isCachedValidForDate ? cachedRaw : undefined;
             const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
 
             // In radio simulation mode, tuning to a genre station always automatically starts or resumes playback
@@ -1600,11 +1642,14 @@ export default function App() {
                 }
               } else if (songLibraryRef.current.length > 0) {
                 // Scenario A: First visit to station with library loaded
+                const stationGenres = stationsForDecade.map(s => s.genre);
                 const pick = pickSong(
                   songLibraryRef.current,
                   activeDateRef.current,
                   genre,
-                  songPlayStateRef.current
+                  songPlayStateRef.current,
+                  Math.random,
+                  stationGenres
                 );
                 if (pick) {
                   logMessage(`[Tuner] Selected library song for ${genre}: "${pick.song.artist} - ${pick.song.title}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
@@ -1708,8 +1753,14 @@ export default function App() {
             songPlayStateRef.current = newPlayState();
             previousLibrarySongRef.current = null;
             nextSongRef.current = null;
+            preparedBreakRef.current = null;
+            stationPlaybackCacheRef.current = {};
             if (songLibraryRef.current.length > 0) {
-              const pick = pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
+              logStationPools(targetDate, songLibraryRef.current);
+              const selectedYear = (action.date || activeDateRef.current || '').slice(0, 4);
+              const dec = action.decade || (selectedYear ? Math.floor(parseInt(selectedYear, 10) / 10) * 10 : 1980);
+              const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, targetDate);
+              const pick = pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current, Math.random, stationGenres);
               if (pick) {
                 await playLibrarySong(pick, 'Date/genre selection');
               } else {
@@ -1746,6 +1797,12 @@ export default function App() {
               activeDateRef.current = action.date;
               if (typeof action.decade === 'number') {
                 activeDecadeRef.current = action.decade;
+              }
+              stationPlaybackCacheRef.current = {};
+              nextSongRef.current = null;
+              preparedBreakRef.current = null;
+              if (songLibraryRef.current.length > 0) {
+                logStationPools(action.date, songLibraryRef.current);
               }
               broadcastCurrentRadioState(true);
             }
@@ -2483,11 +2540,16 @@ export default function App() {
       const isAtEnd = history.pointer === -1 || history.pointer === history.entries.length - 1;
       if (isAtEnd || !nextSongRef.current) {
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
         const nextPick = pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
-          songPlayStateRef.current
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
         );
         nextSongRef.current = nextPick;
         if (nextPick) {
@@ -2527,12 +2589,16 @@ export default function App() {
         // Priority 1.5: Pick from library for active date and genre
         const targetDate = activeDateRef.current;
         const targetGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((targetDate || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, targetDate);
         const isNextGenreValid = nextSongRef.current && (
           !targetGenre ||
           nextSongRef.current.song.genres?.toLowerCase().includes(targetGenre.toLowerCase()) ||
+          hasGenre(nextSongRef.current.song, targetGenre, stationGenres) ||
           nextSongRef.current.song.primary_genre?.toLowerCase() === targetGenre.toLowerCase()
         );
-        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current);
+        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current, Math.random, stationGenres);
         if (pick) {
           nextSongRef.current = null;
           await playLibrarySong(pick, 'Play button library selection');
@@ -2949,11 +3015,16 @@ export default function App() {
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
 
         // Auto advance: take nextSongRef or pick next song if at end of history
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
         const pick = nextSongRef.current || pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
-          songPlayStateRef.current
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
         );
 
         if (pick) {
@@ -3042,11 +3113,16 @@ export default function App() {
 
         // Fallback if history was empty: pickSong(..., 'playLibrarySong(pick, \'REWIND / Previous\')')
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
         const pick = pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
-          songPlayStateRef.current
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
         );
         if (pick) {
           nextSongRef.current = null;
@@ -3149,11 +3225,16 @@ export default function App() {
 
         // At the end of history: play pre-selected next song (even if genreMatched === false)
         const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
         const pick = nextSongRef.current || pickSong(
           songLibraryRef.current,
           activeDateRef.current,
           currentStationGenre,
-          songPlayStateRef.current
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
         );
 
         if (pick) {
@@ -4214,6 +4295,9 @@ export default function App() {
             blacklistedFactKeys: Array.from(blacklistedFactKeysRef.current),
             lastTopic: specABreakStateRef.current.lastBreakType,
             breaksSinceLastRetroFm: specABreakStateRef.current.breaksSinceLastRetroFm ?? 4,
+            breaksSinceLastMusicNews: specABreakStateRef.current.breaksSinceLastMusicNews ?? 8,
+            lastShortCloser: specABreakStateRef.current.lastShortCloser || null,
+            totalBreaksSession: specABreakStateRef.current.totalBreaksSpoken,
             lastHandoffGroup: specABreakStateRef.current.lastHandoffGroup,
             recentHandoffTemplates: specABreakStateRef.current.recentHandoffTemplates || [],
             provider: aiProvider,
@@ -4262,6 +4346,16 @@ export default function App() {
           recents.push(segmentResult.handoffTemplate);
           if (recents.length > 12) recents.shift();
           specABreakStateRef.current.recentHandoffTemplates = recents;
+        }
+
+        if (typeof segmentResult.shortCloser === 'string') {
+          specABreakStateRef.current.lastShortCloser = segmentResult.shortCloser;
+        }
+
+        if (segmentResult.breakType === 'music_news') {
+          specABreakStateRef.current.breaksSinceLastMusicNews = 0;
+        } else {
+          specABreakStateRef.current.breaksSinceLastMusicNews = (specABreakStateRef.current.breaksSinceLastMusicNews ?? 8) + 1;
         }
 
         // Track RetroFM in session state (separate station ID)

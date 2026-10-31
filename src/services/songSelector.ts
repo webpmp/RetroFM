@@ -12,6 +12,8 @@
  *   // SKIP is just another call to pickSong with the same date and genre.
  */
 
+import { determinePrimaryGenre } from './music/genreFamilies.js';
+
 export interface LibrarySong {
   id: string;
   title: string;
@@ -40,10 +42,18 @@ export interface Pick {
   state: PlayState;
 }
 
+export function assignPrimaryGenres(library: LibrarySong[]): LibrarySong[] {
+  for (const s of library) {
+    s.primary_genre = determinePrimaryGenre(s.genres || s.primary_genre);
+  }
+  return library;
+}
+
 export async function loadLibrary(url = "/data/retrofm_library_youtube.json"): Promise<LibrarySong[]> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not load the song library (${res.status})`);
-  return (await res.json()) as LibrarySong[];
+  const songs = (await res.json()) as LibrarySong[];
+  return assignPrimaryGenres(songs);
 }
 
 const DAY = 86_400_000;
@@ -53,9 +63,10 @@ const start = (d: string): string => (d.length === 4 ? `${d}-01-01` : d.length =
 
 export const youtubeId = (s: LibrarySong): string | null => s.streaming?.youtube?.id ?? null;
 
-export function hasGenre(s: LibrarySong, genre: string): boolean {
+export function hasGenre(s: LibrarySong, genre: string, availableStationGenres?: string[] | null): boolean {
   const want = genre.trim().toLowerCase();
-  return (s.genres ?? "").split(",").some((g) => g.trim().toLowerCase() === want);
+  const primary = (s.primary_genre || determinePrimaryGenre(s.genres)).trim().toLowerCase();
+  return primary === want;
 }
 
 /**
@@ -134,8 +145,8 @@ export const SUPPORTED_1960S_GENRES = new Set([
   'Surf Rock'
 ]);
 
-export function isSongEligibleForGenre(s: LibrarySong, genre: string, broadcastDate: string): boolean {
-  if (!youtubeId(s) || !existedBy(s, broadcastDate) || !hasGenre(s, genre)) return false;
+export function isSongEligibleForGenre(s: LibrarySong, genre: string, broadcastDate: string, availableStationGenres?: string[] | null): boolean {
+  if (!youtubeId(s) || !existedBy(s, broadcastDate) || !hasGenre(s, genre, availableStationGenres)) return false;
   return chartedBetween(s, shift(broadcastDate, -730), broadcastDate);
 }
 
@@ -143,6 +154,7 @@ export function isSongEligibleForGenre(s: LibrarySong, genre: string, broadcastD
  * Derives distinct available genres from library songs that are historically eligible
  * (strictly released before the broadcast date, charted within 2 years, and have a valid streaming YouTube ID).
  * For 1960s dates, filters strictly to the supported 1960s taxonomy genres.
+ * Each song contributes only its single primary genre, so genre pools are completely disjoint.
  */
 export function getAvailableGenres(library: LibrarySong[], broadcastDate: string): string[] {
   const is1960s = broadcastDate.startsWith("196");
@@ -150,16 +162,12 @@ export function getAvailableGenres(library: LibrarySong[], broadcastDate: string
   for (const s of library) {
     if (youtubeId(s) && existedBy(s, broadcastDate)) {
       if (chartedBetween(s, shift(broadcastDate, -730), broadcastDate)) {
-        if (s.genres) {
-          for (const g of s.genres.split(",")) {
-            const trimmed = g.trim();
-            if (!trimmed) continue;
-            if (is1960s && !SUPPORTED_1960S_GENRES.has(trimmed)) {
-              continue;
-            }
-            genreSet.add(trimmed);
-          }
+        const trimmed = (s.primary_genre || determinePrimaryGenre(s.genres)).trim();
+        if (!trimmed) continue;
+        if (is1960s && !SUPPORTED_1960S_GENRES.has(trimmed)) {
+          continue;
         }
+        genreSet.add(trimmed);
       }
     }
   }
@@ -193,12 +201,13 @@ function weightedPick<T extends LibrarySong>(items: T[], rng: () => number): T {
 }
 
 export function pickSong(library: LibrarySong[], date: string, genre: string, state: PlayState,
-                         rng: () => number = Math.random): Pick | null {
+                         rng: () => number = Math.random,
+                         availableStationGenres?: string[] | null): Pick | null {
   const playable = library.filter((s) => youtubeId(s) && existedBy(s, date));
   const genreTiers: { tier: 1 | 2 | 3; songs: LibrarySong[]; genreMatched: true }[] = [
-    { tier: 1, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, date, date)) },
-    { tier: 2, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, shift(date, -182), date)) },
-    { tier: 3, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre) && chartedBetween(s, shift(date, -730), date)) },
+    { tier: 1, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre, availableStationGenres) && chartedBetween(s, date, date)) },
+    { tier: 2, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre, availableStationGenres) && chartedBetween(s, shift(date, -182), date)) },
+    { tier: 3, genreMatched: true, songs: playable.filter((s) => hasGenre(s, genre, availableStationGenres) && chartedBetween(s, shift(date, -730), date)) },
   ];
 
   const lastPlayedId = state.recent.length > 0 ? state.recent[state.recent.length - 1] : null;
