@@ -150,12 +150,9 @@ RetroFM includes a companion Chrome extension that provides bidirectional tab co
 > **Tip**: Web browsers prevent pages from directly linking to `chrome://` URLs. RetroFM provides a convenient **"Copy chrome://extensions"** button right in the app header and modal.
 
 ### First Time Setup
-1. Download the extension ZIP (click **Download Extension** in the RetroFM app or download from the repository).
-2. Unzip the archive to a folder you will keep (for example, `Documents/retrofm-extension`).
-3. In Google Chrome, navigate to `chrome://extensions/`.
-4. Turn on the **Developer mode** toggle in the top-right corner.
-5. Click **Load unpacked** in the top-left corner and select your `retrofm-extension` folder.
-6. Return to RetroFM and click **Launch RetroFM** to automatically open YouTube and group both tabs into an orange "RetroFM" Chrome Tab Group.
+1. **If you cloned the repo**: In Google Chrome, navigate to `chrome://extensions/`. Turn on the **Developer mode** toggle in the top-right corner, click **Load unpacked**, and select the `extension` folder inside the cloned project directory.
+2. **If running without the repo**: Download the extension ZIP (click **Download Extension** in the RetroFM app), unzip the archive to a permanent folder (e.g. `Documents/retrofm-extension`), and use **Load unpacked** on that folder.
+3. Return to RetroFM and click **Launch RetroFM** to automatically open YouTube and group both tabs into an orange "RetroFM" Chrome Tab Group.
 
 ### Updating to a New Version
 1. Download the new version ZIP package from the RetroFM app.

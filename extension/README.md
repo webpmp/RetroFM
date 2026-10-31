@@ -5,12 +5,9 @@ This extension provides the permitted communication bridge between the RetroFM W
 ## Installation & Updating
 
 ### First Time Setup
-1. Download the extension ZIP and unzip it to a permanent folder you'll keep (for example, `Documents/retrofm-extension`).
-2. Open Google Chrome and navigate to `chrome://extensions/`.
-3. Toggle the **Developer mode** switch in the top-right corner to **ON**.
-4. Click the **Load unpacked** button in the top-left corner.
-5. Select the unzipped `retrofm-extension` folder.
-6. Return to RetroFM and click **Launch RetroFM** to connect!
+1. **If you cloned the repo**: Open Google Chrome and navigate to `chrome://extensions/`. Toggle **Developer mode** in the top-right corner to **ON**, click **Load unpacked**, and select the `extension` folder directly inside the cloned repository.
+2. **Without the repo**: Download the extension ZIP and unzip it to a permanent folder you'll keep (for example, `Documents/retrofm-extension`). Follow the same steps above and select that unzipped folder.
+3. Return to RetroFM and click **Launch RetroFM** to connect!
 
 ### Updating to a New Version
 1. Download the updated ZIP package.

@@ -1664,6 +1664,7 @@ export default function App() {
                   currentPlayingSongRef.current = '';
                   setProgramArtist('');
                   setProgramSongTitle('');
+                  setProgramSongResult(null);
                   setSongPlaybackNotice({
                     message: "No eligible songs charting in this genre for this broadcast date",
                     artist: genre,
@@ -1672,21 +1673,6 @@ export default function App() {
                   });
                   broadcastCurrentRadioState(true, true);
                 }
-              } else if (preset) {
-                // Scenario A fallback: library not loaded, use preset
-                logMessage(`[Tuner] Auto-playing preset for ${genre}: "${preset.artist} - ${preset.song}"`);
-                currentPlayingArtistRef.current = preset.artist;
-                currentPlayingSongRef.current = preset.song;
-                currentPlayingYearRef.current = preset.year;
-                setProgramArtist(preset.artist);
-                setProgramSongTitle(preset.song);
-                setProgramYear(preset.year);
-
-                if (tuneSeq !== tuneSequenceRef.current) {
-                  isTuningSeekingRef.current = false;
-                  break;
-                }
-                await handleProgramSong({ artist: preset.artist, song: preset.song, year: preset.year });
               }
               if (tuneSeq === tuneSequenceRef.current) {
                 isTuningSeekingRef.current = false;
@@ -1707,13 +1693,12 @@ export default function App() {
                   selectedTitle: cached.song,
                   selectedDurationSec: cached.duration
                 });
-              } else if (preset) {
-                currentPlayingArtistRef.current = preset.artist;
-                currentPlayingSongRef.current = preset.song;
-                currentPlayingYearRef.current = preset.year;
-                setProgramArtist(preset.artist);
-                setProgramSongTitle(preset.song);
-                setProgramYear(preset.year);
+              } else {
+                currentPlayingArtistRef.current = '';
+                currentPlayingSongRef.current = '';
+                setProgramArtist('');
+                setProgramSongTitle('');
+                setProgramSongResult(null);
               }
               broadcastCurrentRadioState(true);
             }
@@ -1766,6 +1751,11 @@ export default function App() {
               } else {
                 const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
                 logMessage(`[Song Selector] ${noticeMsg}`);
+                currentPlayingArtistRef.current = '';
+                currentPlayingSongRef.current = '';
+                setProgramArtist('');
+                setProgramSongTitle('');
+                setProgramSongResult(null);
                 setSongPlaybackNotice({
                   message: noticeMsg,
                   artist: targetGenre,
@@ -1775,20 +1765,12 @@ export default function App() {
                 broadcastCurrentRadioState(true, true);
               }
             } else {
-              // Debug fallback: preset selection
-              const dec = action.decade || (selectedYear ? Math.floor(parseInt(selectedYear, 10) / 10) * 10 : 1980);
-              const stationsForDec = STATIONS_BY_DECADE[dec] || [];
-              const stationCfg = stationsForDec.find(s => s.genre === action.genre);
-              const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
-              if (preset) {
-                currentPlayingArtistRef.current = preset.artist;
-                currentPlayingSongRef.current = preset.song;
-                currentPlayingYearRef.current = preset.year;
-                setProgramArtist(preset.artist);
-                setProgramSongTitle(preset.song);
-                setProgramYear(preset.year);
-              }
-              setTimeout(() => broadcastCurrentRadioState(true), 10);
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
+              setProgramArtist('');
+              setProgramSongTitle('');
+              setProgramSongResult(null);
+              setTimeout(() => broadcastCurrentRadioState(true, true), 10);
             }
             break;
           }
@@ -4937,10 +4919,8 @@ export default function App() {
               <div className="p-3 bg-black/40 rounded border border-amber-900/60 space-y-1.5">
                 <strong className="text-amber-300 uppercase block font-bold text-[11px]">First Time Setup:</strong>
                 <ol className="list-decimal list-inside space-y-1 text-zinc-300 text-[11px]">
-                  <li>Download, unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).</li>
-                  <li>Open <code className="text-amber-300">chrome://extensions</code> (click button above).</li>
-                  <li>Turn on <strong className="text-zinc-100">Developer mode</strong> toggle in top-right.</li>
-                  <li>Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.</li>
+                  <li><strong className="text-zinc-100">Cloned the repo:</strong> In Google Chrome, go to <code className="text-amber-300">chrome://extensions</code>, turn on <strong className="text-zinc-100">Developer mode</strong> in the top-right, click <strong className="text-zinc-100">Load unpacked</strong>, and select the <code className="text-amber-200">extension</code> folder inside the project.</li>
+                  <li><strong className="text-zinc-100">Without the repo:</strong> Click <strong className="text-zinc-100">Download Extension</strong> above, unzip to a folder you’ll keep (e.g. <code className="text-amber-200">Documents/retrofm-extension</code>), and use <strong className="text-zinc-100">Load unpacked</strong> on that folder.</li>
                 </ol>
               </div>
 
@@ -7575,16 +7555,10 @@ export default function App() {
                     </h4>
                     <ol className="space-y-2 text-zinc-300 list-decimal list-inside text-xs leading-relaxed">
                       <li>
-                        Download the extension ZIP below and unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).
+                        <strong className="text-zinc-100">If you cloned the repo:</strong> In Google Chrome, navigate to <code className="text-amber-300">chrome://extensions</code>, turn on <strong className="text-zinc-100">Developer mode</strong> in the top-right corner, click <strong className="text-zinc-100">Load unpacked</strong>, and select the <code className="text-amber-200">extension</code> folder inside your cloned RetroFM project directory.
                       </li>
                       <li>
-                        Open <code className="text-amber-300">chrome://extensions</code> in Google Chrome.
-                      </li>
-                      <li>
-                        Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
-                      </li>
-                      <li>
-                        Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.
+                        <strong className="text-zinc-100">If running without the repo:</strong> Click <strong className="text-amber-400">Download Extension (ZIP)</strong> below, unzip to a permanent folder you’ll keep (e.g. <code className="text-amber-200">Documents/retrofm-extension</code>), and use <strong className="text-zinc-100">Load unpacked</strong> to select that unzipped folder.
                       </li>
                       <li>
                         Return to RetroFM and click <strong className="text-amber-400">Launch RetroFM</strong> to connect!
