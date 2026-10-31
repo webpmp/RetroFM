@@ -49,15 +49,79 @@ export function assignPrimaryGenres(library: LibrarySong[]): LibrarySong[] {
   return library;
 }
 
-export async function loadLibrary(url = "/data/retrofm_library_youtube.json"): Promise<LibrarySong[]> {
-  let res = await fetch(url);
-  // Auto-fallback to sample library when full library is not present (fresh clone)
-  if (!res.ok && url === "/data/retrofm_library_youtube.json") {
-    console.log('[SongSelector] Full library not found; loading sample dataset (/data/sample/retrofm_library_youtube.json)...');
-    res = await fetch("/data/sample/retrofm_library_youtube.json");
+/**
+ * Validates that a fetched response represents valid, non-empty JSON data.
+ * Protects against dev server single-page-app fallbacks where missing files return index.html (200 OK).
+ */
+export async function validateJsonFetch<T>(
+  res: Response | null | undefined,
+  validator?: ((data: any) => data is T) | ((data: any) => boolean)
+): Promise<T | null> {
+  if (!res || !res.ok) return null;
+  const contentType = res.headers?.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    return null;
   }
-  if (!res.ok) throw new Error(`Could not load the song library (${res.status})`);
-  const songs = (await res.json()) as LibrarySong[];
+  try {
+    const text = await res.text();
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.startsWith('<')) {
+      return null;
+    }
+    const parsed = JSON.parse(trimmed);
+    if (validator) {
+      return validator(parsed) ? (parsed as T) : null;
+    }
+    return parsed as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Type guard for a non-empty LibrarySong array.
+ */
+export function isNonEmptySongArray(data: any): data is LibrarySong[] {
+  return Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null;
+}
+
+export async function loadLibrary(
+  url = "/data/retrofm_library_youtube.json",
+  sampleUrl = "/data/sample/retrofm_library_youtube.json"
+): Promise<LibrarySong[]> {
+  let songs: LibrarySong[] | null = null;
+
+  // 1. Attempt loading the primary library URL
+  try {
+    const res = await fetch(url);
+    songs = await validateJsonFetch<LibrarySong[]>(res, isNonEmptySongArray);
+    if (!songs && url === "/data/retrofm_library_youtube.json") {
+      console.warn(`[SongSelector] Full library at ${url} not found or invalid (returned non-JSON/HTML/empty); falling back to sample dataset (${sampleUrl})...`);
+    }
+  } catch (err) {
+    console.warn(`[SongSelector] Failed to fetch full library from ${url}:`, err);
+  }
+
+  // 2. Fall back to the sample dataset if primary file was missing, HTML, or empty
+  if (!songs && sampleUrl) {
+    try {
+      const sampleRes = await fetch(sampleUrl);
+      songs = await validateJsonFetch<LibrarySong[]>(sampleRes, isNonEmptySongArray);
+      if (songs) {
+        console.log(`[SongSelector] Successfully loaded sample dataset from ${sampleUrl} (${songs.length} tracks).`);
+      }
+    } catch (err) {
+      console.warn(`[SongSelector] Failed to fetch sample library from ${sampleUrl}:`, err);
+    }
+  }
+
+  // 3. If both failed, throw a descriptive, actionable error
+  if (!songs || songs.length === 0) {
+    const errorMsg = `No song library files could be loaded from either "${url}" or sample fallback "${sampleUrl}". To fix this, ensure "public/data/sample/retrofm_library_youtube.json" exists in your repo, or run "bun run export-library" to generate the full library.`;
+    console.error(`[SongSelector Error] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
   return assignPrimaryGenres(songs);
 }
 

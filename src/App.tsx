@@ -44,7 +44,7 @@ import { generateTTS, fetchKokoroStatus, KokoroVoice } from './services/ttsClien
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
-import { loadLibrary, assignPrimaryGenres, newPlayState, pickSong, hasGenre, getAvailableGenres, isSongEligibleForGenre, isStrictlyReleasedBefore, isReleasedOnOrBefore, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
+import { loadLibrary, assignPrimaryGenres, newPlayState, pickSong, hasGenre, getAvailableGenres, isSongEligibleForGenre, isStrictlyReleasedBefore, isReleasedOnOrBefore, validateJsonFetch, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
 import {
   buildBreak,
   newDjState,
@@ -1066,15 +1066,23 @@ export default function App() {
         }
       })
       .catch((err) => {
-        logMessage(`[Song Selector Error] Failed to load song library: ${err?.message || err}`);
+        const errorMsg = err?.message || 'Song library failed to load.';
+        logMessage(`[Song Selector Error] ${errorMsg}`);
+        console.error(`[RetroFM Startup Error] ${errorMsg}`);
+        setSongPlaybackNotice({
+          message: `${errorMsg} (Please check public/data/sample/retrofm_library_youtube.json or run "bun run export-library")`,
+          artist: 'Song Library Missing',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
       });
 
-    // 1. Load public/data/weekly_top.json and public/data/jingles.json (optional)
+    // 1. Load public/data/weekly_top.json and public/data/jingles.json (optional with validation)
     fetch('/data/weekly_top.json')
-      .then((res) => (res.ok ? res.json() : undefined))
+      .then((res) => validateJsonFetch<Record<string, any>>(res, (data) => typeof data === 'object' && data !== null && !Array.isArray(data)))
       .then((data) => {
-        weeklyTopDataRef.current = data;
-        if (data) {
+        weeklyTopDataRef.current = data || undefined;
+        if (data && Object.keys(data).length > 0) {
           logMessage(`[DJ Variety] Loaded weekly_top.json (${Object.keys(data).length} chart weeks).`);
         }
       })
@@ -1083,11 +1091,12 @@ export default function App() {
       });
 
     fetch('/data/jingles.json')
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => validateJsonFetch<any[]>(res, (data) => Array.isArray(data)))
       .then((data) => {
-        jinglesDataRef.current = Array.isArray(data) ? data : [];
-        if (Array.isArray(data) && data.length > 0) {
-          logMessage(`[DJ Variety] Loaded jingles.json (${data.length} jingles).`);
+        const validList = Array.isArray(data) ? data : [];
+        jinglesDataRef.current = validList;
+        if (validList.length > 0) {
+          logMessage(`[DJ Variety] Loaded jingles.json (${validList.length} jingles).`);
         }
       })
       .catch(() => {

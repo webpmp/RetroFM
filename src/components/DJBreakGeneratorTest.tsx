@@ -28,6 +28,7 @@ import {
   Cpu,
   Filter,
 } from 'lucide-react';
+import { validateJsonFetch } from '../services/songSelector.js';
 import {
   StationPersonalityId,
   TimeOfDay,
@@ -262,16 +263,16 @@ export function DJBreakGeneratorTest({
 
   useEffect(() => {
     fetch('/data/weekly_top.json')
-      .then((res) => (res.ok ? res.json() : undefined))
+      .then((res) => validateJsonFetch<Record<string, TopEntry[]>>(res, (data) => typeof data === 'object' && data !== null && !Array.isArray(data)))
       .then((data) => {
-        weeklyTopDataRef.current = data;
+        weeklyTopDataRef.current = data || undefined;
       })
       .catch(() => {
         weeklyTopDataRef.current = undefined;
       });
 
     fetch('/data/jingles.json')
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => validateJsonFetch<Jingle[]>(res, (data) => Array.isArray(data)))
       .then((data) => {
         jinglesDataRef.current = Array.isArray(data) ? data : [];
       })
