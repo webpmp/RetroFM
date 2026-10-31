@@ -786,7 +786,7 @@ async function startServer() {
     const startTime = Date.now();
     const breakId = `break-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      const {
+      let {
         selectedDate,
         prevSong,
         nextSong,
@@ -807,6 +807,17 @@ async function startServer() {
 
       if (!selectedDate || typeof selectedDate !== 'string') {
         return res.status(400).json({ error: 'selectedDate is required.' });
+      }
+
+      // Suppress repeat song intro when station has only one song or nextSong matches prevSong
+      if (
+        nextSong &&
+        prevSong &&
+        (nextSong.id === prevSong.id ||
+          (nextSong.title && prevSong.title && nextSong.title.trim().toLowerCase() === prevSong.title.trim().toLowerCase() &&
+            nextSong.artist && prevSong.artist && nextSong.artist.trim().toLowerCase() === prevSong.artist.trim().toLowerCase()))
+      ) {
+        nextSong = null;
       }
 
       const freqSetting = typeof frequencySetting === 'number' ? frequencySetting : 1.0;

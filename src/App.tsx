@@ -448,9 +448,9 @@ export default function App() {
   }>>({});
   const activeStationGenreRef = useRef<string | null>(null);
   const tuneSequenceRef = useRef<number>(0);
-  const currentPlayingArtistRef = useRef<string>('a-ha');
-  const currentPlayingSongRef = useRef<string>('Take on Me');
-  const currentPlayingYearRef = useRef<string>('1985');
+  const currentPlayingArtistRef = useRef<string>('');
+  const currentPlayingSongRef = useRef<string>('');
+  const currentPlayingYearRef = useRef<string>('');
   const isTuningSeekingRef = useRef<boolean>(false);
 
   // --- Historical Song Selector & Library State ---
@@ -659,8 +659,8 @@ export default function App() {
   };
 
   // --- PROGRAM SONG Test State ---
-  const [programArtist, setProgramArtist] = useState<string>('a-ha');
-  const [programSongTitle, setProgramSongTitle] = useState<string>('Take on Me');
+  const [programArtist, setProgramArtist] = useState<string>('');
+  const [programSongTitle, setProgramSongTitle] = useState<string>('');
   const [programYear, setProgramYear] = useState<string>('1995');
   const [isProgrammingSong, setIsProgrammingSong] = useState<boolean>(false);
   const [programSongResult, setProgramSongResult] = useState<{
@@ -1994,13 +1994,13 @@ export default function App() {
               const history = sessionHistoryRef.current;
               const p = history.pointer;
               const prevSong = p > 0 ? history.entries[p - 1].song : null;
-              const nextSong = (p >= 0 && p < history.entries.length - 1)
+              const rawNextSong = (p >= 0 && p < history.entries.length - 1)
                 ? history.entries[p + 1].song
                 : (nextSongRef.current?.song || null);
+              const isSameSong = rawNextSong && (rawNextSong.id === songId || (currentSongPickRef.current && rawNextSong.id === currentSongPickRef.current.song.id));
+              const nextSong = isSameSong ? null : rawNextSong;
 
-              if (nextSong) {
-                prepareObservationBreakAhead(songId, prevSong, nextSong);
-              }
+              prepareObservationBreakAhead(songId, prevSong, nextSong);
             }
 
             const prep = preparedBreakRef.current;
@@ -2468,6 +2468,13 @@ export default function App() {
     const songArtist = pick.song.artist;
     const songYear = String(pick.song.chart_year || activeDateRef.current.slice(0, 4));
 
+    setProgramArtist(songArtist);
+    setProgramSongTitle(songTitle);
+    setProgramYear(songYear);
+    currentPlayingArtistRef.current = songArtist;
+    currentPlayingSongRef.current = songTitle;
+    currentPlayingYearRef.current = songYear;
+
     const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const targetVolFraction = getNavVolumeFraction();
 
@@ -2491,13 +2498,6 @@ export default function App() {
       logMessage(`[Song Selector] Playback request for "${songTitle}" superseded (seq ${expectedTuneSeq} vs ${tuneSequenceRef.current})`);
       return false;
     }
-
-    setProgramArtist(songArtist);
-    setProgramSongTitle(songTitle);
-    setProgramYear(songYear);
-    currentPlayingArtistRef.current = songArtist;
-    currentPlayingSongRef.current = songTitle;
-    currentPlayingYearRef.current = songYear;
 
     if (volumeControllerRef.current) {
       await volumeControllerRef.current.syncInitialVolume(`${reason} start: "${songTitle}"`);
@@ -2550,9 +2550,12 @@ export default function App() {
 
       // Requirement 5: Start break preparation immediately when current song starts playback
       const nextSong = nextSongRef.current?.song || null;
-      if (nextSong && !preparedBreakRef.current && !isPreparingBreakRef.current) {
-        console.log(`[DJ Ahead Prep] Initiating ahead-of-time break preparation immediately at song start for "${songTitle}" (next: "${nextSong.title}")`);
-        prepareObservationBreakAhead(pick.song.id, previousLibrarySongRef.current, nextSong);
+      // When a station has only 1 eligible song (nextSong matches current song), do not introduce it as "next up"
+      const isSameAsCurrent = nextSong && (nextSong.id === pick.song.id || (nextSong.title.toLowerCase() === pick.song.title.toLowerCase() && nextSong.artist.toLowerCase() === pick.song.artist.toLowerCase()));
+      const nextSongForBreak = isSameAsCurrent ? null : nextSong;
+      if (!preparedBreakRef.current && !isPreparingBreakRef.current) {
+        console.log(`[DJ Ahead Prep] Initiating ahead-of-time break preparation immediately at song start for "${songTitle}" (next: ${nextSongForBreak ? `"${nextSongForBreak.title}"` : 'none (single-song or repeat)'})`);
+        prepareObservationBreakAhead(pick.song.id, previousLibrarySongRef.current, nextSongForBreak);
       }
     }
 
@@ -4583,7 +4586,9 @@ export default function App() {
       : (nextSongRef.current?.song || null);
 
     const prevSong = toObsSong(prev !== undefined ? prev : historyPrev);
-    const nextSong = toObsSong(next !== undefined ? next : historyNext);
+    const rawNext = next !== undefined ? next : historyNext;
+    const isSameSong = rawNext && (rawNext.id === currentSongPickRef.current?.song.id || (rawNext.title.toLowerCase() === currentSongPickRef.current?.song.title.toLowerCase() && rawNext.artist.toLowerCase() === currentSongPickRef.current?.song.artist.toLowerCase()));
+    const nextSong = toObsSong(isSameSong ? null : rawNext);
     const date = activeDateRef.current;
 
     const yearNum = parseInt(date.slice(0, 4), 10);
