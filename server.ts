@@ -42,7 +42,7 @@ import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardServi
 import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
-import { getEffectiveAppUrl, logStartupEnvironmentStatus } from './src/services/envUtil.js';
+import { getEffectiveAppUrl, logStartupEnvironmentStatus, resolveLmStudioEndpoint } from './src/services/envUtil.js';
 
 dotenv.config();
 
@@ -444,12 +444,7 @@ async function startServer() {
   // API Route: Check LM Studio connection and discover available models
   app.post('/api/ai/lmstudio/status', async (req, res) => {
     try {
-      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
-      let endpoint = req.body?.endpoint || defaultEndpoint;
-      // If user typed localhost inside browser, resolve appropriately for Docker container backend
-      if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
-        endpoint = endpoint.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
-      }
+      const endpoint = resolveLmStudioEndpoint(req.body?.endpoint);
 
       // Validate URL format for security
       try {
@@ -481,12 +476,7 @@ async function startServer() {
   // API Route: Send a test prompt to LM Studio and verify chat-completions
   app.post('/api/ai/lmstudio/test', async (req, res) => {
     try {
-      const defaultEndpoint = process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
-      let endpoint = req.body?.endpoint || defaultEndpoint;
-      if (endpoint.includes('localhost:1234') || endpoint.includes('127.0.0.1:1234')) {
-        endpoint = endpoint.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
-      }
-
+      const endpoint = resolveLmStudioEndpoint(req.body?.endpoint);
       const model = req.body?.model;
       const provider = new LMStudioScriptWriterProvider({ endpoint, model, timeoutMs: 60000 });
 
@@ -541,11 +531,7 @@ async function startServer() {
   // Helper to map and sanitize provider endpoints
   function resolveProviderEndpoint(provider?: string, endpoint?: string) {
     if (provider !== 'lmstudio') return undefined;
-    let ep = endpoint || process.env.LM_STUDIO_ENDPOINT?.trim() || 'http://host.docker.internal:1234/v1';
-    if (ep.includes('localhost:1234') || ep.includes('127.0.0.1:1234')) {
-      ep = ep.replace('localhost:1234', 'host.docker.internal:1234').replace('127.0.0.1:1234', 'host.docker.internal:1234');
-    }
-    return ep;
+    return resolveLmStudioEndpoint(endpoint);
   }
 
   // API Route: Step 1 of 2 - Generate 3 DJ Breaks scripts (fast return, status "CHECKING")

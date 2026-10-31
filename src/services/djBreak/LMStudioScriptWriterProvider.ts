@@ -14,7 +14,7 @@ import {
 } from './types.js';
 import { PERSONALITIES } from './GeminiScriptWriterProvider.js';
 import { recordTextModelCall } from './breakSessionStats.js';
-import { getEnv } from '../envUtil.js';
+import { getEnv, resolveLmStudioEndpoint } from '../envUtil.js';
 import { splitVerbatimSentences } from '../news/almanacService.js';
 
 export interface LMStudioConfig {
@@ -23,17 +23,140 @@ export interface LMStudioConfig {
   timeoutMs?: number;
 }
 
+/**
+ * Returns candidate base URLs to try when connecting to LM Studio.
+ * If endpoint uses localhost, provides a fallback to 127.0.0.1 (to avoid IPv6 ::1 connection refusals).
+ */
+export function getLmStudioCandidates(baseUrl: string): string[] {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  const candidates = [normalized];
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname === 'localhost') {
+      parsed.hostname = '127.0.0.1';
+      const fallback = parsed.toString().replace(/\/+$/, '');
+      if (!candidates.includes(fallback)) {
+        candidates.push(fallback);
+      }
+    }
+  } catch {}
+  return candidates;
+}
+
+/**
+ * Parses connection errors and builds a specific, helpful error message.
+ * Includes exact address tried, error code, and plain hints.
+ */
+export function formatLmStudioError(targetAddress: string, err: any): {
+  message: string;
+  code?: string;
+  hint?: string;
+} {
+  const rawMsg = err?.message || String(err || '');
+  const code =
+    err?.code ||
+    err?.cause?.code ||
+    (rawMsg.includes('ECONNREFUSED') ? 'ECONNREFUSED' : undefined) ||
+    (rawMsg.includes('ENOTFOUND') ? 'ENOTFOUND' : undefined) ||
+    (rawMsg.includes('ETIMEDOUT') ? 'ETIMEDOUT' : undefined) ||
+    (err?.name === 'AbortError' || (err as any)?.isTimeout ? 'ETIMEDOUT' : undefined);
+
+  let hint = 'Check that your local LLM server is accessible.';
+  if (code === 'ECONNREFUSED') {
+    hint = 'LM Studio server not running or not listening on this port.';
+  } else if (code === 'ENOTFOUND') {
+    hint = 'Wrong address or hostname cannot be resolved.';
+  } else if (code === 'ETIMEDOUT') {
+    hint = 'Connection timed out waiting for LM Studio.';
+  }
+
+  const parts = [`Could not connect to LM Studio at ${targetAddress}`];
+  if (code) {
+    parts.push(`(${code})`);
+  }
+  parts.push(`— ${hint}`);
+
+  return {
+    message: parts.join(' '),
+    code,
+    hint,
+  };
+}
+
+/**
+ * Fetches an LM Studio URL with automatic fallback from localhost to 127.0.0.1 on connection failure.
+ */
+export async function fetchLmStudioWithFallback(
+  endpointUrl: string,
+  path: string,
+  init?: RequestInit,
+  timeoutMs = 10000
+): Promise<{ response: Response; activeBaseUrl: string }> {
+  const candidates = getLmStudioCandidates(endpointUrl);
+  let lastErr: any = null;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidateBase = candidates[i];
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${candidateBase}${cleanPath}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    // Merge signals if caller supplied one
+    let combinedSignal = controller.signal;
+    if (init?.signal) {
+      const callerSignal = init.signal;
+      if (callerSignal.aborted) {
+        clearTimeout(timer);
+        throw new Error('Aborted');
+      }
+      callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: combinedSignal,
+      });
+      clearTimeout(timer);
+      return { response, activeBaseUrl: candidateBase };
+    } catch (err: any) {
+      clearTimeout(timer);
+      lastErr = err;
+      // If error might be resolved by IPv4 127.0.0.1, continue to next candidate
+      const isConnectionRefused =
+        err?.code === 'ECONNREFUSED' ||
+        err?.cause?.code === 'ECONNREFUSED' ||
+        (err?.message || '').includes('ECONNREFUSED') ||
+        (err?.message || '').includes('fetch failed');
+
+      if (i < candidates.length - 1 && isConnectionRefused) {
+        console.warn(`[LMStudio] Request to ${url} failed (${err?.message || err}). Retrying with candidate ${candidates[i + 1]}...`);
+        continue;
+      }
+      break;
+    }
+  }
+
+  const formatted = formatLmStudioError(endpointUrl, lastErr);
+  const enrichedErr = new Error(formatted.message);
+  (enrichedErr as any).code = formatted.code;
+  (enrichedErr as any).hint = formatted.hint;
+  (enrichedErr as any).cause = lastErr;
+  throw enrichedErr;
+}
+
 export class LMStudioScriptWriterProvider implements ScriptWriterProvider {
   public readonly name = 'LMStudioScriptWriterProvider';
-  public readonly endpoint: string;
+  public endpoint: string;
   public readonly modelName: string;
   private readonly timeoutMs: number;
 
   constructor(config?: LMStudioConfig) {
     const rawEndpoint =
       config?.endpoint ||
-      getEnv('LM_STUDIO_ENDPOINT') ||
-      'http://localhost:1234/v1';
+      resolveLmStudioEndpoint();
 
     // Normalize endpoint: ensure it doesn't have trailing slash
     this.endpoint = rawEndpoint.replace(/\/+$/, '');
@@ -227,11 +350,7 @@ State the statistic plainly in exactly 1 sentence.`.trim();
       };
     } catch (err: any) {
       const durationSec = Number(((Date.now() - startTimeMs) / 1000).toFixed(1));
-      const isUnreachable =
-        err?.message?.includes('ECONNREFUSED') ||
-        err?.message?.includes('fetch failed') ||
-        err?.message?.includes('unreachable') ||
-        err?.code === 'ECONNREFUSED';
+      const formatted = formatLmStudioError(this.endpoint, err);
 
       return {
         success: false,
@@ -240,35 +359,25 @@ State the statistic plainly in exactly 1 sentence.`.trim();
         callStartTime,
         callDurationSec: durationSec,
         isUnavailable: true,
-        error: isUnreachable
-          ? `LM Studio server at ${this.endpoint} is unreachable. Ensure your local LLM server is running.`
-          : err?.message || 'Failed connecting to LM Studio',
+        error: formatted.message,
       };
     }
   }
 
   /**
    * Discovers available models from the LM Studio /v1/models endpoint.
+   * Automatically retries with 127.0.0.1 if localhost fails.
    */
   public static async discoverModels(endpointUrl: string): Promise<string[]> {
-    const base = endpointUrl.replace(/\/+$/, '');
-    const url = `${base}/models`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) {
-        throw new Error(`LM Studio /models returned HTTP ${res.status}`);
-      }
-      const data: any = await res.json();
-      if (Array.isArray(data?.data)) {
-        return data.data.map((m: any) => m.id || m.name).filter(Boolean);
-      }
-      return [];
-    } finally {
-      clearTimeout(timer);
+    const { response } = await fetchLmStudioWithFallback(endpointUrl, '/models', undefined, 5000);
+    if (!response.ok) {
+      throw new Error(`LM Studio /models returned HTTP ${response.status}`);
     }
+    const data: any = await response.json();
+    if (Array.isArray(data?.data)) {
+      return data.data.map((m: any) => m.id || m.name).filter(Boolean);
+    }
+    return [];
   }
 
   /**
@@ -291,6 +400,7 @@ State the statistic plainly in exactly 1 sentence.`.trim();
 
   /**
    * Sends a chat completion request to the OpenAI-compatible endpoint.
+   * Automatically retries localhost requests with 127.0.0.1 on connection refusal.
    */
   private async callChatCompletion(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -298,10 +408,6 @@ State the statistic plainly in exactly 1 sentence.`.trim();
     maxTokens: number
   ): Promise<{ content: string; modelUsed: string }> {
     const activeModel = await this.resolveModel();
-    const url = `${this.endpoint}/chat/completions`;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     const sendRequest = async (useResponseFormat: boolean) => {
       const payload: any = {
@@ -315,14 +421,25 @@ State the statistic plainly in exactly 1 sentence.`.trim();
         payload.response_format = { type: 'json_object' };
       }
 
-      return await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const resWithFallback = await fetchLmStudioWithFallback(
+        this.endpoint,
+        '/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+        this.timeoutMs
+      );
+
+      // Remember active base url if candidate fallback was used
+      if (resWithFallback.activeBaseUrl !== this.endpoint) {
+        this.endpoint = resWithFallback.activeBaseUrl;
+      }
+
+      return resWithFallback.response;
     };
 
     try {
@@ -357,7 +474,7 @@ State the statistic plainly in exactly 1 sentence.`.trim();
 
       return { content, modelUsed: returnedModel };
     } catch (err: any) {
-      if (err.name === 'AbortError') {
+      if (err.name === 'AbortError' || err.code === 'ETIMEDOUT') {
         const timeoutErr = new Error(
           `LM Studio call timed out after ${this.timeoutMs / 1000}s.`
         );
@@ -366,8 +483,6 @@ State the statistic plainly in exactly 1 sentence.`.trim();
         throw timeoutErr;
       }
       throw err;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -546,6 +661,7 @@ Respond ONLY with valid JSON matching this schema:
       console.error('[LMStudioScriptWriterProvider] Step 1 error:', err);
       const isTimeout = (err?.message || '').toLowerCase().includes('time') && (err?.isTimeout || err?.message.includes('timed out'));
       const durationSec = Number(((Date.now() - startTimeMs) / 1000).toFixed(1));
+      const formatted = formatLmStudioError(this.endpoint, err);
 
       return {
         success: false,
@@ -558,7 +674,7 @@ Respond ONLY with valid JSON matching this schema:
         stepTimedOut: isTimeout ? 'step1' : null,
         error: isTimeout
           ? `Step 1 (writing 3 breaks via LM Studio) timed out after ${this.timeoutMs / 1000}s.`
-          : `LM Studio generation failed: ${err?.message || 'Connection refused or model unavailable'}`,
+          : formatted.message,
       };
     }
   }
@@ -661,9 +777,10 @@ Respond strictly with JSON schema:
     } catch (err: any) {
       console.warn('[LMStudioScriptWriterProvider] Step 2 audit error:', err?.message);
       const isTimeout = (err?.message || '').toLowerCase().includes('time') && (err?.isTimeout || err?.message.includes('timed out'));
+      const formatted = formatLmStudioError(this.endpoint, err);
       const errorMsg = isTimeout
         ? `Step 2 (anachronism audit via LM Studio) timed out after ${this.timeoutMs / 1000}s.`
-        : err?.message || 'LM Studio audit unavailable';
+        : formatted.message;
 
       const fallbackMap: Record<number, AnachronismCheckResult> = {};
       for (const s of scripts) {
@@ -895,20 +1012,28 @@ Write the complete spoken radio segment monologue following all rules. Output ON
 
     let rawDraft = '';
     try {
-      const res1 = await fetch(`${this.endpoint}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: activeModel,
-          messages: [
-            { role: 'system', content: systemPromptStep1 },
-            { role: 'user', content: userPromptStep1 },
-          ],
-          temperature: 0.3,
-          max_tokens: 350,
-        }),
-      });
-
+      const resWithFallback = await fetchLmStudioWithFallback(
+        this.endpoint,
+        '/chat/completions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: activeModel,
+            messages: [
+              { role: 'system', content: systemPromptStep1 },
+              { role: 'user', content: userPromptStep1 },
+            ],
+            temperature: 0.3,
+            max_tokens: 350,
+          }),
+        },
+        30000
+      );
+      if (resWithFallback.activeBaseUrl !== this.endpoint) {
+        this.endpoint = resWithFallback.activeBaseUrl;
+      }
+      const res1 = resWithFallback.response;
       if (res1.ok) {
         const data1 = await res1.json();
         rawDraft = data1?.choices?.[0]?.message?.content?.trim() || '';
@@ -983,19 +1108,25 @@ VERDICTS:`;
 
     if (claimsToCheck.length > 0) {
       try {
-        const res2 = await fetch(`${this.endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: activeModel,
-            messages: [
-              { role: 'system', content: systemPromptStep2 },
-              { role: 'user', content: userPromptStep2 },
-            ],
-            temperature: 0.0,
-            max_tokens: 500,
-          }),
-        });
+        const resWithFallback = await fetchLmStudioWithFallback(
+          this.endpoint,
+          '/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: activeModel,
+              messages: [
+                { role: 'system', content: systemPromptStep2 },
+                { role: 'user', content: userPromptStep2 },
+              ],
+              temperature: 0.0,
+              max_tokens: 500,
+            }),
+          },
+          30000
+        );
+        const res2 = resWithFallback.response;
 
         if (res2.ok) {
           const data2 = await res2.json();

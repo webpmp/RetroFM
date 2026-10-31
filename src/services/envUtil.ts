@@ -41,6 +41,48 @@ export function getEffectiveAppUrl(port?: number | string): string {
   return `http://localhost:${activePort}`;
 }
 
+/**
+ * Checks whether the current Node/Bun process is running inside a Docker container.
+ */
+export function isDocker(): boolean {
+  if (typeof process === 'undefined') return false;
+  if (process.env.DOCKER_CONTAINER === 'true' || process.env.IS_DOCKER === 'true') {
+    return true;
+  }
+  try {
+    // Dynamic import / require guard for fs to work safely in both node/bun environments
+    const fs = require('fs');
+    return fs.existsSync('/.dockerenv');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves an LM Studio endpoint URL.
+ * When running inside Docker, rewrites localhost or 127.0.0.1 to host.docker.internal
+ * so containerized services can reach the host machine.
+ * When running outside Docker (e.g. npm run dev on host), preserves localhost or 127.0.0.1.
+ */
+export function resolveLmStudioEndpoint(endpoint?: string): string {
+  const inDocker = isDocker();
+  const defaultEndpoint = inDocker
+    ? 'http://host.docker.internal:1234/v1'
+    : 'http://localhost:1234/v1';
+
+  let ep = (endpoint && endpoint.trim()) || getEnv('LM_STUDIO_ENDPOINT') || defaultEndpoint;
+  ep = ep.replace(/\/+$/, '');
+
+  if (inDocker) {
+    if (ep.includes('localhost:1234') || ep.includes('127.0.0.1:1234')) {
+      ep = ep.replace('localhost:1234', 'host.docker.internal:1234')
+             .replace('127.0.0.1:1234', 'host.docker.internal:1234');
+    }
+  }
+
+  return ep;
+}
+
 export interface EnvCheckResult {
   missingRequired: { key: string; whatBreaks: string }[];
   missingOptional: { key: string; whatBreaks: string }[];

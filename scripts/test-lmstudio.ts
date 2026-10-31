@@ -10,6 +10,7 @@
 
 import { LMStudioScriptWriterProvider } from '../src/services/djBreak/LMStudioScriptWriterProvider.js';
 import { getScriptWriterProvider } from '../src/services/djBreak/djBreakService.js';
+import { resolveLmStudioEndpoint } from '../src/services/envUtil.js';
 
 async function runTests() {
   console.log('--- RetroFM Local AI Model (LM Studio) Test Suite ---');
@@ -19,10 +20,11 @@ async function runTests() {
   // Test 1: Shared Provider Factory
   total++;
   try {
+    const defaultEp = resolveLmStudioEndpoint();
     const geminiWriter = getScriptWriterProvider({ provider: 'gemini' });
     const lmWriter = getScriptWriterProvider({
       provider: 'lmstudio',
-      endpoint: 'http://host.docker.internal:1234/v1',
+      endpoint: defaultEp,
     });
     if (geminiWriter.name === 'GeminiScriptWriterProvider' && lmWriter.name === 'LMStudioScriptWriterProvider') {
       console.log('✓ Test 1 Passed: Provider factory resolves Gemini and LM Studio correctly.');
@@ -50,11 +52,11 @@ async function runTests() {
     console.error('✗ Test 2 Failed:', e.message);
   }
 
-  // Test 3: Model Discovery against host.docker.internal:1234
+  // Test 3: Model Discovery against default resolved endpoint
   total++;
   let discoveredModel = '';
   try {
-    const endpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+    const endpoint = resolveLmStudioEndpoint(process.env.LM_STUDIO_ENDPOINT);
     const models = await LMStudioScriptWriterProvider.discoverModels(endpoint);
     if (Array.isArray(models) && models.length > 0) {
       discoveredModel = models[0];
@@ -72,7 +74,7 @@ async function runTests() {
   if (discoveredModel) {
     total++;
     try {
-      const endpoint = process.env.LM_STUDIO_ENDPOINT || 'http://host.docker.internal:1234/v1';
+      const endpoint = resolveLmStudioEndpoint(process.env.LM_STUDIO_ENDPOINT);
       const provider = new LMStudioScriptWriterProvider({
         endpoint,
         model: discoveredModel,
