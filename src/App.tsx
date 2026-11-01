@@ -107,6 +107,9 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
+// Seamless DJ hand-off: overlap duration where next song plays ducked under DJ speech
+export const DEFAULT_DJ_HANDOFF_OVERLAP_SEC = 3.5;
+
 // Pre-defined 5 critical validation test songs
 export const CRITICAL_TEST_SONGS = [
   { artist: 'a-ha', song: 'Take on Me', year: '1985' },
@@ -575,6 +578,10 @@ export default function App() {
   const preparedForSongIdRef = useRef<string | null>(null);
   const breakTriggeredForSongIdRef = useRef<string | null>(null);
   const breakDuckingStartedRef = useRef<boolean>(false);
+  const isNextSongPreloadedRef = useRef<boolean>(false);
+  const preloadedVideoIdRef = useRef<string | null>(null);
+  const nextSongHandoffTimerRef = useRef<any>(null);
+  const hasHandoffFiredForCurrentBreakRef = useRef<boolean>(false);
 
   const handleDjModeChange = (mode: 'ai' | 'observations' | 'off') => {
     setDjMode(mode);
@@ -4037,6 +4044,62 @@ export default function App() {
       setMixPhase(shouldDuck ? 'DJ_SPEAKING' : 'IDLE');
       setIsPlayingDJPreview(true);
 
+      // Seamless DJ Handoff: calculate overlap and trigger the next song before speech ends
+      hasHandoffFiredForCurrentBreakRef.current = false;
+      const curSongPickForHandoff = currentSongPickRef.current;
+      const curTimeForHandoff = playbackStatusRef.current?.currentTime || 0;
+      const rawDurForHandoff = playbackStatusRef.current?.duration || 0;
+      const durForHandoff = getEffectiveSongDuration(curSongPickForHandoff, rawDurForHandoff);
+      const remainingAtSpeechStart = durForHandoff > 0 ? (durForHandoff - curTimeForHandoff) : 0;
+
+      const overlapTargetSec = Math.min(
+        DEFAULT_DJ_HANDOFF_OVERLAP_SEC,
+        durationSec > 4 ? 4.5 : Math.max(1.0, durationSec * 0.4)
+      );
+
+      console.log(
+        `[DJ] Handoff: Break started playing: "${text.slice(0, 60)}" remaining=${remainingAtSpeechStart.toFixed(1)}s duration=${durationSec.toFixed(1)}s overlapTarget=${overlapTargetSec.toFixed(1)}s`
+      );
+
+      const scheduleNextSongHandoff = (actualSpeechStartTimeMs: number) => {
+        if (!shouldDuck) return;
+        if (nextSongHandoffTimerRef.current) {
+          clearTimeout(nextSongHandoffTimerRef.current);
+          nextSongHandoffTimerRef.current = null;
+        }
+
+        // Calculate lead-in time before next song should start playing
+        const nextSongLeadMs = Math.max(0, (durationSec - overlapTargetSec) * 1000);
+
+        nextSongHandoffTimerRef.current = setTimeout(async () => {
+          if (hasHandoffFiredForCurrentBreakRef.current) return;
+          hasHandoffFiredForCurrentBreakRef.current = true;
+
+          const nowMs = performance.now();
+          const elapsedSec = (nowMs - actualSpeechStartTimeMs) / 1000;
+          const remainingSpeechSec = Math.max(0, durationSec - elapsedSec);
+
+          const nextPick = nextSongRef.current;
+          const nextTitle = nextPick?.song?.title || "next song";
+
+          if (isNextSongPreloadedRef.current) {
+            console.log(
+              `[DJ] Handoff: Next song started during DJ speech: "${nextTitle}" remainingSpeech=${remainingSpeechSec.toFixed(1)}s musicDucked=true (preloaded=true)`
+            );
+          } else {
+            console.log(
+              `[DJ] Handoff: Next song started during DJ speech: "${nextTitle}" remainingSpeech=${remainingSpeechSec.toFixed(1)}s musicDucked=true (preloaded=false, starting directly)`
+            );
+          }
+
+          try {
+            await advanceToNextSongRef.current(false);
+          } catch (advErr: any) {
+            console.warn("[DJ Handoff Advance Error]", advErr);
+          }
+        }, nextSongLeadMs);
+      };
+
       // Check if Boom Box is open and available to play audio in the focused tab
       let playedViaBoomBox = false;
       const shouldDelegateToBoomBox = options?.delegateToBoomBox !== false && shouldDuck;
@@ -4079,6 +4142,7 @@ export default function App() {
             boomBoxStarted = true;
             boomBoxStartTime = performance.now();
             console.log(`[DJ] Speech: Boom Box confirmed start within 1s. Playing voice on Boom Box.`);
+            scheduleNextSongHandoff(boomBoxStartTime);
             logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
             setTestResults((prev) => ({
               ...prev,
@@ -4207,6 +4271,7 @@ export default function App() {
           u.onstart = () => {
             speechStartTime = performance.now();
             console.log(`[DJ] Speech: Browser speech synthesis started.`);
+            scheduleNextSongHandoff(speechStartTime);
             if (options?.breakId) {
               reportSegmentStatus(options.breakId, 'aired');
             }
@@ -4283,6 +4348,7 @@ export default function App() {
           audio.onplay = () => {
             speechStartTime = performance.now();
             console.log(`[DJ] Speech: Audio element 'play' event fired.`);
+            scheduleNextSongHandoff(speechStartTime);
             if (options?.breakId) {
               reportSegmentStatus(options.breakId, 'aired');
             }
@@ -4344,6 +4410,7 @@ export default function App() {
               fallbackAudio.onplay = () => {
                 speechStartTime = performance.now();
                 console.log(`[DJ] Speech: Direct fallback audio 'play' event fired.`);
+                scheduleNextSongHandoff(speechStartTime);
               };
               fallbackAudio.onended = () => {
                 if (!settled) {
@@ -4429,13 +4496,33 @@ export default function App() {
       setIsGeneratingDJ(false);
       setIsPlayingDJPreview(false);
 
+      // Clear any pending handoff timer
+      if (nextSongHandoffTimerRef.current) {
+        clearTimeout(nextSongHandoffTimerRef.current);
+        nextSongHandoffTimerRef.current = null;
+      }
+
+      // If speech finished before handoff fired (e.g. short break or delayed completion), advance now
+      if (!hasHandoffFiredForCurrentBreakRef.current && duckSucceeded) {
+        hasHandoffFiredForCurrentBreakRef.current = true;
+        const nextPick = nextSongRef.current;
+        const nextTitle = nextPick?.song?.title || "next song";
+        console.log(`[DJ] Handoff: Next song started immediately upon DJ speech end: "${nextTitle}" musicDucked=true`);
+        advanceToNextSongRef.current(false).catch((advErr: any) => {
+          console.warn("[DJ Handoff Advance on Speech End Error]", advErr);
+        });
+      }
+
       // Restore music volume if ducked
       if (duckSucceeded && vc) {
         try {
           setMixPhase('FADING_UP');
+          const userVol = vc.getUserVolume();
+          console.log(`[DJ] Handoff: DJ finished speaking. Restoring music volume from ducked level...`);
           logMessage(`▶ Restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
           await vc.restore(fadeUpMs, 'DJ speech finished');
           setMixPhase('COMPLETED');
+          console.log(`[DJ] Handoff: Music restored to full volume (${userVol}%).`);
           console.log(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
           logMessage(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
           setTestResults((prev) => ({
@@ -4540,6 +4627,13 @@ export default function App() {
     isPreparingBreakRef.current = false;
     preparedForSongIdRef.current = null;
     breakDuckingStartedRef.current = false;
+    isNextSongPreloadedRef.current = false;
+    preloadedVideoIdRef.current = null;
+    if (nextSongHandoffTimerRef.current) {
+      clearTimeout(nextSongHandoffTimerRef.current);
+      nextSongHandoffTimerRef.current = null;
+    }
+    hasHandoffFiredForCurrentBreakRef.current = false;
   };
 
   const prepareObservationBreakAhead = async (
@@ -4899,6 +4993,29 @@ export default function App() {
       console.log(`[DJ] break ready relative to song change: +${readyRelSongChangeSec}s | prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
       logMessage(`[DJ] Break ready relative to song change: +${readyRelSongChangeSec}s | Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
       console.log(`[DJ] Break scheduled: id=${currentSongId} duration=${curDur}s elapsed=${curCurTime.toFixed(1)}s remaining=${curRemaining.toFixed(1)}s triggerAtRemaining=${triggerTimeRemaining.toFixed(1)}s duckAtRemaining=${duckTriggerTimeRemaining.toFixed(1)}s (visibility: ${vis})`);
+
+      // Preload the upcoming track in the background YouTube tab for seamless DJ handoff
+      if (nextSongObj?.streaming?.youtube?.id) {
+        const nextVid = nextSongObj.streaming.youtube.id;
+        const nextTitle = nextSongObj.title;
+        if (preloadedVideoIdRef.current !== nextVid) {
+          prepareSong(nextVid, nextTitle)
+            .then((ok) => {
+              if (ok) {
+                isNextSongPreloadedRef.current = true;
+                preloadedVideoIdRef.current = nextVid;
+                logMessage(`[DJ Handoff Preload] Successfully cued next song: "${nextTitle}" (${nextVid})`);
+              } else {
+                isNextSongPreloadedRef.current = false;
+                logMessage(`[DJ Handoff Preload] Failed to cue next song: "${nextTitle}"`);
+              }
+            })
+            .catch((err) => {
+              isNextSongPreloadedRef.current = false;
+              console.warn("[DJ Handoff Preload Error]", err);
+            });
+        }
+      }
     } catch (e: any) {
       console.warn('[DJ] Error preparing ahead break:', e);
     } finally {
