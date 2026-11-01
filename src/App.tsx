@@ -4040,8 +4040,17 @@ export default function App() {
       // Check if Boom Box is open and available to play audio in the focused tab
       let playedViaBoomBox = false;
       const shouldDelegateToBoomBox = options?.delegateToBoomBox !== false && shouldDuck;
-      console.log(`[DJ Speech] Initiating playback: shouldDuck=${shouldDuck} isAlreadyDucked=${isAlreadyDucked} delegateToBoomBox=${shouldDelegateToBoomBox} audioSrcLen=${audioSrc ? audioSrc.length : 0} duration=${durationSec.toFixed(1)}s`);
+      const isDataUri = Boolean(audioSrc && audioSrc.startsWith('data:'));
+      const isBlobUrl = Boolean(audioSrc && audioSrc.startsWith('blob:'));
+      const isValidAudioSrc = Boolean(audioSrc && (isDataUri || isBlobUrl || audioSrc.startsWith('http')));
+      const audioSrcLen = audioSrc ? audioSrc.length : 0;
+
+      console.log(
+        `[DJ] Speech: Initiating playback: shouldDuck=${shouldDuck} isAlreadyDucked=${isAlreadyDucked} delegateToBoomBox=${shouldDelegateToBoomBox} audioSrcLen=${audioSrcLen} isDataUri=${isDataUri} isBlobUrl=${isBlobUrl} isValidAudio=${isValidAudioSrc} duration=${durationSec.toFixed(1)}s engine=${voiceEngine}`
+      );
+
       if (shouldDelegateToBoomBox) {
+        console.log(`[DJ] Speech: Attempting delegation to Boom Box...`);
         try {
           const boomBoxPayload = {
             audioSrc: isBrowser ? undefined : audioSrc,
@@ -4053,10 +4062,23 @@ export default function App() {
           if (options?.breakId) {
             reportSegmentStatus(options.breakId, 'aired');
           }
-          const bbRes = await musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
-          if (bbRes && bbRes.success) {
-            playedViaBoomBox = true;
-            console.log(`[DJ Speech] Playing voice on Boom Box.`);
+
+          // Step 1: Send request to Boom Box with 1000ms start confirmation timeout
+          let boomBoxStarted = false;
+          let boomBoxSettled = false;
+          let boomBoxStartTime = 0;
+
+          const bbResPromise = musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
+          const bbTimeoutPromise = new Promise<{ success: boolean; timedOut?: boolean }>((resolve) =>
+            setTimeout(() => resolve({ success: false, timedOut: true }), 1000)
+          );
+
+          const bbRes = await Promise.race([bbResPromise, bbTimeoutPromise]);
+
+          if (bbRes && bbRes.success && !(bbRes as any).timedOut) {
+            boomBoxStarted = true;
+            boomBoxStartTime = performance.now();
+            console.log(`[DJ] Speech: Boom Box confirmed start within 1s. Playing voice on Boom Box.`);
             logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
             setTestResults((prev) => ({
               ...prev,
@@ -4065,35 +4087,60 @@ export default function App() {
             }));
 
             // Await speech completion on Boom Box tab
-            await new Promise<boolean>((resolve) => {
-              let settled = false;
+            const completedCleanly = await new Promise<boolean>((resolve) => {
               let timeout: any = null;
-              const finishUnsub = musicProviderRef.current.onBoomBoxDjSpeechFinished(() => {
-                if (!settled) {
-                  settled = true;
+              const finishUnsub = musicProviderRef.current.onBoomBoxDjSpeechFinished((finishPayload) => {
+                if (!boomBoxSettled) {
+                  boomBoxSettled = true;
                   if (timeout) clearTimeout(timeout);
                   finishUnsub();
-                  resolve(true);
+                  const elapsedSec = (performance.now() - boomBoxStartTime) / 1000;
+                  console.log(
+                    `[DJ] Speech: Boom Box finished callback received: success=${finishPayload?.success} error=${finishPayload?.error || 'none'} elapsed=${elapsedSec.toFixed(1)}s expected=${durationSec.toFixed(1)}s`
+                  );
+                  if (elapsedSec < durationSec - 1.0) {
+                    console.error(
+                      `[DJ] Speech Error: Boom Box speech ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`
+                    );
+                  }
+                  resolve(finishPayload?.success !== false);
                 }
               });
               timeout = setTimeout(() => {
-                if (!settled) {
-                  settled = true;
+                if (!boomBoxSettled) {
+                  boomBoxSettled = true;
                   finishUnsub();
+                  console.log(`[DJ] Speech: Boom Box playback timed out after ${Math.max(12, Math.round(durationSec + 4))}s.`);
                   resolve(true);
                 }
               }, Math.max(12000, (durationSec + 4) * 1000));
             });
+
+            if (completedCleanly) {
+              playedViaBoomBox = true;
+            } else {
+              console.warn(
+                `[DJ] Speech: Boom Box playback reported early failure. Falling back to local audio element in app tab.`
+              );
+            }
+          } else {
+            console.log(
+              `[DJ] Speech: Boom Box did not confirm start within 1s (timedOut=${(bbRes as any)?.timedOut || false}, success=${bbRes?.success || false}). Falling back to local audio element in app tab.`
+            );
           }
-        } catch (bbErr) {
-          // Boom Box delegation unavailable, proceed to local playback
+        } catch (bbErr: any) {
+          console.warn(`[DJ] Speech: Boom Box delegation error (${bbErr?.message}). Falling back to local playback.`);
         }
+      } else {
+        console.log(`[DJ] Speech: Boom Box delegation bypassed (shouldDelegateToBoomBox=false). Playing via local tab.`);
       }
 
       if (!playedViaBoomBox) {
+        console.log(`[DJ] Speech: Playing via local app tab audio path...`);
         // Step C: Play speech with 15-second safety timeout
         await new Promise<boolean>(async (resolve, reject) => {
           let settled = false;
+          let speechStartTime = 0;
 
           const cleanupTimeout = () => {
             if (safetyTimeout) {
@@ -4105,7 +4152,7 @@ export default function App() {
         safetyTimeout = setTimeout(() => {
           if (!settled) {
             settled = true;
-            logMessage(`[TTS Timeout] Speech did not complete within 15 seconds. Forcing safety cleanup.`);
+            logMessage(`[DJ] TTS Timeout: Speech did not complete within 15 seconds. Forcing safety cleanup.`);
             if (isBrowser && typeof window !== 'undefined' && window.speechSynthesis) {
               try { window.speechSynthesis.cancel(); } catch {}
             }
@@ -4129,8 +4176,12 @@ export default function App() {
           const u = new SpeechSynthesisUtterance(text);
           (window as any).__retroFmDJUtterance = u;
           u.rate = 1.05;
-          u.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          const targetVol = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          u.volume = targetVol;
+          console.log(`[DJ] Speech: Effective voice volume: ${(targetVol * 100).toFixed(0)}% (setting: ${djVoiceVolumePercent}%, effects volume: ${djVoiceEffects.getSettings().voiceVolume})`);
           u.onstart = () => {
+            speechStartTime = performance.now();
+            console.log(`[DJ] Speech: Browser speech synthesis started.`);
             if (options?.breakId) {
               reportSegmentStatus(options.breakId, 'aired');
             }
@@ -4145,6 +4196,11 @@ export default function App() {
             if (!settled) {
               settled = true;
               cleanupTimeout();
+              const elapsedSec = (performance.now() - speechStartTime) / 1000;
+              console.log(`[DJ] Speech: Browser speech ended cleanly (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+              if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+              }
               resolve(true);
             }
           };
@@ -4152,6 +4208,7 @@ export default function App() {
             if (!settled) {
               settled = true;
               cleanupTimeout();
+              console.error(`[DJ] Speech Error: Browser speech error: ${e.error || 'speech failed'}`);
               logMessage(`[Browser Speech Error] ${e.error || 'speech failed'}`);
               resolve(false);
             }
@@ -4162,6 +4219,7 @@ export default function App() {
           if (!audioSrc) {
             cleanupTimeout();
             settled = true;
+            console.error(`[DJ] Speech Error: No audio source available for playback.`);
             return resolve(false);
           }
 
@@ -4180,8 +4238,14 @@ export default function App() {
           }
 
           audio.src = audioSrc;
-          audio.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          const targetVol = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          audio.volume = targetVol;
           djAudioRef.current = audio;
+
+          const effectsSettings = djVoiceEffects.getSettings();
+          console.log(
+            `[DJ] Speech: Effective voice volume: ${(audio.volume * 100).toFixed(0)}% (setting: ${djVoiceVolumePercent}%, effects volume: ${effectsSettings.voiceVolume})`
+          );
 
           // Route DJ voice through Web Audio DJ Voice Effects graph
           try {
@@ -4192,6 +4256,8 @@ export default function App() {
           }
 
           audio.onplay = () => {
+            speechStartTime = performance.now();
+            console.log(`[DJ] Speech: Audio element 'play' event fired.`);
             if (options?.breakId) {
               reportSegmentStatus(options.breakId, 'aired');
             }
@@ -4200,6 +4266,11 @@ export default function App() {
             if (!settled) {
               settled = true;
               cleanupTimeout();
+              const elapsedSec = (performance.now() - speechStartTime) / 1000;
+              console.log(`[DJ] Speech: Audio element 'ended' event fired (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+              if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+              }
               resolve(true);
             }
           };
@@ -4207,14 +4278,18 @@ export default function App() {
             if (!settled) {
               settled = true;
               cleanupTimeout();
+              console.error(`[DJ] Speech Error: Audio element error:`, e);
               logMessage(`[Audio Playback Error] Failed to play audio: ${e}`);
               resolve(false);
             }
           };
 
           try {
-            await audio.play();
-            console.log(`[DJ Speech] Playing voice on primary audio element (${engineLabel}).`);
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
+            console.log(`[DJ] Speech: audio.play() resolved successfully on primary audio element (${engineLabel}).`);
             logMessage(`▶ Playing ${engineLabel} voice.`);
             setTestResults((prev) => ({
               ...prev,
@@ -4231,7 +4306,7 @@ export default function App() {
             const audioCtxState = audioCtx ? audioCtx.state : 'uninitialized';
 
             console.warn(
-              `[DJ Audio Warning] Primary playback failed (err: ${errName}: ${errMsg}, vis: ${vis}, userAct: ${userAct}, ctx: ${audioCtxState}). Attempting direct unrouted fallback...`
+              `[DJ] Speech Warning: Primary audio.play() rejected (${errName}: ${errMsg}, vis: ${vis}, userAct: ${userAct}, ctx: ${audioCtxState}). Attempting direct unrouted fallback...`
             );
 
             // Resilient fallback: attempt direct playback with a clean standalone HTMLAudioElement
@@ -4241,10 +4316,19 @@ export default function App() {
               fallbackAudio.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
               djAudioRef.current = fallbackAudio;
 
+              fallbackAudio.onplay = () => {
+                speechStartTime = performance.now();
+                console.log(`[DJ] Speech: Direct fallback audio 'play' event fired.`);
+              };
               fallbackAudio.onended = () => {
                 if (!settled) {
                   settled = true;
                   cleanupTimeout();
+                  const elapsedSec = (performance.now() - speechStartTime) / 1000;
+                  console.log(`[DJ] Speech: Direct fallback 'ended' event fired (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+                  if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                    console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+                  }
                   resolve(true);
                 }
               };
@@ -4252,13 +4336,18 @@ export default function App() {
                 if (!settled) {
                   settled = true;
                   cleanupTimeout();
+                  console.error(`[DJ] Speech Error: Direct fallback audio error:`, e);
                   logMessage(`[Audio Playback Error] Direct fallback error: ${e}`);
                   resolve(false);
                 }
               };
 
-              await fallbackAudio.play();
+              const fallbackPromise = fallbackAudio.play();
+              if (fallbackPromise !== undefined) {
+                await fallbackPromise;
+              }
               fallbackSucceeded = true;
+              console.log(`[DJ] Speech: Direct fallback audio.play() resolved successfully (${engineLabel}).`);
               logMessage(`▶ Playing ${engineLabel} voice (direct unrouted fallback).`);
               setTestResults((prev) => ({
                 ...prev,
@@ -4268,7 +4357,7 @@ export default function App() {
             } catch (fallbackErr: any) {
               const fbMsg = fallbackErr?.message || String(fallbackErr);
               console.error(
-                `[DJ Audio Failure] timestamp=${timestamp} error=${errName}: ${errMsg} (direct fallback also failed: ${fbMsg}) visibility=${vis} userActivation=${userAct} audioCtxState=${audioCtxState}`
+                `[DJ] Speech Error: Playback failed completely: ${errName}: ${errMsg} (direct fallback also failed: ${fbMsg}) visibility=${vis} userActivation=${userAct} audioCtxState=${audioCtxState}`
               );
               logMessage(
                 `[DJ Audio Failure] ${errName}: ${errMsg} (vis: ${vis}, userAct: ${userAct}, ctx: ${audioCtxState})`
