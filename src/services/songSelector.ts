@@ -28,6 +28,7 @@ export interface LibrarySong {
   last_chart_date: string | null;
   peak_date: string | null;
   weeks_on_chart: number | null;
+  duration_sec?: number | null;
   streaming: { youtube: { id: string | null; url: string | null } };
 }
 

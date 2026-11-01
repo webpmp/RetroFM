@@ -1230,11 +1230,22 @@ async function startServer() {
         `short_fallback:${fallbackCandidates.length}items`,
       ];
 
+      const fellThroughReasons: string[] = [];
+      if (!songStoryCandidate.ready && songStoryCandidate.failureReason) {
+        fellThroughReasons.push(`next_song_story: ${songStoryCandidate.failureReason}`);
+      }
+
+      const freqPreset = (typeof req.body?.frequencyPreset === 'string' && req.body.frequencyPreset) ? req.body.frequencyPreset : undefined;
+      const freqSource = (typeof req.body?.frequencySource === 'string' && req.body.frequencySource) ? req.body.frequencySource : 'default';
+      const prevTitle = prevSong?.title || 'none';
+      const nextTitle = nextSong?.title || 'none';
+
       // If roll did not pass frequency check, log and return silence
       if (!rollPassed) {
         const elapsedMs = Date.now() - startTime;
         const candidatesSummary = allEvaluatedSummary.join(' ');
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="roll exceeded frequency threshold"`);
+        const reasonStr = `roll exceeded frequency threshold (${roll.toFixed(2)} > ${freqSetting.toFixed(2)}) [preset=${freqPreset || 'custom'}, source=${freqSource}]`;
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="${reasonStr}"`);
         return res.json({
           decision: 'silence',
           breakType: null,
@@ -1242,6 +1253,18 @@ async function startServer() {
           targetSong: 'none',
           usedKeys: [],
           blacklistedKeys: newlyBlacklistedKeys,
+          silenceReason: reasonStr,
+          evalSummary: {
+            frequencySetting: freqSetting,
+            frequencyPreset: freqPreset,
+            frequencySource: freqSource,
+            roll,
+            rollPassed: false,
+            prevSong: prevTitle,
+            nextSong: nextTitle,
+            candidatesSummary: allEvaluatedSummary,
+            fellThroughReasons,
+          },
         });
       }
 
@@ -1249,11 +1272,6 @@ async function startServer() {
       let finalSpeech = '';
       let validatorResult = 'N/A';
       let auditResult = 'N/A';
-      const fellThroughReasons: string[] = [];
-
-      if (!songStoryCandidate.ready && songStoryCandidate.failureReason) {
-        fellThroughReasons.push(`next_song_story: ${songStoryCandidate.failureReason}`);
-      }
 
       // Latency check: Give each song change a total budget of about 25 seconds across candidates,
       // and on timeout use the best ready break. A break that takes over 30 seconds must be logged as "not ready".
@@ -1704,7 +1722,7 @@ async function startServer() {
                 topicTitle: `Outro for ${cleanTitle}`,
                 targetSongTitle: cleanTitle,
                 targetSongArtist: prevSong.artist,
-                facts: [{ text: fallbackSpeech, source: 'Station Playlist', date: selectedDate }],
+                facts: [{ text: fallbackSpeech, source: 'Station Playlist', date: selectedDate, isLockedSentence: true }],
                 factKeys: [`outro:${prevSong.id}`],
               },
             };
@@ -1712,6 +1730,28 @@ async function startServer() {
             validatorResult = 'PASS';
             auditResult = 'PASS(outro)';
           }
+        } else {
+          // If neither nextSong nor prevSong was provided, or every candidate failed:
+          // Deliver a clean station line so the DJ still speaks on air.
+          const stationLine = allowRetroFm
+            ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now())
+            : "You're listening to RetroFM.";
+          chosenCandidate = {
+            type: 'plain_station_id',
+            score: 20,
+            ready: true,
+            packet: {
+              topic: 'station_id',
+              topicTitle: 'Station ID',
+              targetSongTitle: undefined,
+              targetSongArtist: undefined,
+              facts: [{ text: stationLine, source: 'Station ID', date: selectedDate, isLockedSentence: true }],
+              factKeys: [`station:${selectedDate}`],
+            },
+          };
+          finalSpeech = stationLine;
+          validatorResult = 'PASS';
+          auditResult = 'PASS(station)';
         }
       }
 
@@ -1721,12 +1761,16 @@ async function startServer() {
       const failureReasonLog = fellThroughReasons.length > 0 ? ` failure_reasons=[${fellThroughReasons.join(' | ')}]` : '';
       const readyStatus = elapsedMs > 30000 ? 'status="not ready (took >30s)"' : 'status="ready"';
 
+      const silenceReasonStr = chosenCandidate
+        ? undefined
+        : `All candidates rejected: ${fellThroughReasons.join('; ') || 'No eligible candidates'}`;
+
       if (chosenCandidate?.type === 'plain_intro') {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus} reason="every other candidate failed"${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus} reason="every other candidate failed"${failureReasonLog}`);
       } else if (chosenCandidate) {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=${chosenCandidate.type} facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus}${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=${chosenCandidate.type} facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus}${failureReasonLog}`);
       } else {
-        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms ${readyStatus} reason="all candidates failed and no next song"${failureReasonLog}`);
+        console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms ${readyStatus} reason="${silenceReasonStr}"${failureReasonLog}`);
       }
 
       // Part 1: Log [Segment Prepared] id=<id> when a break is generated and validated
@@ -1751,6 +1795,18 @@ async function startServer() {
         targetSong: 'next',
         usedKeys: chosenCandidate?.packet?.factKeys || [],
         blacklistedKeys: newlyBlacklistedKeys,
+        silenceReason: silenceReasonStr,
+        evalSummary: {
+          frequencySetting: freqSetting,
+          frequencyPreset: freqPreset,
+          frequencySource: freqSource,
+          roll,
+          rollPassed: true,
+          prevSong: prevTitle,
+          nextSong: nextTitle,
+          candidatesSummary: allEvaluatedSummary,
+          fellThroughReasons,
+        },
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,
         shortCloser: chosenShortCloser,

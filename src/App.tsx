@@ -583,10 +583,22 @@ export default function App() {
     logMessage(`[DJ Mode] Switched to ${mode === 'ai' ? 'AI-written (current)' : mode === 'observations' ? 'Observations (template)' : 'Off'}`);
   };
 
+  const [djTalkFrequencySource, setDjTalkFrequencySource] = useState<'default' | 'saved'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
+      if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        return 'saved';
+      }
+    }
+    return 'default';
+  });
+
   const [djTalkFrequency, setDjTalkFrequency] = useState<'every' | 'often' | 'sometimes' | 'rarely'>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
       if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        // Migration / Safety check: If a user previously had 'sometimes' or 'rarely' from early experimentation
+        // but never explicitly changed it after default became 'often', notify or preserve
         return stored;
       }
     }
@@ -595,6 +607,7 @@ export default function App() {
 
   const handleDjTalkFrequencyChange = (freq: 'every' | 'often' | 'sometimes' | 'rarely') => {
     setDjTalkFrequency(freq);
+    setDjTalkFrequencySource('saved');
     if (typeof window !== 'undefined') {
       localStorage.setItem('retrofm_dj_talk_frequency', freq);
     }
@@ -1973,9 +1986,10 @@ export default function App() {
         hasFirstSongStartedPlayingRef.current &&
         jingleStateRef.current !== 'playing'
       ) {
-        const curTime = typeof payload.currentTime === 'number' ? payload.currentTime : playbackStatusRef.current?.currentTime || 0;
-        const dur = typeof payload.duration === 'number' ? payload.duration : playbackStatusRef.current?.duration || 0;
         const curSongPick = currentSongPickRef.current;
+        const curTime = typeof payload.currentTime === 'number' ? payload.currentTime : playbackStatusRef.current?.currentTime || 0;
+        const rawDur = typeof payload.duration === 'number' ? payload.duration : playbackStatusRef.current?.duration || 0;
+        const dur = getEffectiveSongDuration(curSongPick, rawDur);
         const songId = curSongPick?.song?.id || payload.videoId || playbackStatusRef.current?.videoId || null;
 
         if (songId && curSongPick) {
@@ -2000,11 +2014,18 @@ export default function App() {
               const isSameSong = rawNextSong && (rawNextSong.id === songId || (currentSongPickRef.current && rawNextSong.id === currentSongPickRef.current.song.id));
               const nextSong = isSameSong ? null : rawNextSong;
 
-              prepareObservationBreakAhead(songId, prevSong, nextSong);
+              // Ahead-of-time prep runs while songId is playing to prepare the break that airs when songId ends.
+              // Therefore, the song that just ended when this break airs is songId (the currently playing song).
+              prepareObservationBreakAhead(songId, curSongPick.song, nextSong);
             }
 
             const prep = preparedBreakRef.current;
             if (prep && prep.id === songId && breakTriggeredForSongIdRef.current !== songId) {
+              // Log trigger check ticks as remaining time approaches trigger window
+              if (remaining <= prep.triggerTimeRemaining + 6 && remaining >= prep.triggerTimeRemaining - 2) {
+                console.log(`[DJ] Trigger check: remaining=${remaining.toFixed(1)}s triggerTarget=${prep.triggerTimeRemaining.toFixed(1)}s duckTarget=${prep.duckTriggerTimeRemaining.toFixed(1)}s ducked=${breakDuckingStartedRef.current} audioReady=${Boolean(prep.audioData)}`);
+              }
+
               // Phase 2: Start lead duck ~500ms before speech start
               if (prep.text && remaining <= prep.duckTriggerTimeRemaining && !breakDuckingStartedRef.current) {
                 breakDuckingStartedRef.current = true;
@@ -2041,7 +2062,7 @@ export default function App() {
                 } else if (prep.text) {
                   // Check maxSeconds limit for follow timing
                   if (prep.timing === 'follow' && prep.maxSeconds && prep.durationSec > prep.maxSeconds) {
-                    console.log(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+                    console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break" remaining=${remaining.toFixed(1)}s`);
                     logMessage(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
                       volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
@@ -2068,8 +2089,8 @@ export default function App() {
                       spokenSeconds: prep.durationSec,
                       deliverySettings: prep.deliverySettings,
                     });
-                    console.log(`[DJ] speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
-                    logMessage(`[DJ] Speech start remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+                    console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
+                    logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
 
                     playDJSpeech(prep.text, {
                       duckMusic: !breakDuckingStartedRef.current,
@@ -2086,7 +2107,7 @@ export default function App() {
                     if (prep.breakId) {
                       reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
                     }
-                    console.log(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+                    console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="audio not ready" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
                     logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
                     if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
                       volumeControllerRef.current.cancel('Audio not ready for DJ speech');
@@ -2114,7 +2135,7 @@ export default function App() {
               // Trigger threshold reached but no prepared break exists / duration wasn't known in time
               breakTriggeredForSongIdRef.current = songId;
               const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-              console.log(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+              console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="no prepared break ready at trigger threshold" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
               logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
             }
           }
@@ -2241,6 +2262,164 @@ export default function App() {
       unsubYtTabActivated();
     };
   }, []);
+
+  // --- Background-Resilient DJ Break Trigger Watchdog ---
+  // Evaluates trigger countdown against high-resolution performance/Date clock even when app tab is hidden/throttled
+  useEffect(() => {
+    const watchdogInterval = setInterval(() => {
+      if (
+        djMode !== 'observations' ||
+        !hasFirstSongStartedPlayingRef.current ||
+        jingleStateRef.current === 'playing' ||
+        !playbackStatusRef.current?.isPlaying
+      ) {
+        return;
+      }
+
+      const curSongPick = currentSongPickRef.current;
+      const songId = curSongPick?.song?.id || playbackStatusRef.current?.videoId || null;
+      if (!songId || !curSongPick) return;
+
+      const rawDur = playbackStatusRef.current?.duration || 0;
+      const dur = getEffectiveSongDuration(curSongPick, rawDur);
+      if (dur <= 0) return;
+
+      // Elapsed calculation: blend playbackStatus.currentTime with local wall-clock elapsed from song start
+      let curTime = playbackStatusRef.current?.currentTime || 0;
+      if (songStartedAtMsRef.current > 0) {
+        const wallElapsed = (Date.now() - songStartedAtMsRef.current) / 1000;
+        if (wallElapsed > curTime) {
+          curTime = wallElapsed;
+        }
+      }
+
+      const remaining = dur - curTime;
+      if (remaining <= 0) return;
+
+      // Phase 1: Prepare ahead if not already prepared
+      if (
+        remaining <= 55 &&
+        remaining >= 5 &&
+        !preparedBreakRef.current &&
+        !isPreparingBreakRef.current &&
+        breakTriggeredForSongIdRef.current !== songId
+      ) {
+        const history = sessionHistoryRef.current;
+        const p = history.pointer;
+        const rawNextSong = (p >= 0 && p < history.entries.length - 1)
+          ? history.entries[p + 1].song
+          : (nextSongRef.current?.song || null);
+        const isSameSong = rawNextSong && (rawNextSong.id === songId || (curSongPick && rawNextSong.id === curSongPick.song.id));
+        const nextSong = isSameSong ? null : rawNextSong;
+        prepareObservationBreakAhead(songId, curSongPick.song, nextSong);
+      }
+
+      const prep = preparedBreakRef.current;
+      if (!prep || prep.id !== songId || breakTriggeredForSongIdRef.current === songId) return;
+
+      // Phase 2: Lead duck ~500ms before speech start
+      if (prep.text && remaining <= prep.duckTriggerTimeRemaining && !breakDuckingStartedRef.current) {
+        breakDuckingStartedRef.current = true;
+        const vc = volumeControllerRef.current;
+        if (vc && !vc.isSequenceActive()) {
+          const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+          logMessage(`[DJ] Early lead duck starting (watchdog: remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+          vc.duck(fadeDownMs, 'DJ speech start').catch((err) => {
+            console.warn('[DJ] Early duck error:', err);
+          });
+        }
+      }
+
+      // Phase 3: Trigger speech at target remaining threshold
+      if (remaining <= prep.triggerTimeRemaining) {
+        breakTriggeredForSongIdRef.current = songId;
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+
+        if (prep.kind === 'jingle' && prep.varietyResult?.jingle) {
+          if (prep.pendingVarietyState) {
+            varietyStateRef.current = prep.pendingVarietyState;
+          }
+          setLastDjBreak({
+            text: '',
+            slot: 'before',
+            kind: 'jingle',
+            detail: prep.detail,
+          });
+          console.log(`[DJ] jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+          logMessage(`[DJ] Jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s`);
+          pendingJingleRef.current = prep.varietyResult.jingle;
+        } else if (prep.text) {
+          if (prep.timing === 'follow' && prep.maxSeconds && prep.durationSec > prep.maxSeconds) {
+            console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break" remaining=${remaining.toFixed(1)}s`);
+            logMessage(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+            if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+              volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
+            }
+            preparedBreakRef.current = null;
+            return;
+          }
+
+          if (prep.audioData) {
+            if (prep.pendingVarietyState) {
+              varietyStateRef.current = prep.pendingVarietyState;
+            }
+            if (prep.pendingState) {
+              djStateRef.current = prep.pendingState;
+            }
+            setLastDjBreak({
+              text: prep.text,
+              slot: prep.slot,
+              kind: prep.kind,
+              detail: prep.detail,
+              timing: prep.timing,
+              wordCount: prep.wordCount,
+              spokenSeconds: prep.durationSec,
+              deliverySettings: prep.deliverySettings,
+            });
+            console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
+            logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+
+            playDJSpeech(prep.text, {
+              duckMusic: !breakDuckingStartedRef.current,
+              alreadyDucked: breakDuckingStartedRef.current,
+              forceGenerate: false,
+              preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
+              preparedDuration: prep.durationSec,
+              breakId: prep.breakId,
+            }).catch((err) => {
+              console.warn('[DJ] Error during prepared speech playback:', err);
+            });
+          } else {
+            if (prep.breakId) {
+              reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+            }
+            console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="audio not ready" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+            logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+            if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+              volumeControllerRef.current.cancel('Audio not ready for DJ speech');
+            }
+          }
+        } else {
+          console.log(`[DJ] silent break (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+          if (prep.pendingVarietyState) {
+            varietyStateRef.current = prep.pendingVarietyState;
+          }
+          if (prep.pendingState) {
+            djStateRef.current = prep.pendingState;
+          }
+          setLastDjBreak({
+            text: '',
+            slot: prep.slot,
+            kind: prep.kind,
+            detail: prep.detail,
+          });
+        }
+        preparedBreakRef.current = null;
+      }
+    }, 500);
+
+    return () => clearInterval(watchdogInterval);
+  }, [djMode, fadeDownMs]);
 
   // --- Poll YouTube Tab Status (Fallback every 5 seconds) ---
   const lastPolledStatusFingerprintRef = useRef<string>('');
@@ -2378,6 +2557,18 @@ export default function App() {
     }
   };
 
+  // Returns the authoritative duration for a song pick, prioritizing library duration_sec over player anomalies
+  const getEffectiveSongDuration = (pick: SongPick | null, playerDuration: number): number => {
+    const libDur = (pick?.song as any)?.duration_sec;
+    if (typeof libDur === 'number' && libDur > 0) {
+      if (playerDuration <= 0 || isNaN(playerDuration) || Math.abs(playerDuration - libDur) > 20) {
+        return libDur;
+      }
+      return playerDuration;
+    }
+    return playerDuration > 0 && !isNaN(playerDuration) ? playerDuration : 0;
+  };
+
   // Helper to pre-navigate and cue a song in the background without stealing focus or starting playback
   const prepareSong = async (videoId: string, title?: string) => {
     try {
@@ -2389,12 +2580,16 @@ export default function App() {
         logMessage(`[Pre-Prepare] Ready: "${title || videoId}" is cued and prepared.`);
         const provTabId = musicProviderRef.current.getConnectedTabId();
         const baseStatus = (res.status || {}) as Partial<MusicPlaybackStatus>;
+        // Preserve currently playing song's duration and position; do not clobber with background cued track status
+        const isCurrentPlayingTrack = playbackStatusRef.current?.videoId === videoId;
         const nextStatus: MusicPlaybackStatus = {
           ...playbackStatusRef.current,
           ...baseStatus,
           available: true,
-          videoId: videoId,
-          title: title || baseStatus.title || videoId,
+          videoId: isCurrentPlayingTrack ? videoId : (playbackStatusRef.current?.videoId || videoId),
+          title: isCurrentPlayingTrack ? (title || baseStatus.title || videoId) : (playbackStatusRef.current?.title || title || videoId),
+          currentTime: isCurrentPlayingTrack ? (baseStatus.currentTime ?? playbackStatusRef.current?.currentTime ?? 0) : (playbackStatusRef.current?.currentTime ?? 0),
+          duration: isCurrentPlayingTrack ? (baseStatus.duration ?? playbackStatusRef.current?.duration ?? 0) : (playbackStatusRef.current?.duration ?? 0),
           connectedTabId: baseStatus.connectedTabId || playbackStatusRef.current?.connectedTabId || provTabId || null,
         };
         setPlaybackStatus(nextStatus);
@@ -2555,7 +2750,8 @@ export default function App() {
       const nextSongForBreak = isSameAsCurrent ? null : nextSong;
       if (!preparedBreakRef.current && !isPreparingBreakRef.current) {
         console.log(`[DJ Ahead Prep] Initiating ahead-of-time break preparation immediately at song start for "${songTitle}" (next: ${nextSongForBreak ? `"${nextSongForBreak.title}"` : 'none (single-song or repeat)'})`);
-        prepareObservationBreakAhead(pick.song.id, previousLibrarySongRef.current, nextSongForBreak);
+        // The break being prepared will air when this song ends, so pick.song is passed as the previous song
+        prepareObservationBreakAhead(pick.song.id, pick.song, nextSongForBreak);
       }
     }
 
@@ -4121,6 +4317,8 @@ export default function App() {
           logMessage(`▶ Restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
           await vc.restore(fadeUpMs, 'DJ speech finished');
           setMixPhase('COMPLETED');
+          console.log(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
+          logMessage(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
           setTestResults((prev) => ({
             ...prev,
             musicRestoration: true,
@@ -4133,6 +4331,8 @@ export default function App() {
           setMixPhase('IDLE');
         }
       } else {
+        console.log(`[DJ] Break finished playing (no duck restoration): "${text.slice(0, 60)}"`);
+        logMessage(`[DJ] Break finished playing (no duck restoration): "${text.slice(0, 60)}"`);
         if (shouldDuck && vc && vc.isSequenceActive()) {
           try {
             await vc.cancel('DJ speech failed before clean restoration');
@@ -4285,6 +4485,8 @@ export default function App() {
             prevSong: prev ? { title: prev.title, artist: prev.artist, id: prev.id, first_chart_date: prevSongObj?.first_chart_date } : null,
             nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: nextSongObj?.first_chart_date } : null,
             frequencySetting: freqSetting,
+            frequencyPreset: djTalkFrequency,
+            frequencySource: djTalkFrequencySource,
             usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
             blacklistedFactKeys: Array.from(blacklistedFactKeysRef.current),
             lastTopic: specABreakStateRef.current.lastBreakType,
@@ -4363,7 +4565,13 @@ export default function App() {
 
       // If silence was chosen, enter silent break immediately
       if (segmentResult.decision === 'silence' || !segmentResult.finalSpeech) {
-        console.log('[DJ] Segment pipeline selected silence');
+        const silenceReason = segmentResult.silenceReason || 'Segment pipeline decided silence';
+        const summary = segmentResult.evalSummary;
+        const details = summary
+          ? `(setting: ${summary.frequencySetting} [preset: ${summary.frequencyPreset || djTalkFrequency}, source: ${summary.frequencySource || djTalkFrequencySource}], roll: ${summary.roll?.toFixed(2) ?? 'N/A'}, rollPassed: ${summary.rollPassed}, prevSong: "${summary.prevSong}", nextSong: "${summary.nextSong}", candidates: [${(summary.candidatesSummary || []).join(' ')}], rejectedReasons: [${(summary.fellThroughReasons || []).join(' | ') || 'none'}])`
+          : `(preset: ${djTalkFrequency}, source: ${djTalkFrequencySource})`;
+        console.log(`[DJ] Segment pipeline selected silence: ${silenceReason} ${details}`);
+        logMessage(`[DJ] Break silent: ${silenceReason}`);
         preparedBreakRef.current = {
           id: currentSongId,
           audioData: null,
@@ -4562,10 +4770,13 @@ export default function App() {
       }
 
       const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-      const curRemaining = (playbackStatusRef.current?.duration || 0) - (playbackStatusRef.current?.currentTime || 0);
+      const curCurTime = playbackStatusRef.current?.currentTime || 0;
+      const curDur = getEffectiveSongDuration(currentSongPickRef.current, playbackStatusRef.current?.duration || 0);
+      const curRemaining = curDur > 0 ? (curDur - curCurTime) : 0;
       const readyRelSongChangeSec = ((Date.now() - songStartedAtMsRef.current) / 1000).toFixed(1);
       console.log(`[DJ] break ready relative to song change: +${readyRelSongChangeSec}s | prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
       logMessage(`[DJ] Break ready relative to song change: +${readyRelSongChangeSec}s | Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
+      console.log(`[DJ] Break scheduled: id=${currentSongId} duration=${curDur}s elapsed=${curCurTime.toFixed(1)}s remaining=${curRemaining.toFixed(1)}s triggerAtRemaining=${triggerTimeRemaining.toFixed(1)}s duckAtRemaining=${duckTriggerTimeRemaining.toFixed(1)}s (visibility: ${vis})`);
     } catch (e: any) {
       console.warn('[DJ] Error preparing ahead break:', e);
     } finally {
