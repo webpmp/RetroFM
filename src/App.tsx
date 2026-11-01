@@ -4106,14 +4106,39 @@ export default function App() {
                   resolve(finishPayload?.success !== false);
                 }
               });
+
+              const waitMs = (durationSec + 3) * 1000;
               timeout = setTimeout(() => {
                 if (!boomBoxSettled) {
                   boomBoxSettled = true;
                   finishUnsub();
-                  console.log(`[DJ] Speech: Boom Box playback timed out after ${Math.max(12, Math.round(durationSec + 4))}s.`);
-                  resolve(true);
+
+                  // Check if song has already ended or has enough time remaining
+                  const curSongPick = currentSongPickRef.current;
+                  const curTime = playbackStatusRef.current?.currentTime || 0;
+                  const rawDur = playbackStatusRef.current?.duration || 0;
+                  const dur = getEffectiveSongDuration(curSongPick, rawDur);
+                  const remaining = dur > 0 ? (dur - curTime) : 0;
+
+                  if (remaining > 1.5) {
+                    console.log(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Falling back to local audio element in app tab.`
+                    );
+                    logMessage(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Falling back to local audio element in app tab.`
+                    );
+                    resolve(false);
+                  } else {
+                    console.log(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Break skipped because song has already ended (remaining=${remaining.toFixed(1)}s).`
+                    );
+                    logMessage(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Break skipped because song has already ended.`
+                    );
+                    resolve(true); // marked as handled, skip local playback
+                  }
                 }
-              }, Math.max(12000, (durationSec + 4) * 1000));
+              }, waitMs);
             });
 
             if (completedCleanly) {

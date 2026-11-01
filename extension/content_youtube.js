@@ -45,7 +45,6 @@ if (!window.__retroFmContentLoaded) {
         activePlayCleanup();
         activePlayCleanup = null;
       }
-      window.removeEventListener(EVENT_STATE_CHANGE, onStateChangeEvent);
       window.removeEventListener('message', onWindowMessageEvent);
       window.removeEventListener(EVENT_TRACE, onTraceEvent);
       window.removeEventListener(EVENT_AUDIO_DIAGNOSTICS, onAudioDiagnosticsEvent);
@@ -174,17 +173,8 @@ if (!window.__retroFmContentLoaded) {
     }
   }
 
-  function onStateChangeEvent(e) {
-    try {
-      const data = safeParseDetail(e ? e.detail : null);
-      if (data) {
-        handleStateChangeFromMainWorld(data);
-      }
-    } catch (err) {
-      reportError(err, 'onStateChangeEvent');
-    }
-  }
-  window.addEventListener(EVENT_STATE_CHANGE, onStateChangeEvent);
+  // Message listener relays RETROFM_YT_STATE_CHANGED_MSG and RETROFM_VU_LEVELS_MSG from yt_main_world.js.
+  // Note: custom event EVENT_STATE_CHANGE is omitted here to prevent duplicate dispatch of state ticks.
 
   function handleVuLevelsFromMainWorld(data) {
     if (!data || typeof data.l !== 'number' || typeof data.r !== 'number') return;

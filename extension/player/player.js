@@ -400,6 +400,26 @@ function ensureBoomBoxDjAudio() {
   return boomBoxDjAudio;
 }
 
+// Gentle audio unlocker for Boom Box tab:
+// Ensures Web Audio AudioContext and DJ audio element are unlocked on any user interaction in Boom Box
+function unlockBoomBoxAudio() {
+  try {
+    const ctx = staticController.ensureContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+  } catch (e) {}
+  try {
+    ensureBoomBoxDjAudio();
+  } catch (e) {}
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', unlockBoomBoxAudio, { capture: true, passive: true });
+  window.addEventListener('click', unlockBoomBoxAudio, { capture: true, passive: true });
+  window.addEventListener('keydown', unlockBoomBoxAudio, { capture: true, passive: true });
+}
+
 function generateSaturationCurve(drive, samples = 2048) {
   const k = Math.max(1, drive || 15);
   const curve = new Float32Array(samples);
@@ -603,21 +623,21 @@ function playBoomBoxDjSpeech(payload) {
         u.onerror = (e) => notifyFinished(false, e?.error || 'speech_synthesis_error');
         window.speechSynthesis.speak(u);
         trace('BOOMBOX_DJ_SPEECH_PLAYING', { engine: 'browser', text });
-        return;
+        return Promise.resolve({ success: true, started: true });
       } catch (err) {
         notifyFinished(false, err?.message || 'browser_speech_failed');
-        return;
+        return Promise.resolve({ success: false, started: false, reason: err?.message || 'browser_speech_failed' });
       }
     } else {
       notifyFinished(false, 'speech_synthesis_not_supported');
-      return;
+      return Promise.resolve({ success: false, started: false, reason: 'speech_synthesis_not_supported' });
     }
   }
 
   const audioSrc = payload?.audioSrc;
   if (!audioSrc) {
     notifyFinished(false, 'no_audio_src');
-    return;
+    return Promise.resolve({ success: false, started: false, reason: 'no_audio_src' });
   }
 
   const audio = ensureBoomBoxDjAudio();
@@ -626,9 +646,10 @@ function playBoomBoxDjSpeech(payload) {
     audio.currentTime = 0;
   } catch (e) {}
 
+  let ctx = null;
   // Route through Web Audio DJ Voice Effects
   try {
-    const ctx = staticController.ensureContext();
+    ctx = staticController.ensureContext();
     if (ctx) {
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
@@ -653,11 +674,52 @@ function playBoomBoxDjSpeech(payload) {
   };
 
   audio.src = audioSrc;
-  audio.play().then(() => {
-    trace('BOOMBOX_DJ_SPEECH_PLAYING', { durationSec, text });
-  }).catch((err) => {
-    console.warn('[BoomBox DJ] Play error:', err);
-    notifyFinished(false, err?.message || 'play_rejected');
+
+  return new Promise((resolve) => {
+    let playPromiseResult = 'pending';
+    let settled = false;
+
+    audio.play().then(() => {
+      playPromiseResult = 'resolved';
+      console.log(`[BoomBox DJ] audio.play() promise resolved. AudioContext state=${ctx?.state} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
+      trace('BOOMBOX_DJ_SPEECH_PLAYING', { durationSec, text });
+    }).catch((err) => {
+      playPromiseResult = 'rejected: ' + (err?.message || String(err));
+      console.warn('[BoomBox DJ] Play error:', err);
+      if (!settled) {
+        settled = true;
+        notifyFinished(false, err?.message || 'play_rejected');
+        resolve({ success: false, started: false, reason: err?.message || 'play_rejected' });
+      }
+    });
+
+    // 500ms check
+    setTimeout(() => {
+      console.log(`[BoomBox DJ] Play check T=500ms: ctxState=${ctx?.state} playPromise=${playPromiseResult} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    }, 500);
+
+    // 1000ms check: must have running context and moving currentTime to confirm started
+    setTimeout(() => {
+      if (settled) return;
+      console.log(`[BoomBox DJ] Play check T=1000ms: ctxState=${ctx?.state} playPromise=${playPromiseResult} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
+
+      const isContextRunning = !ctx || ctx.state === 'running';
+      const isAdvancing = audio.currentTime > 0;
+
+      if (isAdvancing && isContextRunning) {
+        settled = true;
+        resolve({ success: true, started: true });
+      } else {
+        settled = true;
+        const reason = !isContextRunning ? `audio_context_suspended (${ctx?.state})` : 'audio_not_advancing';
+        console.warn(`[BoomBox DJ] Speech not advancing at 1s: ctxState=${ctx?.state} currentTime=${audio.currentTime} readyState=${audio.readyState}. Reporting failure.`);
+        notifyFinished(false, reason);
+        resolve({ success: false, started: false, reason });
+      }
+    }, 1000);
   });
 }
 
@@ -2475,8 +2537,12 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
       }
       sendResponse({ received: true });
     } else if (message && message.type === 'PLAY_DJ_SPEECH') {
-      playBoomBoxDjSpeech(message.payload);
-      sendResponse({ success: true, started: true });
+      playBoomBoxDjSpeech(message.payload).then((res) => {
+        sendResponse(res);
+      }).catch((err) => {
+        sendResponse({ success: false, started: false, reason: err?.message || 'unexpected_error' });
+      });
+      return true; // Keep message channel open for async response
     }
   });
 }
@@ -2541,6 +2607,7 @@ function markStartupReady() {
   }
 
   btn.addEventListener('click', async () => {
+    unlockBoomBoxAudio();
     if (!isStartupReady || btn.disabled || handoffStarted) return;
     handoffStarted = true;
     playbackEnabled = true;
