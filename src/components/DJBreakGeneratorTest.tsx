@@ -28,6 +28,7 @@ import {
   Cpu,
   Filter,
 } from 'lucide-react';
+import { validateJsonFetch } from '../services/songSelector.js';
 import {
   StationPersonalityId,
   TimeOfDay,
@@ -37,6 +38,24 @@ import {
   DJBreakSessionStats,
 } from '../services/djBreak/types.js';
 import { FactItem } from '../services/news/types.js';
+import {
+  buildBreak,
+  newDjState,
+  Song as ObsSong,
+  DjState,
+  TALK_PRESETS,
+  type TalkLength,
+} from '../services/djBreak/djBreakObservations.js';
+import {
+  buildVarietyBreak,
+  newVarietyState,
+  type VarietyState,
+  type Jingle,
+  type TopEntry,
+  artistTitle,
+} from '../services/djBreak/djVariety.js';
+import { shapeDelivery } from '../services/djBreak/djDelivery.js';
+import { LibrarySong } from '../services/songSelector.js';
 
 export const HISTORICAL_PRESET_DATES = [
   { date: '1969-07-21', label: '1969-07-21 (Apollo 11 Moon Landing)' },
@@ -46,11 +65,61 @@ export const HISTORICAL_PRESET_DATES = [
   { date: '1996-07-04', label: '1996-07-04 (Independence Day / Mid-90s)' },
 ];
 
+function toObsSong(s: LibrarySong | null | undefined): ObsSong | null {
+  if (!s) return null;
+  return {
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    release_date: s.release_date ?? null,
+    release_date_precision: s.release_date_precision ?? null,
+    primary_genre: s.primary_genre ?? null,
+    genres: s.genres ?? null,
+    peak_position: s.peak_position ?? null,
+    peak_date: s.peak_date ?? null,
+    last_chart_date: s.last_chart_date ?? null,
+    weeks_on_chart: s.weeks_on_chart ?? null,
+  };
+}
+
+function parseSongString(str: string, fallbackDate: string): ObsSong | null {
+  if (!str || !str.trim()) return null;
+  const parts = str.split(' - ');
+  const artist = parts.length > 1 ? parts[0].trim() : 'Unknown';
+  const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : str.trim();
+  return {
+    id: `custom-${artist}-${title}`.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    title,
+    artist,
+    release_date: fallbackDate,
+    release_date_precision: 'day',
+    primary_genre: null,
+    genres: null,
+    peak_position: null,
+    peak_date: null,
+    last_chart_date: null,
+    weeks_on_chart: null
+  };
+}
+
 interface DJBreakGeneratorTestProps {
   onLogEvent?: (msg: string) => void;
   onSpeakScript?: (scriptText: string) => void;
   onSpeakOverMusic?: (scriptText: string) => void;
   isMixingAudio?: boolean;
+  initialDate?: string;
+  initialSongPlayed?: string;
+  initialSongNext?: string;
+  djMode?: 'ai' | 'observations' | 'off';
+  onDjModeChange?: (mode: 'ai' | 'observations' | 'off') => void;
+  djTalkFrequency?: 'every' | 'often' | 'sometimes' | 'rarely';
+  onDjTalkFrequencyChange?: (frequency: 'every' | 'often' | 'sometimes' | 'rarely') => void;
+  onTestDjLine?: () => void;
+  librarySongPlayed?: LibrarySong | null;
+  librarySongNext?: LibrarySong | null;
+  onObservationBreakGenerated?: (breakData: { text: string; slot: 'before' | 'after'; kind: string | null }) => void;
+  voiceEngine?: 'GEMINI' | 'KOKORO' | 'BROWSER';
+  selectedVoiceName?: string;
 }
 
 export function DJBreakGeneratorTest({
@@ -58,6 +127,19 @@ export function DJBreakGeneratorTest({
   onSpeakScript,
   onSpeakOverMusic,
   isMixingAudio = false,
+  initialDate,
+  initialSongPlayed,
+  initialSongNext,
+  djMode: propDjMode,
+  onDjModeChange,
+  djTalkFrequency: propDjTalkFrequency,
+  onDjTalkFrequencyChange,
+  onTestDjLine,
+  librarySongPlayed,
+  librarySongNext,
+  onObservationBreakGenerated,
+  voiceEngine = 'BROWSER',
+  selectedVoiceName = 'Default',
 }: DJBreakGeneratorTestProps) {
   // Input parameters
   const [selectedDate, setSelectedDate] = useState<string>('1985-07-13');
@@ -69,6 +151,183 @@ export function DJBreakGeneratorTest({
   const [secondsAvailable, setSecondsAvailable] = useState<number>(12);
   const [forceFresh, setForceFresh] = useState<boolean>(false);
   const [nationalFocus, setNationalFocus] = useState<boolean>(true); // ON by default: exclude NYC-local coverage
+
+  // DJ Mode: 'ai' | 'observations' | 'off'
+  const [djMode, setDjMode] = useState<'ai' | 'observations' | 'off'>(() => {
+    if (propDjMode) return propDjMode;
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('retrofm_dj_mode') as 'ai' | 'observations' | 'off') || 'ai';
+    }
+    return 'ai';
+  });
+
+  useEffect(() => {
+    if (propDjMode && propDjMode !== djMode) {
+      setDjMode(propDjMode);
+    }
+  }, [propDjMode]);
+
+  const handleModeChange = (mode: 'ai' | 'observations' | 'off') => {
+    setDjMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_mode', mode);
+    }
+    onDjModeChange?.(mode);
+    onLogEvent?.(`[DJ Mode] Switched to ${mode === 'ai' ? 'AI-written (current)' : mode === 'observations' ? 'Observations (template)' : 'Off'}`);
+  };
+
+  // DJ Talk Frequency: 'every' | 'often' | 'sometimes' | 'rarely'
+  const [djTalkFrequency, setDjTalkFrequency] = useState<'every' | 'often' | 'sometimes' | 'rarely'>(() => {
+    if (propDjTalkFrequency) return propDjTalkFrequency;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
+      if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        return stored;
+      }
+    }
+    return 'often';
+  });
+
+  useEffect(() => {
+    if (propDjTalkFrequency && propDjTalkFrequency !== djTalkFrequency) {
+      setDjTalkFrequency(propDjTalkFrequency);
+    }
+  }, [propDjTalkFrequency]);
+
+  const handleTalkFrequencyChange = (freq: 'every' | 'often' | 'sometimes' | 'rarely') => {
+    setDjTalkFrequency(freq);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_frequency', freq);
+    }
+    onDjTalkFrequencyChange?.(freq);
+    onLogEvent?.(`[DJ Talk Frequency] Switched to ${freq}`);
+  };
+
+  // DJ Talk Length: 'short' | 'mixed' | 'long' (default: 'mixed')
+  const [djTalkLength, setDjTalkLength] = useState<TalkLength>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_length') as TalkLength | null;
+      if (stored && (stored === 'short' || stored === 'mixed' || stored === 'long')) {
+        return stored;
+      }
+    }
+    return 'mixed';
+  });
+
+  const handleTalkLengthChange = (len: TalkLength) => {
+    setDjTalkLength(len);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_length', len);
+    }
+    onLogEvent?.(`[DJ Talk Length] Switched to ${len}`);
+  };
+
+  // Excitement slider: 0 to 100 (default: 30)
+  const [djExcitement, setDjExcitement] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_excitement');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleExcitementChange = (val: number) => {
+    setDjExcitement(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_excitement', String(val));
+    }
+  };
+
+  // Pauses slider: 0 to 100 (default: 30)
+  const [djPauses, setDjPauses] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_pauses');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handlePausesChange = (val: number) => {
+    setDjPauses(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_pauses', String(val));
+    }
+  };
+
+  const localDjStateRef = useRef<DjState>(newDjState());
+  const localVarietyStateRef = useRef<VarietyState>(newVarietyState());
+  const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
+  const jinglesDataRef = useRef<Jingle[]>([]);
+
+  useEffect(() => {
+    fetch('/data/weekly_top.json')
+      .then((res) => validateJsonFetch<Record<string, TopEntry[]>>(res, (data) => typeof data === 'object' && data !== null && !Array.isArray(data)))
+      .then((data) => {
+        weeklyTopDataRef.current = data || undefined;
+      })
+      .catch(() => {
+        weeklyTopDataRef.current = undefined;
+      });
+
+    fetch('/data/jingles.json')
+      .then((res) => validateJsonFetch<Jingle[]>(res, (data) => Array.isArray(data)))
+      .then((data) => {
+        jinglesDataRef.current = Array.isArray(data) ? data : [];
+      })
+      .catch(() => {
+        jinglesDataRef.current = [];
+      });
+  }, []);
+
+  // AI Provider & Local Model (LM Studio) State
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'lmstudio'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('retrofm_ai_provider') as 'gemini' | 'lmstudio') || 'gemini';
+    }
+    return 'gemini';
+  });
+  const [lmStudioEndpoint, setLmStudioEndpoint] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_lmstudio_endpoint') || 'http://localhost:1234/v1';
+    }
+    return 'http://localhost:1234/v1';
+  });
+  const [selectedLmModel, setSelectedLmModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('retrofm_lmstudio_model') || '';
+    }
+    return '';
+  });
+  const [lmStudioStatus, setLmStudioStatus] = useState<{
+    connected: boolean | null;
+    models: string[];
+    error: string | null;
+    isChecking: boolean;
+  }>({
+    connected: null,
+    models: [],
+    error: null,
+    isChecking: false,
+  });
+  const [isTestingLmConnection, setIsTestingLmConnection] = useState<boolean>(false);
+  const [lmTestResult, setLmTestResult] = useState<string | null>(null);
+
+  // State for "Force DJ break now" testing aid
+  const [isForcingBreak, setIsForcingBreak] = useState<boolean>(false);
+  const [forceBreakResult, setForceBreakResult] = useState<{
+    decision: string;
+    breakType: string;
+    text: string;
+    scriptWriter: string;
+    voice: string;
+    error: string | null;
+  } | null>(null);
 
   // Execution & state
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -104,6 +363,193 @@ export function DJBreakGeneratorTest({
 
   // Track currently speaking break
   const [speakingBreakId, setSpeakingBreakId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialDate) setSelectedDate(initialDate);
+  }, [initialDate]);
+
+  useEffect(() => {
+    if (initialSongPlayed) setSongPlayed(initialSongPlayed);
+  }, [initialSongPlayed]);
+
+  useEffect(() => {
+    if (initialSongNext) setSongNext(initialSongNext);
+  }, [initialSongNext]);
+
+  // Persist selections to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_ai_provider', aiProvider);
+    }
+  }, [aiProvider]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_lmstudio_endpoint', lmStudioEndpoint);
+    }
+  }, [lmStudioEndpoint]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_lmstudio_model', selectedLmModel);
+    }
+  }, [selectedLmModel]);
+
+  const checkLmStudioStatus = async (endpointUrl = lmStudioEndpoint) => {
+    setLmStudioStatus((prev) => ({ ...prev, isChecking: true, error: null }));
+    try {
+      const res = await fetch('/api/ai/lmstudio/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: endpointUrl }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLmStudioStatus({
+          connected: true,
+          models: data.models || [],
+          error: null,
+          isChecking: false,
+        });
+        if (data.models && data.models.length > 0 && !selectedLmModel) {
+          setSelectedLmModel(data.models[0]);
+        }
+      } else {
+        setLmStudioStatus({
+          connected: false,
+          models: [],
+          error: data.error || 'Failed to connect to LM Studio',
+          isChecking: false,
+        });
+      }
+    } catch (err: any) {
+      setLmStudioStatus({
+        connected: false,
+        models: [],
+        error: err?.message || 'Network error querying LM Studio status',
+        isChecking: false,
+      });
+    }
+  };
+
+  const testLmStudioPrompt = async () => {
+    setIsTestingLmConnection(true);
+    setLmTestResult(null);
+    try {
+      const res = await fetch('/api/ai/lmstudio/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: lmStudioEndpoint,
+          model: selectedLmModel,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLmTestResult(`✓ Success (${data.callDurationSec}s, ${data.modelUsed}): "${data.sampleBreak}"`);
+        onLogEvent?.(`[LM Studio Test] Connected! Sample break generated in ${data.callDurationSec}s using ${data.modelUsed}.`);
+      } else {
+        setLmTestResult(`✗ Test Failed: ${data.error || 'Unknown error'}`);
+        onLogEvent?.(`[LM Studio Test Error] ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setLmTestResult(`✗ Network error: ${err?.message || 'Could not reach server'}`);
+    } finally {
+      setIsTestingLmConnection(false);
+    }
+  };
+
+  const handleForceDjBreakNow = async () => {
+    setIsForcingBreak(true);
+    setForceBreakResult(null);
+
+    const scriptWriterLabel = aiProvider === 'lmstudio' ? 'LM Studio' : 'Gemini';
+    const voiceLabel = `${voiceEngine} (${selectedVoiceName})`;
+
+    try {
+      const prev = toObsSong(librarySongPlayed);
+      const next = toObsSong(librarySongNext);
+      const date = selectedDate || '1977-05-01';
+
+      onLogEvent?.(`[Force DJ Break] Running segment break pipeline (prevSong: ${prev ? `${prev.artist} - ${prev.title}` : 'none'}, script writer: ${scriptWriterLabel})...`);
+
+      const res = await fetch('/api/dj/segment-break', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedDate: date,
+          prevSong: prev ? { title: prev.title, artist: prev.artist, id: prev.id, first_chart_date: librarySongPlayed?.first_chart_date } : null,
+          nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: librarySongNext?.first_chart_date } : null,
+          frequencySetting: 1.0, // Force break decision
+          frequencyPreset: djTalkFrequency,
+          frequencySource: 'forced_test',
+          usedFactKeys: [],
+          blacklistedFactKeys: [],
+          lastTopic: null,
+          provider: aiProvider,
+          endpoint: lmStudioEndpoint,
+          model: selectedLmModel,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const decision = data.decision || 'unknown';
+      const breakType = data.breakType || 'none';
+      const text = data.finalSpeech || '';
+
+      if (decision === 'speak' && text) {
+        setForceBreakResult({
+          decision,
+          breakType,
+          text,
+          scriptWriter: scriptWriterLabel,
+          voice: voiceLabel,
+          error: null,
+        });
+
+        onLogEvent?.(`[Force DJ Break] Decision: speak (${breakType}) | Speaking via ${voiceLabel}: "${text}"`);
+        if (onSpeakOverMusic) {
+          onSpeakOverMusic(text);
+        } else if (onSpeakScript) {
+          onSpeakScript(text);
+        }
+      } else {
+        const reason = data.silenceReason || 'Pipeline returned silence';
+        setForceBreakResult({
+          decision,
+          breakType,
+          text: '',
+          scriptWriter: scriptWriterLabel,
+          voice: voiceLabel,
+          error: reason,
+        });
+        onLogEvent?.(`[Force DJ Break] Decision: ${decision} (${reason})`);
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || 'Unknown error';
+      setForceBreakResult({
+        decision: 'error',
+        breakType: 'none',
+        text: '',
+        scriptWriter: scriptWriterLabel,
+        voice: voiceLabel,
+        error: errMsg,
+      });
+      onLogEvent?.(`[Force DJ Break Error] ${errMsg}`);
+    } finally {
+      setIsForcingBreak(false);
+    }
+  };
+
+  useEffect(() => {
+    if (aiProvider === 'lmstudio') {
+      checkLmStudioStatus();
+    }
+  }, [aiProvider]);
 
   const fetchStats = async () => {
     try {
@@ -170,6 +616,145 @@ export function DJBreakGeneratorTest({
     setQuotaExceeded(false);
     setRetryStatusText(null);
 
+    if (djMode === 'off') {
+      onLogEvent?.('[DJ Break] DJ Mode is Off. Enable AI-written or Observations mode to generate breaks.');
+      setErrorMsg('DJ commentary is turned OFF. Set DJ mode to "AI-written" or "Observations" to generate breaks.');
+      return;
+    }
+
+    if (djMode === 'observations') {
+      setIsGenerating(true);
+      setCurrentStep(1);
+      setStepElapsedSeconds(0);
+      try {
+        const prev = librarySongPlayed ? toObsSong(librarySongPlayed) : parseSongString(songPlayed, target);
+        const next = librarySongNext ? toObsSong(librarySongNext) : parseSongString(songNext, target);
+
+        // Find topOfWeek
+        const allWeeks = weeklyTopDataRef.current;
+        let topOfWeek: TopEntry[] | null = null;
+        if (allWeeks) {
+          const validDates = Object.keys(allWeeks).filter((d) => d <= target).sort();
+          if (validDates.length > 0) {
+            topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+          }
+        }
+
+        const yearNum = parseInt(target.slice(0, 4), 10);
+        const decadeStr = (!isNaN(yearNum) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s');
+
+        const varietyRes = buildVarietyBreak(
+          {
+            prev,
+            next,
+            date: target,
+            now: new Date(),
+            decade: decadeStr,
+            genre: format || 'Pop',
+            frequency: '91.7',
+            topOfWeek,
+            jingles: jinglesDataRef.current,
+            news: null,
+            length: djTalkLength,
+          },
+          localVarietyStateRef.current,
+          Math.random,
+          TALK_PRESETS[djTalkFrequency]
+        );
+        localVarietyStateRef.current = varietyRes.state;
+
+        let finalText = varietyRes.text;
+        if (finalText && varietyRes.kind !== 'jingle') {
+          const protect: string[] = [];
+          if (prev) {
+            const spokenPrev = artistTitle(prev);
+            protect.push(spokenPrev.artist, spokenPrev.title, prev.title, prev.artist);
+          }
+          if (next) {
+            const spokenNext = artistTitle(next);
+            protect.push(spokenNext.artist, spokenNext.title, next.title, next.artist);
+          }
+          const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+          const beforeShaping = finalText;
+          finalText = shapeDelivery(finalText, {
+            excitement: djExcitement,
+            pauses: djPauses,
+            protect: uniqueProtect,
+          });
+          console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${finalText}"`);
+        }
+
+        const detailFormatted = varietyRes.kind === 'observation' ? (varietyRes.detail ? `observation/${varietyRes.detail}` : 'observation') : varietyRes.kind;
+        if (!finalText && varietyRes.kind !== 'jingle') {
+          console.log('[DJ] silent break');
+        } else {
+          console.log(`[DJ] mode=observations kind=${varietyRes.kind} detail=${varietyRes.detail ?? 'none'} text="${finalText}"`);
+        }
+        onObservationBreakGenerated?.({
+          text: finalText,
+          slot: 'before',
+          kind: detailFormatted,
+        });
+
+        if (!finalText && varietyRes.kind !== 'jingle') {
+          onLogEvent?.('[DJ Break Observations] Observation break generated empty text (no commentary).');
+          setResult({
+            success: true,
+            targetDate: target,
+            personality,
+            timeOfDay,
+            format,
+            songPlayed,
+            songNext,
+            secondsAvailable,
+            breaks: [],
+          });
+          return;
+        }
+
+        const displayText = varietyRes.kind === 'jingle' ? `[Jingle: ${varietyRes.jingle?.title || varietyRes.jingle?.youtube_id}]` : finalText;
+        const words = displayText.split(/\s+/).filter(Boolean);
+        const genBreak: GeneratedDJBreak = {
+          id: `obs_break_${Date.now()}`,
+          breakNumber: 1,
+          scriptText: displayText,
+          wordCount: words.length,
+          estimatedSeconds: varietyRes.kind === 'jingle' ? (varietyRes.jingle?.duration_sec || 5) : Math.max(3, Math.round(words.length / 2.5)),
+          targetSeconds: secondsAvailable,
+          citedItems: varietyRes.kind ? [{
+            headline: `Variety break (${detailFormatted})`,
+            publishedDate: target,
+            category: 'music',
+          }] : [],
+          anachronismCheck: {
+            status: 'PASS',
+            notes: 'Verified historical variety break (template-based, no AI).',
+            flaggedPhrases: [],
+          },
+        };
+
+        setResult({
+          success: true,
+          targetDate: target,
+          personality,
+          timeOfDay,
+          format,
+          songPlayed,
+          songNext,
+          secondsAvailable,
+          breaks: [genBreak],
+          modelUsed: 'variety-system (no AI)',
+        });
+        onLogEvent?.(`[DJ Variety] Generated break (kind: ${detailFormatted}): "${displayText}"`);
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to generate observation break');
+      } finally {
+        setIsGenerating(false);
+        setCurrentStep(null);
+      }
+      return;
+    }
+
     // Start Step 1
     setIsGenerating(true);
     setCurrentStep(1);
@@ -207,6 +792,9 @@ export function DJBreakGeneratorTest({
           secondsAvailable,
           forceFresh,
           nationalFocus,
+          provider: aiProvider,
+          lmStudioEndpoint,
+          model: selectedLmModel,
         }),
       });
 
@@ -363,6 +951,8 @@ export function DJBreakGeneratorTest({
           secondsAvailable,
           nationalFocus,
           providedFactItems: step1Data.providedFactItems,
+          provider: aiProvider,
+          lmStudioEndpoint,
         }),
       });
 
@@ -549,7 +1139,9 @@ export function DJBreakGeneratorTest({
 
         {/* Text Model Call Session Pill */}
         <div className="flex items-center gap-3 bg-[#0a0c10] border border-zinc-800 rounded px-3 py-1.5 text-[11px]">
-          <span className="text-zinc-500 uppercase font-semibold">Gemini Text Model Calls:</span>
+          <span className="text-zinc-500 uppercase font-semibold">
+            {aiProvider === 'lmstudio' ? 'LM Studio' : 'Gemini'} Calls:
+          </span>
           <span className="text-zinc-300">
             Session Calls: <strong className="text-amber-400">{sessionStats.textModelCalls}</strong>
           </span>
@@ -558,6 +1150,324 @@ export function DJBreakGeneratorTest({
             Cache Hits: <strong className="text-emerald-400">{sessionStats.cacheHits}</strong>
           </span>
         </div>
+      </div>
+
+      {/* DJ Mode & Provider Selector Section */}
+      <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
+        {/* DJ Talk Frequency (Placed at top of DJ section, drives breaks across modes) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+          <div className="flex items-center gap-2">
+            <Mic2 className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              DJ talk frequency:
+            </span>
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
+              <button
+                key={freq}
+                type="button"
+                onClick={() => handleTalkFrequencyChange(freq)}
+                className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                  djTalkFrequency === freq
+                    ? 'bg-amber-500 text-black shadow'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {freq}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* DJ Mode Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              DJ Mode:
+            </span>
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            <button
+              type="button"
+              onClick={() => handleModeChange('ai')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'ai'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              AI-written (current)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('observations')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'observations'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Observations (template)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('off')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                djMode === 'off'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+
+        {/* Template Observation Options (Talk length, Delivery sliders) */}
+        {djMode === 'observations' && (
+          <>
+            {/* DJ Talk Length: Short / Mixed / Long */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                <Mic2 className="w-4 h-4 text-amber-400" />
+                <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+                  DJ talk length:
+                </span>
+              </div>
+
+              <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+                {(['short', 'mixed', 'long'] as const).map((len) => (
+                  <button
+                    key={len}
+                    type="button"
+                    onClick={() => handleTalkLengthChange(len)}
+                    className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                      djTalkLength === len
+                        ? 'bg-amber-500 text-black shadow'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {len}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Delivery Shaping Sliders: Excitement & Pauses */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2.5 border-b border-zinc-800/80">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-zinc-300 font-bold">Excitement:</span>
+                  <span className="text-amber-400 font-mono font-bold">{djExcitement}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={djExcitement}
+                  onChange={(e) => handleExcitementChange(parseInt(e.target.value, 10) || 0)}
+                  className="w-full accent-amber-500 cursor-pointer h-1.5"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-zinc-300 font-bold">Pauses:</span>
+                  <span className="text-amber-400 font-mono font-bold">{djPauses}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={djPauses}
+                  onChange={(e) => handlePausesChange(parseInt(e.target.value, 10) || 0)}
+                  className="w-full accent-amber-500 cursor-pointer h-1.5"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* AI Provider Toggle: Gemini vs LM Studio (Only applies in AI-written mode) */}
+        <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-opacity ${
+          djMode === 'ai' ? 'opacity-100' : 'opacity-40 pointer-events-none'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              AI Script Generation Provider:
+            </span>
+            {djMode !== 'ai' && (
+              <span className="text-[10px] text-zinc-500 font-mono normal-case">
+                (Only applies in AI-written mode)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            <button
+              type="button"
+              disabled={djMode !== 'ai'}
+              onClick={() => setAiProvider('gemini')}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer ${
+                aiProvider === 'gemini'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              ⚡ Gemini Cloud
+            </button>
+            <button
+              type="button"
+              disabled={djMode !== 'ai'}
+              onClick={() => {
+                setAiProvider('lmstudio');
+                if (lmStudioStatus.connected === null) {
+                  checkLmStudioStatus();
+                }
+              }}
+              className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                aiProvider === 'lmstudio'
+                  ? 'bg-amber-500 text-black shadow'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <span>💻 Local Model (LM Studio)</span>
+              {lmStudioStatus.connected === true && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" title="LM Studio online" />
+              )}
+              {lmStudioStatus.connected === false && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" title="LM Studio unreachable" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Test DJ Line Button */}
+        {onTestDjLine && (
+          <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
+            <span className="text-[11px] text-zinc-400">
+              Immediate test of observation break with current and next song:
+            </span>
+            <button
+              type="button"
+              onClick={onTestDjLine}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Mic2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Test DJ line</span>
+            </button>
+          </div>
+        )}
+
+        {/* LM Studio Specific Settings */}
+        {aiProvider === 'lmstudio' && (
+          <div className="pt-2 border-t border-zinc-800/80 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              {/* Endpoint Input */}
+              <div className="md:col-span-5">
+                <label className="text-[10px] text-zinc-400 font-semibold block mb-1 uppercase">
+                  LM Studio Server Endpoint:
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={lmStudioEndpoint}
+                    onChange={(e) => setLmStudioEndpoint(e.target.value)}
+                    placeholder="http://localhost:1234/v1"
+                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => checkLmStudioStatus()}
+                    disabled={lmStudioStatus.isChecking}
+                    className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 rounded text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {lmStudioStatus.isChecking ? 'Checking...' : 'Check'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Model Selector */}
+              <div className="md:col-span-4">
+                <label className="text-[10px] text-zinc-400 font-semibold block mb-1 uppercase">
+                  Discovered / Active Model:
+                </label>
+                {lmStudioStatus.models.length > 0 ? (
+                  <select
+                    value={selectedLmModel}
+                    onChange={(e) => setSelectedLmModel(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    {lmStudioStatus.models.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={selectedLmModel}
+                    onChange={(e) => setSelectedLmModel(e.target.value)}
+                    placeholder="e.g. openai/gpt-oss-20b or custom"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  />
+                )}
+              </div>
+
+              {/* Test Connection Button */}
+              <div className="md:col-span-3">
+                <button
+                  type="button"
+                  onClick={testLmStudioPrompt}
+                  disabled={isTestingLmConnection || lmStudioStatus.isChecking}
+                  className="w-full py-1.5 px-3 rounded bg-zinc-800 hover:bg-zinc-700 border border-amber-500/40 text-amber-300 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isTestingLmConnection ? 'animate-spin' : ''}`} />
+                  <span>{isTestingLmConnection ? 'Testing...' : 'Test Local Model'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Connection Status & Test Result Badges */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {lmStudioStatus.connected === true && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    Connected to LM Studio ({lmStudioStatus.models.length} model{lmStudioStatus.models.length === 1 ? '' : 's'} available)
+                  </span>
+                </span>
+              )}
+
+              {lmStudioStatus.connected === false && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/60 border border-rose-800 text-rose-300 text-[11px]">
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>{lmStudioStatus.error || 'LM Studio server offline at endpoint'}</span>
+                </span>
+              )}
+
+              {lmTestResult && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] ${
+                    lmTestResult.startsWith('✓')
+                      ? 'bg-emerald-950/50 border-emerald-800 text-emerald-300'
+                      : 'bg-rose-950/50 border-rose-800 text-rose-300'
+                  }`}
+                >
+                  {lmTestResult}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Date Presets Row */}
@@ -766,6 +1676,35 @@ export function DJBreakGeneratorTest({
                   : 'Generate 3 Breaks'}
               </span>
             </button>
+
+            {/* Force DJ break now button */}
+            <button
+              type="button"
+              onClick={handleForceDjBreakNow}
+              disabled={isForcingBreak}
+              className="px-4 py-2.5 rounded bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/60 disabled:opacity-50 text-amber-300 font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              title="Force DJ break now using currently playing song as previous song"
+            >
+              <Radio className={`w-3.5 h-3.5 text-amber-400 ${isForcingBreak ? 'animate-spin' : ''}`} />
+              <span>{isForcingBreak ? 'Forcing Break...' : 'Force DJ break now'}</span>
+            </button>
+
+            {/* Plain text result next to button */}
+            {forceBreakResult && (
+              <div className="text-[11px] font-mono text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-800 max-w-full leading-relaxed break-words">
+                <span className="text-amber-400 font-bold">Decision:</span> {forceBreakResult.decision}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Type:</span> {forceBreakResult.breakType}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Script Writer:</span> {forceBreakResult.scriptWriter}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Voice:</span> {forceBreakResult.voice}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Text:</span> &quot;{forceBreakResult.text}&quot;
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Error:</span> {forceBreakResult.error || 'none'}
+              </div>
+            )}
           </div>
         </div>
 

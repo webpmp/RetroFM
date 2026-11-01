@@ -13,6 +13,10 @@ import {
   PERSONALITIES,
 } from './GeminiScriptWriterProvider.js';
 import {
+  LMStudioScriptWriterProvider,
+  LMStudioConfig,
+} from './LMStudioScriptWriterProvider.js';
+import {
   computeBreakCacheKey,
   readBreakCache,
   writeBreakCache,
@@ -23,14 +27,24 @@ import { buildFactPacket } from '../news/factPacketService.js';
 import { FactItem } from '../news/types.js';
 
 // Default model can be configured via environment or default setting
-const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash';
-const FALLBACK_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_FALLBACK;
+const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
+const FALLBACK_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || undefined;
 
-export const activeScriptWriter: GeminiScriptWriterProvider = new GeminiScriptWriterProvider(
-  process.env.GEMINI_API_KEY,
-  DEFAULT_TEXT_MODEL,
-  FALLBACK_TEXT_MODEL
-);
+export {
+  getDefaultGeminiWriter,
+  getScriptWriterProvider,
+} from './scriptWriterFactory.js';
+import { getDefaultGeminiWriter, getScriptWriterProvider } from './scriptWriterFactory.js';
+
+export const defaultGeminiWriter = new Proxy({} as GeminiScriptWriterProvider, {
+  get(_target, prop) {
+    const instance = getDefaultGeminiWriter();
+    const val = (instance as any)[prop];
+    return typeof val === 'function' ? val.bind(instance) : val;
+  },
+});
+
+export const activeScriptWriter = defaultGeminiWriter;
 
 /**
  * Step 1 Service:
@@ -51,9 +65,13 @@ export async function generateDJBreaksStep1Service(
     secondsAvailable: number;
     forceFresh?: boolean;
     nationalFocus?: boolean;
+    provider?: 'gemini' | 'lmstudio';
+    lmStudioEndpoint?: string;
+    model?: string;
   }
 ): Promise<BreakGeneratorResult> {
   const isNationalFocus = params.nationalFocus !== false;
+  const providerType = params.provider || 'gemini';
   const cacheKey = computeBreakCacheKey({
     targetDate: params.targetDate,
     personality: params.personality,
@@ -63,6 +81,8 @@ export async function generateDJBreaksStep1Service(
     songNext: params.songNext,
     secondsAvailable: params.secondsAvailable,
     nationalFocus: isNationalFocus,
+    provider: providerType,
+    model: params.model,
   });
 
   if (!params.forceFresh) {
@@ -97,7 +117,13 @@ export async function generateDJBreaksStep1Service(
     nationalFocusEnabled: isNationalFocus,
   };
 
-  const step1 = await activeScriptWriter.writeBreaksOnly(input);
+  const writer = getScriptWriterProvider({
+    provider: providerType,
+    endpoint: params.lmStudioEndpoint,
+    model: params.model,
+  });
+
+  const step1 = await writer.writeBreaksOnly(input);
 
   return {
     success: step1.success,
@@ -144,6 +170,8 @@ export async function auditDJBreaksStep2Service(
     secondsAvailable?: number;
     nationalFocus?: boolean;
     providedFactItems?: FactItem[];
+    provider?: 'gemini' | 'lmstudio';
+    lmStudioEndpoint?: string;
   }
 ): Promise<{
   success: boolean;
@@ -160,7 +188,14 @@ export async function auditDJBreaksStep2Service(
     scriptText: b.scriptText || '',
   }));
 
-  const step2 = await activeScriptWriter.auditBreaksOnly(
+  const providerType = params.provider || 'gemini';
+  const writer = getScriptWriterProvider({
+    provider: providerType,
+    endpoint: params.lmStudioEndpoint,
+    model: params.modelUsed,
+  });
+
+  const step2 = await writer.auditBreaksOnly(
     scriptsForAudit,
     params.targetDate,
     params.modelUsed
@@ -198,6 +233,8 @@ export async function auditDJBreaksStep2Service(
       songNext: params.songNext,
       secondsAvailable: params.secondsAvailable,
       nationalFocus: isNationalFocus,
+      provider: providerType,
+      model: params.modelUsed,
     });
 
     const fullResult: BreakGeneratorResult = {
@@ -217,6 +254,7 @@ export async function auditDJBreaksStep2Service(
       cached: false,
       auditCompleted: true,
       auditUnavailable: step2.auditUnavailable,
+      provider: providerType,
     };
 
     writeBreakCache(cacheKey, fullResult);
@@ -253,9 +291,13 @@ export async function generateDJBreaksService(
     secondsAvailable: number;
     forceFresh?: boolean;
     nationalFocus?: boolean;
+    provider?: 'gemini' | 'lmstudio';
+    lmStudioEndpoint?: string;
+    model?: string;
   }
 ): Promise<BreakGeneratorResult> {
   const isNationalFocus = params.nationalFocus !== false;
+  const providerType = params.provider || 'gemini';
   const cacheKey = computeBreakCacheKey({
     targetDate: params.targetDate,
     personality: params.personality,
@@ -265,6 +307,8 @@ export async function generateDJBreaksService(
     songNext: params.songNext,
     secondsAvailable: params.secondsAvailable,
     nationalFocus: isNationalFocus,
+    provider: providerType,
+    model: params.model,
   });
 
   if (!params.forceFresh) {
@@ -294,8 +338,15 @@ export async function generateDJBreaksService(
     nationalFocusEnabled: isNationalFocus,
   };
 
-  const result = await activeScriptWriter.generateBreaks(input);
+  const writer = getScriptWriterProvider({
+    provider: providerType,
+    endpoint: params.lmStudioEndpoint,
+    model: params.model,
+  });
+
+  const result = await writer.generateBreaks(input);
   result.nationalFocusEnabled = isNationalFocus;
+  result.provider = providerType;
 
   if (result.success && result.breaks && result.breaks.length > 0) {
     writeBreakCache(cacheKey, result);

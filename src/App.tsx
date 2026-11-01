@@ -34,7 +34,8 @@ import {
   Database,
   Cpu,
   Rocket,
-  Copy
+  Copy,
+  Mic2
 } from 'lucide-react';
 import { YouTubeMusicProvider } from './services/music/YouTubeMusicProvider.js';
 import { VolumeController } from './services/audio/VolumeController.js';
@@ -43,7 +44,52 @@ import { generateTTS, fetchKokoroStatus, KokoroVoice } from './services/ttsClien
 import { generateAndDownloadExtensionZip, EXTENSION_FILES, EXTENSION_VERSION } from './services/extensionBundle.js';
 import { HistoricalFactPacketTest } from './components/HistoricalFactPacketTest.js';
 import { DJBreakGeneratorTest } from './components/DJBreakGeneratorTest.js';
+import { loadLibrary, assignPrimaryGenres, newPlayState, pickSong, hasGenre, getAvailableGenres, isSongEligibleForGenre, isStrictlyReleasedBefore, isReleasedOnOrBefore, validateJsonFetch, LibrarySong, PlayState, Pick as SongPick } from './services/songSelector.js';
+import {
+  buildBreak,
+  newDjState,
+  Song as ObsSong,
+  DjState,
+  TALK_PRESETS,
+  type TalkLength,
+} from './services/djBreak/djBreakObservations.js';
+import {
+  buildVarietyBreak,
+  newVarietyState,
+  artistTitle,
+  type VarietyState,
+  type BreakResult as VarietyBreakResult,
+  type Jingle,
+  type TopEntry,
+} from './services/djBreak/djVariety.js';
+import {
+  newBreakSelectionSessionState,
+  BreakSelectionSessionState,
+  BreakDecisionResponsePayload,
+} from './services/djBreak/breakDecisionTypes.js';
+import { getScriptWriterProvider } from './services/djBreak/scriptWriterFactory.js';
+import { getEnv } from './services/envUtil.js';
+import { validateBreakOutput } from './services/djBreak/breakValidator.js';
+import { shapeDelivery } from './services/djBreak/djDelivery.js';
+import { djVoiceEffects, DjVoiceEffectsSettings } from './services/audio/DjVoiceEffectsService.js';
 import manifest from '../extension/manifest.json';
+
+function toObsSong(s: LibrarySong | null | undefined): ObsSong | null {
+  if (!s) return null;
+  return {
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    release_date: s.release_date ?? null,
+    release_date_precision: s.release_date_precision ?? null,
+    primary_genre: s.primary_genre ?? null,
+    genres: s.genres ?? null,
+    peak_position: s.peak_position ?? null,
+    peak_date: s.peak_date ?? null,
+    last_chart_date: s.last_chart_date ?? null,
+    weeks_on_chart: s.weeks_on_chart ?? null,
+  };
+}
 
 // Minimum required Chrome extension version
 export const MIN_REQUIRED_EXTENSION_VERSION = manifest.version;
@@ -140,12 +186,167 @@ export const RETROFM_JINGLE_CONFIG = {
 
 // Default Station Song Queue (Ordered rotation of canonical tracks)
 export const DEFAULT_SONG_QUEUE = [
-  { videoId: 'f-BDCwxBF9Q', title: 'a-ha - Take on Me (1985)', artist: 'a-ha', song: 'Take on Me', year: '1985', duration: '03:47' },
-  { videoId: 'Kr4EQDVETuA', title: 'Michael Jackson - Billie Jean (1983)', artist: 'Michael Jackson', song: 'Billie Jean', year: '1983', duration: '04:54' },
-  { videoId: 'Izx6DQUrsag', title: 'Prince - When Doves Cry (1984)', artist: 'Prince', song: 'When Doves Cry', year: '1984', duration: '05:52' },
-  { videoId: '6Q2mFw4VYBo', title: 'U2 - With or Without You (1987)', artist: 'U2', song: 'With or Without You', year: '1987', duration: '04:56' },
-  { videoId: 'OJWJE0x7T4Q', title: 'Peter Gabriel - Sledgehammer (1986)', artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986', duration: '04:58' }
+  { videoId: 'f-BDCwxBF9Q', title: 'a-ha - Take on Me (1985)', artist: 'a-ha', song: 'Take on Me', year: '1985', release_date: '1984-10-19', release_date_precision: 'day', duration: '03:47' },
+  { videoId: 'Kr4EQDVETuA', title: 'Michael Jackson - Billie Jean (1983)', artist: 'Michael Jackson', song: 'Billie Jean', year: '1983', release_date: '1983-01-02', release_date_precision: 'day', duration: '04:54' },
+  { videoId: 'Izx6DQUrsag', title: 'Prince - When Doves Cry (1984)', artist: 'Prince', song: 'When Doves Cry', year: '1984', release_date: '1984-05-16', release_date_precision: 'day', duration: '05:52' },
+  { videoId: '6Q2mFw4VYBo', title: 'U2 - With or Without You (1987)', artist: 'U2', song: 'With or Without You', year: '1987', release_date: '1987-03-16', release_date_precision: 'day', duration: '04:56' },
+  { videoId: 'OJWJE0x7T4Q', title: 'Peter Gabriel - Sledgehammer (1986)', artist: 'Peter Gabriel', song: 'Sledgehammer', year: '1986', release_date: '1986-04-21', release_date_precision: 'day', duration: '04:58' }
 ];
+
+export interface StationConfig {
+  genre: string;
+  frequency: number;
+  presetKey?: string;
+  stationId?: string;
+}
+
+export const ROTATING_TEST_PRESET_KEYS = [
+  'a-ha|take on me',
+  'michael jackson|billie jean',
+  'prince|when doves cry',
+  'u2|with or without you',
+  'peter gabriel|sledgehammer'
+];
+
+export function getPresetForStation(stationCfg?: StationConfig): HardcodedPresetInfo {
+  if (stationCfg?.presetKey && HARDCODED_PRESETS[stationCfg.presetKey]) {
+    return HARDCODED_PRESETS[stationCfg.presetKey];
+  }
+  const idx = Math.abs(Math.round((stationCfg?.frequency ?? 90) * 10)) % ROTATING_TEST_PRESET_KEYS.length;
+  return HARDCODED_PRESETS[ROTATING_TEST_PRESET_KEYS[idx]];
+}
+
+export const STATIONS_BY_DECADE: Record<number, StationConfig[]> = {
+  1960: [
+    { genre: 'Pop', frequency: 95.1, presetKey: 'a-ha|take on me', stationId: 'WPOP-FM' }, // 0
+    { genre: 'Motown', frequency: 101.5, presetKey: 'michael jackson|billie jean', stationId: 'WMOT-FM' }, // 1
+    { genre: 'Soul', frequency: 107.1, presetKey: 'prince|when doves cry', stationId: 'WSOL-FM' }, // 2
+    { genre: 'R&B', frequency: 93.5, presetKey: 'u2|with or without you', stationId: 'WRNB-FM' }, // 3
+    { genre: 'Rock', frequency: 99.5, presetKey: 'peter gabriel|sledgehammer', stationId: 'WROC-FM' }, // 4
+    { genre: 'Folk Rock', frequency: 102.7, presetKey: 'a-ha|take on me', stationId: 'WFLK-FM' }, // 0
+    { genre: 'Rock and Roll', frequency: 104.1, presetKey: 'michael jackson|billie jean', stationId: 'WRNR-FM' } // 1
+  ],
+  1970: [
+    { genre: 'AOR', frequency: 95.5, presetKey: 'prince|when doves cry', stationId: 'WAOR-FM' }, // 2
+    { genre: 'Disco', frequency: 98.7, presetKey: 'u2|with or without you', stationId: 'WDIS-FM' }, // 3
+    { genre: 'Progressive Rock', frequency: 92.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WPRG-FM' }, // 4
+    { genre: 'Soft Rock', frequency: 103.5, presetKey: 'a-ha|take on me', stationId: 'WSFT-FM' }, // 0
+    { genre: 'Funk', frequency: 107.5, presetKey: 'michael jackson|billie jean', stationId: 'WFNK-FM' }, // 1
+    { genre: 'Punk Rock', frequency: 91.1, presetKey: 'prince|when doves cry', stationId: 'WPNK-FM' }, // 2
+    { genre: 'Outlaw Country', frequency: 97.1, presetKey: 'u2|with or without you', stationId: 'WOUT-FM' } // 3
+  ],
+  1980: [
+    { genre: 'College Rock', frequency: 88.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WCRK-FM' }, // 4
+    { genre: 'Hip-Hop', frequency: 89.9, presetKey: 'a-ha|take on me', stationId: 'WHIP-FM' }, // 0
+    { genre: 'New Wave', frequency: 90.7, presetKey: 'michael jackson|billie jean', stationId: 'WNEW-FM' }, // 1
+    { genre: 'Synth-Pop', frequency: 93.1, presetKey: 'prince|when doves cry', stationId: 'WSYN-FM' }, // 2
+    { genre: 'Urban Contemporary', frequency: 97.9, presetKey: 'u2|with or without you', stationId: 'WURB-FM' }, // 3
+    { genre: 'CHR', frequency: 101.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WCHR-FM' }, // 4
+    { genre: 'Hair Metal', frequency: 105.5, presetKey: 'a-ha|take on me', stationId: 'WHAR-FM' } // 0
+  ],
+  1990: [
+    { genre: 'Grunge', frequency: 99.9, presetKey: 'michael jackson|billie jean', stationId: 'WGRN-FM' }, // 1
+    { genre: 'Alternative Rock', frequency: 106.7, presetKey: 'prince|when doves cry', stationId: 'WALT-FM' }, // 2
+    { genre: 'Gangsta Rap', frequency: 92.7, presetKey: 'u2|with or without you', stationId: 'WRAP-FM' }, // 3
+    { genre: 'Contemporary R&B', frequency: 105.1, presetKey: 'peter gabriel|sledgehammer', stationId: 'WRNB-FM' }, // 4
+    { genre: 'Teen Pop', frequency: 100.3, presetKey: 'a-ha|take on me', stationId: 'WTEN-FM' }, // 0
+    { genre: 'Eurodance', frequency: 96.3, presetKey: 'michael jackson|billie jean', stationId: 'WEUR-FM' }, // 1
+    { genre: 'Country Pop', frequency: 94.7, presetKey: 'prince|when doves cry', stationId: 'WCPY-FM' } // 2
+  ],
+  2000: [
+    { genre: 'Nu-Metal', frequency: 93.7, presetKey: 'u2|with or without you', stationId: 'WNUM-FM' }, // 3
+    { genre: 'Post-Grunge', frequency: 107.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WPST-FM' }, // 4
+    { genre: 'Emo', frequency: 91.3, presetKey: 'a-ha|take on me', stationId: 'WEMO-FM' }, // 0
+    { genre: 'Crunk', frequency: 106.1, presetKey: 'michael jackson|billie jean', stationId: 'WCRK-FM' }, // 1
+    { genre: 'Electropop', frequency: 102.3, presetKey: 'prince|when doves cry', stationId: 'WEPO-FM' }, // 2
+    { genre: 'Indie Rock', frequency: 90.3, presetKey: 'u2|with or without you', stationId: 'WIND-FM' }, // 3
+    { genre: 'Reggaeton', frequency: 96.7, presetKey: 'peter gabriel|sledgehammer', stationId: 'WREG-FM' } // 4
+  ],
+  2010: [
+    { genre: 'EDM', frequency: 101.1, presetKey: 'a-ha|take on me', stationId: 'WEDM-FM' }, // 0
+    { genre: 'Trap', frequency: 104.5, presetKey: 'michael jackson|billie jean', stationId: 'WTRP-FM' }, // 1
+    { genre: 'Indie Pop', frequency: 91.9, presetKey: 'prince|when doves cry', stationId: 'WIND-FM' }, // 2
+    { genre: 'Mumble Rap', frequency: 99.1, presetKey: 'u2|with or without you', stationId: 'WMUM-FM' }, // 3
+    { genre: 'Synthwave', frequency: 89.3, presetKey: 'peter gabriel|sledgehammer', stationId: 'WSYN-FM' }, // 4
+    { genre: 'Afrobeats', frequency: 105.9, presetKey: 'a-ha|take on me', stationId: 'WAFR-FM' } // 0
+  ],
+  2020: [
+    { genre: 'Bedroom Pop', frequency: 88.1, presetKey: 'michael jackson|billie jean', stationId: 'WBED-FM' }, // 1
+    { genre: 'Hyperpop', frequency: 90.9, presetKey: 'prince|when doves cry', stationId: 'WHYP-FM' }, // 2
+    { genre: 'Amapiano', frequency: 103.9, presetKey: 'u2|with or without you', stationId: 'WAMA-FM' }, // 3
+    { genre: 'Drift Phonk', frequency: 95.9, presetKey: 'peter gabriel|sledgehammer', stationId: 'WDRF-FM' }, // 4
+    { genre: 'Regional Mexican', frequency: 102.9, presetKey: 'a-ha|take on me', stationId: 'WMEX-FM' }, // 0
+    { genre: 'Lofi Hip-Hop', frequency: 88.5, presetKey: 'michael jackson|billie jean', stationId: 'WLOF-FM' } // 1
+  ]
+};
+
+/**
+ * Calculates dynamic station configs with distinct FM dial frequencies (88.1 - 107.9 FM)
+ * for all genres historically available in the library for the given broadcast date.
+ * If the library has eligible songs for that date, returns stations for those exact genres.
+ * Otherwise, falls back to the default decade stations.
+ */
+export function calculateDynamicStationsForDate(
+  library: LibrarySong[],
+  broadcastDate: string,
+  decade: number
+): StationConfig[] {
+  if (library.length > 0) {
+    const availableGenres = getAvailableGenres(library, broadcastDate);
+    if (availableGenres.length > 0) {
+      const minFreq = 88.5;
+      const maxFreq = 107.5;
+      const step = availableGenres.length > 1
+        ? (maxFreq - minFreq) / (availableGenres.length - 1)
+        : 0;
+
+      return availableGenres.map((genre, idx) => {
+        const rawFreq = minFreq + idx * step;
+        // Round to nearest odd tenth on the FM dial (e.g. 88.5, 89.1, 89.7...)
+        const tenths = Math.round(rawFreq * 10);
+        const oddTenths = tenths % 2 === 0 ? tenths + 1 : tenths;
+        const frequency = Math.min(107.9, Math.max(88.1, parseFloat((oddTenths / 10).toFixed(1))));
+        return {
+          genre,
+          frequency,
+          stationId: `W${genre.slice(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X')}-FM`
+        };
+      });
+    }
+  }
+  return STATIONS_BY_DECADE[decade] || [];
+}
+
+/**
+ * Returns the list of active station genre names for a given decade and optional date.
+ */
+export function getStationGenresForDecade(
+  library: LibrarySong[],
+  decade: number,
+  broadcastDate?: string
+): string[] {
+  const dyn = broadcastDate
+    ? calculateDynamicStationsForDate(library, broadcastDate, decade)
+    : [];
+  const stations = dyn.length > 0 ? dyn : (STATIONS_BY_DECADE[decade] || []);
+  return stations.map((s) => s.genre);
+}
+
+/**
+ * Logs the year range and song pool size for each available genre station for a date.
+ */
+export function logStationPools(date: string, library: LibrarySong[]): void {
+  if (!date || library.length === 0) return;
+  const year = parseInt(date.slice(0, 4), 10);
+  const startYear = !isNaN(year) ? year - 2 : date.slice(0, 4);
+  const endYear = !isNaN(year) ? year : date.slice(0, 4);
+  const availableGenres = getAvailableGenres(library, date);
+  const poolSizes: Record<string, number> = {};
+  for (const g of availableGenres) {
+    poolSizes[g] = library.filter((s) => isSongEligibleForGenre(s, g, date)).length;
+  }
+  console.log(`[Station Pools] Date: ${date} | Year range: ${startYear} - ${endYear} | Pools:`, poolSizes);
+}
 
 /**
  * Normalizes YouTube URLs (including /shorts/ and youtu.be) to a 11-char video ID
@@ -189,6 +390,9 @@ export default function App() {
   const musicProviderRef = useRef<YouTubeMusicProvider>(new YouTubeMusicProvider());
   const volumeControllerRef = useRef<VolumeController | null>(null);
   const djAudioRef = useRef<HTMLAudioElement | null>(null);
+  const persistentDjAudioRef = useRef<HTMLAudioElement | null>(null);
+  const isDjAudioInitializedRef = useRef<boolean>(false);
+  const isDjSpeakingRef = useRef<boolean>(false);
 
   // --- Extension & Tab Connection State ---
   const [extensionDetected, setExtensionDetected] = useState<boolean>(false);
@@ -228,10 +432,249 @@ export default function App() {
   // --- Station Song Queue Tracking ---
   const currentQueueIndexRef = useRef<number>(0);
   const isAdvancingRef = useRef<boolean>(false);
+  const isStartupReadyRef = useRef<boolean>(false);
+
+  // --- Station Tuning & Position Preservation State ---
+  const stationPlaybackCacheRef = useRef<Record<string, {
+    genre: string;
+    frequency: number;
+    videoId: string;
+    title: string;
+    artist: string;
+    song: string;
+    year: string;
+    currentTime: number;
+    duration: number;
+  }>>({});
+  const activeStationGenreRef = useRef<string | null>(null);
+  const tuneSequenceRef = useRef<number>(0);
+  const currentPlayingArtistRef = useRef<string>('');
+  const currentPlayingSongRef = useRef<string>('');
+  const currentPlayingYearRef = useRef<string>('');
+  const isTuningSeekingRef = useRef<boolean>(false);
+
+  // --- Historical Song Selector & Library State ---
+  const songLibraryRef = useRef<LibrarySong[]>([]);
+  const songPlayStateRef = useRef<PlayState>(newPlayState());
+  const nextSongRef = useRef<SongPick | null>(null);
+  const activeDateRef = useRef<string>('1964-07-04');
+  const [isLibraryLoaded, setIsLibraryLoaded] = useState<boolean>(false);
+
+  // --- Session Play History (Single Source of Truth) ---
+  interface SessionHistoryEntry {
+    pick: SongPick;
+    song: LibrarySong;
+    videoId: string;
+  }
+  const sessionHistoryRef = useRef<{ entries: SessionHistoryEntry[]; pointer: number }>({
+    entries: [],
+    pointer: -1,
+  });
+  const songUpdateSeqRef = useRef<number>(0);
+
+  // Synchronize recent played IDs with pickSong's songPlayStateRef
+  const syncPlayStateFromHistory = () => {
+    const ids = sessionHistoryRef.current.entries.map((e) => e.song.id);
+    songPlayStateRef.current = { recent: ids.slice(-40) };
+  };
+
+  // --- DJ Mode & Commentary State ---
+  const [djMode, setDjMode] = useState<'ai' | 'observations' | 'off'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('retrofm_dj_mode') as 'ai' | 'observations' | 'off') || 'ai';
+    }
+    return 'ai';
+  });
+  const djStateRef = useRef<DjState>(newDjState());
+  const varietyStateRef = useRef<VarietyState>(newVarietyState());
+  const specABreakStateRef = useRef<BreakSelectionSessionState>(newBreakSelectionSessionState());
+  const blacklistedFactKeysRef = useRef<Set<string>>(new Set<string>());
+  const weeklyTopDataRef = useRef<Record<string, TopEntry[]> | undefined>(undefined);
+  const jinglesDataRef = useRef<Jingle[]>([]);
+  const pendingJingleRef = useRef<Jingle | null>(null);
+  const activeJingleRef = useRef<Jingle | null>(null);
+  const jingleEndedHandlerRef = useRef<(() => void) | null>(null);
+  const jingleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previousLibrarySongRef = useRef<LibrarySong | null>(null);
+  const currentSongPickRef = useRef<SongPick | null>(null);
+  const songStartedAtMsRef = useRef<number>(Date.now());
+  const [currentSongPick, setCurrentSongPick] = useState<SongPick | null>(null);
+  const [lastDjBreak, setLastDjBreak] = useState<{
+    text: string;
+    slot: 'before' | 'after';
+    kind: string | null;
+    detail?: string;
+    timing?: 'land' | 'follow';
+    wordCount?: number;
+    spokenSeconds?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
+  } | null>(null);
+
+  // Ahead-of-time DJ Break preparation & triggering refs (prepares up to 2 breaks ahead)
+  const preparedBreakRef = useRef<{
+    id: string; // current song videoId or song id
+    breakId?: string;
+    audioData: string | null;
+    durationSec: number;
+    text: string;
+    slot: 'before' | 'after';
+    kind: string | null;
+    detail?: string;
+    timing?: 'land' | 'follow';
+    maxSeconds?: number;
+    wordCount?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
+    pendingVarietyState?: VarietyState;
+    varietyResult?: VarietyBreakResult;
+    pendingState?: DjState;
+    triggerTimeRemaining: number;
+    duckTriggerTimeRemaining: number;
+    newsText?: string | null;
+    economyKind?: string | null;
+  } | null>(null);
+
+  // Requirement 5: Second prepared break ahead (prepares 2 breaks ahead during current song)
+  const secondPreparedBreakRef = useRef<{
+    id: string;
+    audioData: string | null;
+    durationSec: number;
+    text: string;
+    slot: 'before' | 'after';
+    kind: string | null;
+    detail?: string;
+    timing?: 'land' | 'follow';
+    maxSeconds?: number;
+    wordCount?: number;
+    deliverySettings?: {
+      length: TalkLength;
+      excitement: number;
+      pauses: number;
+    };
+    pendingVarietyState?: VarietyState;
+    varietyResult?: VarietyBreakResult;
+    pendingState?: DjState;
+    triggerTimeRemaining: number;
+    duckTriggerTimeRemaining: number;
+    newsText?: string | null;
+    economyKind?: string | null;
+  } | null>(null);
+  const [newsDebugStatus, setNewsDebugStatus] = useState<{ isPrefetching: boolean; readyCount: number; uiText: string }>({
+    isPrefetching: false,
+    readyCount: 0,
+    uiText: 'Segment pipeline active',
+  });
+  const isPreparingBreakRef = useRef<boolean>(false);
+  const preparedForSongIdRef = useRef<string | null>(null);
+  const breakTriggeredForSongIdRef = useRef<string | null>(null);
+  const breakDuckingStartedRef = useRef<boolean>(false);
+
+  const handleDjModeChange = (mode: 'ai' | 'observations' | 'off') => {
+    setDjMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_mode', mode);
+    }
+    logMessage(`[DJ Mode] Switched to ${mode === 'ai' ? 'AI-written (current)' : mode === 'observations' ? 'Observations (template)' : 'Off'}`);
+  };
+
+  const [djTalkFrequencySource, setDjTalkFrequencySource] = useState<'default' | 'saved'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
+      if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        return 'saved';
+      }
+    }
+    return 'default';
+  });
+
+  const [djTalkFrequency, setDjTalkFrequency] = useState<'every' | 'often' | 'sometimes' | 'rarely'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_frequency') as 'every' | 'often' | 'sometimes' | 'rarely' | null;
+      if (stored && (stored === 'every' || stored === 'often' || stored === 'sometimes' || stored === 'rarely')) {
+        // Migration / Safety check: If a user previously had 'sometimes' or 'rarely' from early experimentation
+        // but never explicitly changed it after default became 'often', notify or preserve
+        return stored;
+      }
+    }
+    return 'often';
+  });
+
+  const handleDjTalkFrequencyChange = (freq: 'every' | 'often' | 'sometimes' | 'rarely') => {
+    setDjTalkFrequency(freq);
+    setDjTalkFrequencySource('saved');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_frequency', freq);
+    }
+    logMessage(`[DJ Talk Frequency] Switched to ${freq}`);
+  };
+
+  // DJ Talk Length: 'short' | 'mixed' | 'long' (default: 'mixed')
+  const [djTalkLength, setDjTalkLength] = useState<TalkLength>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_talk_length') as TalkLength | null;
+      if (stored && (stored === 'short' || stored === 'mixed' || stored === 'long')) {
+        return stored;
+      }
+    }
+    return 'mixed';
+  });
+
+  const handleDjTalkLengthChange = (len: TalkLength) => {
+    setDjTalkLength(len);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_talk_length', len);
+    }
+    logMessage(`[DJ Talk Length] Switched to ${len}`);
+  };
+
+  // DJ Excitement slider: 0 to 100 (default: 30)
+  const [djExcitement, setDjExcitement] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_excitement');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleDjExcitementChange = (val: number) => {
+    setDjExcitement(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_excitement', String(val));
+    }
+  };
+
+  // DJ Pauses slider: 0 to 100 (default: 30)
+  const [djPauses, setDjPauses] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('retrofm_dj_pauses');
+      if (stored !== null) {
+        const val = parseInt(stored, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return 30;
+  });
+
+  const handleDjPausesChange = (val: number) => {
+    setDjPauses(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retrofm_dj_pauses', String(val));
+    }
+  };
 
   // --- PROGRAM SONG Test State ---
-  const [programArtist, setProgramArtist] = useState<string>('a-ha');
-  const [programSongTitle, setProgramSongTitle] = useState<string>('Take on Me');
+  const [programArtist, setProgramArtist] = useState<string>('');
+  const [programSongTitle, setProgramSongTitle] = useState<string>('');
   const [programYear, setProgramYear] = useState<string>('1995');
   const [isProgrammingSong, setIsProgrammingSong] = useState<boolean>(false);
   const [programSongResult, setProgramSongResult] = useState<{
@@ -240,6 +683,7 @@ export default function App() {
     selectedTitle?: string;
     selectedChannel?: string;
     selectedDuration?: string;
+    selectedDurationSec?: number;
     selectedVideoId?: string;
     selectedUrl?: string;
     confidenceScore?: number;
@@ -253,7 +697,7 @@ export default function App() {
     message: string;
     artist?: string;
     song?: string;
-    type?: 'not_found' | 'api_error';
+    type?: 'not_found' | 'api_error' | 'info';
   } | null>(null);
 
   // --- Audio Diagnostics State ---
@@ -318,8 +762,21 @@ export default function App() {
     }
     return 'am_michael';
   });
+  const [kokoroSpeed, setKokoroSpeed] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_kokoro_speed');
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2.0) {
+          return Math.round(parsed * 100) / 100;
+        }
+      }
+    }
+    return 1.0;
+  });
   const [kokoroVoices, setKokoroVoices] = useState<KokoroVoice[]>([
     { id: 'am_michael', name: 'Michael (American Male - DJ/Host)' },
+    { id: 'am_echo', name: 'Echo (American Male)' },
     { id: 'bm_george', name: 'George (British Male - BBC Host)' },
     { id: 'af_bella', name: 'Bella (American Female)' },
     { id: 'af_sarah', name: 'Sarah (American Female)' },
@@ -327,17 +784,77 @@ export default function App() {
     { id: 'bf_isabella', name: 'Isabella (British Female)' },
   ]);
   const [isKokoroAvailable, setIsKokoroAvailable] = useState<boolean | null>(null);
+  const [hasGeminiApiKey, setHasGeminiApiKey] = useState<boolean | null>(null);
   const [isGeneratingDJ, setIsGeneratingDJ] = useState<boolean>(false);
   const [djAudioData, setDjAudioData] = useState<string | null>(null);
   const [djAudioDuration, setDjAudioDuration] = useState<number>(0);
   const [djModelUsed, setDjModelUsed] = useState<string>('');
   const [djError, setDjError] = useState<string | null>(null);
   const [isPlayingDJPreview, setIsPlayingDJPreview] = useState<boolean>(false);
+  const [djEffects, setDjEffects] = useState<DjVoiceEffectsSettings>(() => djVoiceEffects.getSettings());
+
+  // DJ Voice Volume (0 to 100%, default 50%)
+  const [djVoiceVolumePercent, setDjVoiceVolumePercent] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_dj_voice_volume');
+      if (saved !== null) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return Math.round(parsed);
+      }
+    }
+    const eff = djVoiceEffects.getSettings().voiceVolume;
+    return typeof eff === 'number' ? Math.round(eff * 100) : 50;
+  });
+
+  const handleDjVoiceVolumeChange = (val: number) => {
+    const clamped = Math.min(100, Math.max(0, Math.round(val)));
+    setDjVoiceVolumePercent(clamped);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('retrofm_dj_voice_volume', String(clamped));
+      } catch {}
+    }
+    const updated = djVoiceEffects.updateSettings({ voiceVolume: clamped / 100 });
+    setDjEffects(updated);
+    if (persistentDjAudioRef.current) {
+      persistentDjAudioRef.current.volume = clamped / 100;
+    }
+    if (djAudioRef.current) {
+      djAudioRef.current.volume = clamped / 100;
+    }
+  };
 
   // --- Radio Mix & Ducking Configuration ---
-  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(10); // 10% default
-  const [fadeDownMs, setFadeDownMs] = useState<number>(500); // 500 ms default
-  const [fadeUpMs, setFadeUpMs] = useState<number>(750); // 750 ms default
+  const [duckVolumePercent, setDuckVolumePercent] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_duck_volume');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 5 && parsed <= 60) return parsed;
+      }
+    }
+    return 20; // 20% default
+  });
+  const [fadeDownMs, setFadeDownMs] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_fade_down_ms');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 100 && parsed <= 5000) return parsed;
+      }
+    }
+    return 500; // 500 ms default
+  });
+  const [fadeUpMs, setFadeUpMs] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('retrofm_fade_up_ms');
+      if (saved) {
+        const parsed = Number(saved);
+        if (!isNaN(parsed) && parsed >= 100 && parsed <= 10000) return parsed;
+      }
+    }
+    return 750; // 750 ms default
+  });
   const [isDuckingActive, setIsDuckingActive] = useState<boolean>(false);
   const [mixPhase, setMixPhase] = useState<'IDLE' | 'FADING_DOWN' | 'DJ_SPEAKING' | 'FADING_UP' | 'COMPLETED'>('IDLE');
   const [effectiveMusicVolume, setEffectiveMusicVolume] = useState<number>(100);
@@ -429,9 +946,18 @@ export default function App() {
       musicProvider: musicProviderRef.current,
       onLog: (msg) => logMessage(msg),
       initialUserVolume: 100,
-      initialDuckLevel: 10,
+      initialDuckLevel: duckVolumePercent,
     });
   }
+
+  // Returns the current navigation volume fraction (0.0 - 1.0).
+  // If ducking is active (e.g. during a DJ break spanning a track boundary),
+  // returns the ducked effective volume to prevent blasting full volume on song start.
+  const getNavVolumeFraction = (): number => {
+    const vc = volumeControllerRef.current;
+    if (!vc) return targetMusicVolume / 100;
+    return (vc.isSequenceActive() ? vc.getEffectiveVolume() : vc.getUserVolume()) / 100;
+  };
 
   // Subscribe to VolumeController state changes
   useEffect(() => {
@@ -464,10 +990,24 @@ export default function App() {
       })
       .catch(() => setHasYouTubeApiKey(false));
 
+    // Query health status (Gemini API key presence)
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((data) => {
+        setHasGeminiApiKey(Boolean(data.hasApiKey));
+      })
+      .catch(() => setHasGeminiApiKey(false));
+
     // Check Kokoro service availability and load supported voices
     fetchKokoroStatus()
       .then((status) => {
         setIsKokoroAvailable(status.isAvailable);
+        if (status.isAvailable) {
+          const savedEngine = typeof window !== 'undefined' ? localStorage.getItem('retrofm_voice_engine') : null;
+          if (!savedEngine || savedEngine === 'BROWSER') {
+            setVoiceEngine('KOKORO');
+          }
+        }
         if (status.voices && status.voices.length > 0) {
           setKokoroVoices(status.voices);
           // If current selection is invalid, reset to default
@@ -498,6 +1038,12 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem('retrofm_kokoro_speed', kokoroSpeed.toFixed(2));
+    } catch {}
+  }, [kokoroSpeed]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem('retrofm_gemini_voice', selectedVoice);
     } catch {}
   }, [selectedVoice]);
@@ -507,6 +1053,70 @@ export default function App() {
       localStorage.setItem('retrofm_gemini_model', selectedModel);
     } catch {}
   }, [selectedModel]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_duck_volume', String(duckVolumePercent));
+    } catch {}
+  }, [duckVolumePercent]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retrofm_dj_voice_volume', String(djVoiceVolumePercent));
+    } catch {}
+  }, [djVoiceVolumePercent]);
+
+  // --- Load Song Library once at startup ---
+  useEffect(() => {
+    songPlayStateRef.current = newPlayState();
+    loadLibrary()
+      .then((lib) => {
+        assignPrimaryGenres(lib);
+        songLibraryRef.current = lib;
+        logMessage(`[Song Selector] Loaded historical song library (${lib.length} tracks).`);
+        setIsLibraryLoaded(true);
+        if (activeDateRef.current) {
+          logStationPools(activeDateRef.current, lib);
+        }
+      })
+      .catch((err) => {
+        const errorMsg = err?.message || 'Song library failed to load.';
+        logMessage(`[Song Selector Error] ${errorMsg}`);
+        console.error(`[RetroFM Startup Error] ${errorMsg}`);
+        setSongPlaybackNotice({
+          message: `${errorMsg} (Please check public/data/sample/retrofm_library_youtube.json or run "bun run export-library")`,
+          artist: 'Song Library Missing',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+      });
+
+    // 1. Load public/data/weekly_top.json and public/data/jingles.json (optional with validation)
+    fetch('/data/weekly_top.json')
+      .then((res) => validateJsonFetch<Record<string, any>>(res, (data) => typeof data === 'object' && data !== null && !Array.isArray(data)))
+      .then((data) => {
+        weeklyTopDataRef.current = data || undefined;
+        if (data && Object.keys(data).length > 0) {
+          logMessage(`[DJ Variety] Loaded weekly_top.json (${Object.keys(data).length} chart weeks).`);
+        }
+      })
+      .catch(() => {
+        weeklyTopDataRef.current = undefined;
+      });
+
+    fetch('/data/jingles.json')
+      .then((res) => validateJsonFetch<any[]>(res, (data) => Array.isArray(data)))
+      .then((data) => {
+        const validList = Array.isArray(data) ? data : [];
+        jinglesDataRef.current = validList;
+        if (validList.length > 0) {
+          logMessage(`[DJ Variety] Loaded jingles.json (${validList.length} jingles).`);
+        }
+      })
+      .catch(() => {
+        jinglesDataRef.current = [];
+      });
+  }, []);
 
   // --- Extension Heartbeat / Detection Loop ---
   useEffect(() => {
@@ -543,6 +1153,20 @@ export default function App() {
         try {
           const tabs = await musicProviderRef.current.listTabs().catch(() => []);
           setAvailableTabs(tabs);
+          if (tabs.length > 0 && !playbackStatusRef.current?.connectedTabId) {
+            musicProviderRef.current.connect(tabs[0].id).then((cRes) => {
+              if (cRes.success && cRes.status) {
+                const updated: MusicPlaybackStatus = {
+                  ...cRes.status,
+                  connectedTabId: tabs[0].id,
+                  available: true
+                };
+                setPlaybackStatus(updated);
+                playbackStatusRef.current = updated;
+                broadcastCurrentRadioState(true, false, updated);
+              }
+            }).catch(() => {});
+          }
         } catch (e) {
           // Tabs query might require permissions or extension reload
         }
@@ -556,7 +1180,14 @@ export default function App() {
             .then((res) => {
               if (res.success && res.connectedTabId) {
                 if (res.status) {
-                  setPlaybackStatus(res.status);
+                  const initialReadyStatus: MusicPlaybackStatus = {
+                    ...res.status,
+                    connectedTabId: res.connectedTabId,
+                    available: true
+                  };
+                  setPlaybackStatus(initialReadyStatus);
+                  playbackStatusRef.current = initialReadyStatus;
+                  broadcastCurrentRadioState(true, false, initialReadyStatus);
                 }
                 setTestResults((prev) => ({
                   ...prev,
@@ -615,6 +1246,9 @@ export default function App() {
   const transportCommandSeqRef = useRef<number>(0);
   const isTransportCommandInFlightRef = useRef<boolean>(false);
   const isExplicitStoppedRef = useRef<boolean>(false);
+  const activeDecadeRef = useRef<number | null>(null);
+  const stereoBalanceRef = useRef<number>(0);
+  const [, setStereoBalance] = useState<number>(0);
   const lastBroadcastStateKeyRef = useRef<string>('');
   const playbackStatusRef = useRef<MusicPlaybackStatus>(playbackStatus);
   playbackStatusRef.current = playbackStatus;
@@ -624,6 +1258,7 @@ export default function App() {
     const vc = volumeControllerRef.current;
     const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;
     const isDuck = vc ? vc.getState() !== 'idle' : isDuckingActive;
+    const effectiveStatus = explicitStatus || playbackStatusRef.current || playbackStatus;
 
     // Green display remains blank until PLAY confirms audible real song playback.
     // The startup jingle is not a song selection and must never populate the user-facing Artist/Song Title fields.
@@ -631,33 +1266,89 @@ export default function App() {
     const hasFirstSongStarted = hasFirstSongStartedPlayingRef.current;
     const isJingleActive = jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing';
 
-    if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
+    if (activeJingleRef.current) {
+      currentSong = {
+        title: 'RETRO FM jingle',
+        artist: '',
+        year: '',
+        duration: activeJingleRef.current.duration_sec ? `${Math.floor(activeJingleRef.current.duration_sec / 60).toString().padStart(2, '0')}:${Math.floor(activeJingleRef.current.duration_sec % 60).toString().padStart(2, '0')}` : undefined,
+        durationSec: activeJingleRef.current.duration_sec,
+        videoId: activeJingleRef.current.youtube_id,
+        currentTime: effectiveStatus.currentTime,
+      };
+    } else if (clearSong || !hasFirstSongStarted || isJingleActive || playbackStatus.videoId === RETROFM_JINGLE_CONFIG.videoId) {
       currentSong = null;
-    } else if (programSongResult && programSongResult.selectedTitle) {
+    } else if (isTuningSeekingRef.current) {
+      currentSong = null;
+    } else if (
+      sessionHistoryRef.current.pointer >= 0 &&
+      sessionHistoryRef.current.pointer < sessionHistoryRef.current.entries.length
+    ) {
+      const activeEntry = sessionHistoryRef.current.entries[sessionHistoryRef.current.pointer];
+      if (activeEntry.videoId === effectiveStatus.videoId) {
+        currentSong = {
+          title: activeEntry.song.title,
+          artist: activeEntry.song.artist,
+          year: String(activeEntry.song.chart_year || activeDateRef.current.slice(0, 4)),
+          duration: programSongResult?.selectedDuration,
+          durationSec: programSongResult?.selectedDurationSec,
+          videoId: activeEntry.videoId,
+          currentTime: effectiveStatus.currentTime,
+        };
+      } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
+        currentSong = {
+          title: programSongResult.selectedTitle,
+          artist: currentPlayingArtistRef.current || programArtist || '',
+          year: currentPlayingYearRef.current || programYear || '',
+          duration: programSongResult.selectedDuration,
+          durationSec: programSongResult.selectedDurationSec,
+          videoId: programSongResult.selectedVideoId,
+          currentTime: effectiveStatus.currentTime
+        };
+      } else if (programSongResult && programSongResult.selectedVideoId && programSongResult.selectedVideoId !== effectiveStatus.videoId) {
+        currentSong = null;
+      }
+    } else if (programSongResult && programSongResult.selectedTitle && programSongResult.selectedVideoId === effectiveStatus.videoId) {
       currentSong = {
         title: programSongResult.selectedTitle,
-        artist: programArtist || '',
-        year: programYear || '',
-        duration: programSongResult.selectedDuration
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: programSongResult.selectedDuration,
+        durationSec: programSongResult.selectedDurationSec,
+        videoId: programSongResult.selectedVideoId,
+        currentTime: effectiveStatus.currentTime
       };
-    } else if (playbackStatus && playbackStatus.title && playbackStatus.title !== 'Unknown Title' && playbackStatus.title !== 'Unknown Video') {
+    } else if (programSongResult && programSongResult.selectedVideoId && programSongResult.selectedVideoId !== effectiveStatus.videoId) {
+      currentSong = null;
+    } else if (effectiveStatus && effectiveStatus.title && effectiveStatus.title !== 'Unknown Title' && effectiveStatus.title !== 'Unknown Video') {
       currentSong = {
-        title: playbackStatus.title,
-        artist: programArtist || '',
-        year: programYear || ''
+        title: effectiveStatus.title,
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: effectiveStatus.duration ? `${Math.floor(effectiveStatus.duration / 60).toString().padStart(2, '0')}:${Math.floor(effectiveStatus.duration % 60).toString().padStart(2, '0')}` : undefined,
+        durationSec: effectiveStatus.duration || undefined,
+        videoId: effectiveStatus.videoId,
+        currentTime: effectiveStatus.currentTime
       };
     } else if (programSongTitle) {
       currentSong = {
         title: programSongTitle,
-        artist: programArtist || '',
-        year: programYear || ''
+        artist: currentPlayingArtistRef.current || programArtist || '',
+        year: currentPlayingYearRef.current || programYear || '',
+        duration: programSongResult?.selectedDuration,
+        durationSec: programSongResult?.selectedDurationSec,
+        videoId: effectiveStatus.videoId,
+        currentTime: effectiveStatus.currentTime
       };
     }
 
     const yearNum = parseInt(programYear, 10);
-    const decade = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
+    const decadeFromYear = (!isNaN(yearNum) && yearNum >= 1960 && yearNum <= 2029)
       ? Math.floor(yearNum / 10) * 10
       : 1990;
+    const decade = (activeDecadeRef.current && activeDecadeRef.current >= 1960 && activeDecadeRef.current <= 2020)
+      ? activeDecadeRef.current
+      : decadeFromYear;
 
     // Default primary stations per decade from Boom Box ST table
     const DECADE_STATIONS: Record<number, { freq: number; genre: string }> = {
@@ -671,21 +1362,27 @@ export default function App() {
     };
 
     const station = DECADE_STATIONS[decade] || { freq: 100.3, genre: 'Teen Pop' };
-    const effectiveStatus = explicitStatus || playbackStatusRef.current || playbackStatus;
     const isPlayingOrAdvancing = isAdvancingRef.current || playbackStatus.isPlaying;
     const effectivePlayingOrAdvancing = isAdvancingRef.current || effectiveStatus.isPlaying;
-    const rawMode = effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped'));
-    const playbackMode = hasFirstSongStarted ? rawMode : 'blank';
+    const isSongTransition = isAdvancingRef.current && !effectiveStatus.isPlaying;
+    const rawMode = (isTuningSeekingRef.current || isSongTransition) ? 'seek' : (effectivePlayingOrAdvancing ? 'playing' : (isExplicitStoppedRef.current ? 'stopped' : (effectiveStatus.available ? 'paused' : 'stopped')));
+    const playbackMode = (isTuningSeekingRef.current || isSongTransition) ? 'seek' : (hasFirstSongStarted ? rawMode : 'blank');
 
-    // Ready when YouTube tab is connected and first video (jingle or song) is prepared/ready
+    // Ready when YouTube tab is connected and RetroFM integration is ready
+    const connectedId = effectiveStatus.connectedTabId || playbackStatus.connectedTabId || musicProviderRef.current.getConnectedTabId();
     const isStartupReady = Boolean(
-      effectiveStatus.available &&
-      effectiveStatus.connectedTabId &&
-      effectiveStatus.videoId &&
-      effectiveStatus.videoId !== 'Unknown' &&
-      effectiveStatus.videoId !== 'Unknown Video' &&
-      (jingleStateRef.current === 'prepared' || jingleStateRef.current === 'playing' || jingleStateRef.current === 'completed' || hasFirstSongStarted)
+      connectedId &&
+      (effectiveStatus.available || Boolean(effectiveStatus.videoId) || Boolean(effectiveStatus.title))
     );
+    isStartupReadyRef.current = isStartupReady;
+
+    const broadcastDate = activeDateRef.current || (programYear ? `${programYear}-07-04` : '1963-05-01');
+    const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, broadcastDate, decade);
+    const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[decade] || []);
+    const currentGenre = activeStationGenreRef.current;
+    const activeStation = (currentGenre ? allStations.find(s => s.genre === currentGenre) : null)
+      || allStations[0]
+      || (DECADE_STATIONS[decade] ? { frequency: DECADE_STATIONS[decade].freq, genre: DECADE_STATIONS[decade].genre } : { frequency: 100.3, genre: 'Teen Pop' });
 
     // Generate comparison fingerprint excluding timestamps to prevent redundant broadcasts on every second poll
     const stateFingerprint = JSON.stringify({
@@ -696,11 +1393,14 @@ export default function App() {
       currentSongArtist: currentSong?.artist || '',
       currentSongYear: currentSong?.year || '',
       masterVolume: currentVol,
+      balance: stereoBalanceRef.current,
       decade,
-      freq: station.freq,
+      freq: activeStation.frequency,
+      genre: activeStation.genre,
       isDuck,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
-      clearSong
+      clearSong,
+      stationCount: allStations.length
     });
 
     if (!force && stateFingerprint === lastBroadcastStateKeyRef.current) {
@@ -708,17 +1408,25 @@ export default function App() {
     }
     lastBroadcastStateKeyRef.current = stateFingerprint;
 
+    let songSeq: number | undefined;
+    if (currentSong && currentSong.title) {
+      songSeq = ++songUpdateSeqRef.current;
+      (currentSong as any).songSeq = songSeq;
+    }
+
     const statePayload = {
       playbackStatus: playbackMode,
       hasFirstSongStartedPlaying: hasFirstSongStarted,
       isStartupReady,
       currentSong,
       clearSong,
-      date: programYear ? `${programYear}-07-04` : '1995-07-04',
+      date: broadcastDate,
       decade,
-      frequency: station.freq,
-      genre: station.genre,
+      frequency: activeStation.frequency,
+      genre: activeStation.genre,
+      stations: allStations, // stations: STATIONS_BY_DECADE[decade] || []
       masterVolume: currentVol,
+      balance: stereoBalanceRef.current,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       isDucking: isDuck,
       appConnected: true,
@@ -743,10 +1451,10 @@ export default function App() {
   const handleFastForwardMusicRef = useRef<() => Promise<void>>(async () => {});
   const advanceToNextSongRef = useRef<(isInitialAfterJingle?: boolean) => Promise<boolean>>(async () => false);
 
-  // Synchronize state to Boom Box whenever session properties change
+  // Synchronize state to Boom Box whenever session properties change or library loads
   useEffect(() => {
-    broadcastCurrentRadioState();
-  }, [broadcastCurrentRadioState]);
+    broadcastCurrentRadioState(true);
+  }, [broadcastCurrentRadioState, isLibraryLoaded]);
 
   // Listen for actions and state requests from Boom Box
   useEffect(() => {
@@ -789,49 +1497,414 @@ export default function App() {
             if (typeof action.volume === 'number' && volumeControllerRef.current) {
               await volumeControllerRef.current.setUserVolume(action.volume, 'Boom Box Knob');
               setLastBoomBoxCommand({ action: `SET_VOLUME (${action.volume}%)`, result: 'SUCCESS', time: timeStr });
+              broadcastCurrentRadioState(true);
             }
             break;
           case 'SET_BALANCE':
-            if (typeof action.balance === 'number') {
-              logMessage(`[Boom Box Balance] Stereo balance set to ${action.balance.toFixed(2)} (Pan: ${Math.round(action.balance * 100)}%)`);
-              setLastBoomBoxCommand({ action: `SET_BALANCE (${action.balance.toFixed(2)})`, result: 'SUCCESS', time: timeStr });
+            if (typeof action.balance === 'number' && !isNaN(action.balance)) {
+              const clampedBal = Number(Math.max(-1, Math.min(1, action.balance)).toFixed(2));
+              stereoBalanceRef.current = clampedBal;
+              setStereoBalance(clampedBal);
+              const leftPct = clampedBal <= 0 ? 100 : Math.round((1 - clampedBal) * 100);
+              const rightPct = clampedBal >= 0 ? 100 : Math.round((1 + clampedBal) * 100);
+              await musicProviderRef.current.setBalance(clampedBal);
+              logMessage(`[Boom Box Balance] Stereo balance set to ${clampedBal.toFixed(2)} (L: ${leftPct}%, R: ${rightPct}%)`);
+              setLastBoomBoxCommand({ action: `SET_BALANCE (${clampedBal.toFixed(2)})`, result: 'SUCCESS', time: timeStr });
+              broadcastCurrentRadioState(true);
             }
             break;
-          case 'TUNE':
-            if (action.genre) {
-              logMessage(`[Boom Box Dial] Tuned: ${action.frequency} FM (${action.genre})`);
-              setLastBoomBoxCommand({ action: `TUNE (${action.frequency} FM)`, result: 'SUCCESS', time: timeStr });
+          case 'TUNE': {
+            const tuneSeq = ++tuneSequenceRef.current;
+            const isLocked = action.locked !== false && !!action.genre;
+            const freq = typeof action.frequency === 'number' ? action.frequency : null;
+            const genre = action.genre;
+
+            if (!isLocked) {
+              isTuningSeekingRef.current = false;
+              logMessage(`[Boom Box Dial] Untuned: ${freq !== null ? freq.toFixed(1) : ''} FM`);
+              setLastBoomBoxCommand({ action: `TUNE (${freq !== null ? freq.toFixed(1) : ''} FM untuned)`, result: 'SUCCESS', time: timeStr });
+
+              // Save current station's position before pausing only if playback was confirmed for this genre
+              const currentGenre = activeStationGenreRef.current;
+              const liveStatus = playbackStatusRef.current || playbackStatus;
+              const isConfirmedForGenre = Boolean(
+                currentGenre &&
+                liveStatus.videoId &&
+                (!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId) &&
+                !isTuningSeekingRef.current
+              );
+              if (currentGenre && liveStatus.videoId && isConfirmedForGenre) {
+                stationPlaybackCacheRef.current[currentGenre] = {
+                  genre: currentGenre,
+                  frequency: (liveStatus as any).frequency || (freq ?? 0),
+                  videoId: liveStatus.videoId,
+                  title: liveStatus.title,
+                  artist: currentPlayingArtistRef.current || programArtist,
+                  song: currentPlayingSongRef.current || programSongTitle,
+                  year: currentPlayingYearRef.current || programYear,
+                  currentTime: liveStatus.currentTime,
+                  duration: liveStatus.duration
+                };
+              }
+
+              // Immediately pause YouTube playback
+              if (liveStatus.isPlaying || isAdvancingRef.current) {
+                await handlePauseMusicRef.current();
+              }
+              break;
             }
+
+            // Locked onto a valid station
+            logMessage(`[Boom Box Dial] Tuned: ${freq} FM (${genre})`);
+            setLastBoomBoxCommand({ action: `TUNE (${freq} FM - ${genre})`, result: 'SUCCESS', time: timeStr });
+
+            const prevGenre = activeStationGenreRef.current;
+            const liveStatus = playbackStatusRef.current || playbackStatus;
+            const isPrevConfirmed = !isTuningSeekingRef.current && (!programSongResult?.selectedVideoId || liveStatus.videoId === programSongResult.selectedVideoId);
+            if (prevGenre && prevGenre !== genre && liveStatus.videoId && isPrevConfirmed) {
+              stationPlaybackCacheRef.current[prevGenre] = {
+                genre: prevGenre,
+                frequency: (liveStatus as any).frequency || (freq ?? 0),
+                videoId: liveStatus.videoId,
+                title: liveStatus.title,
+                artist: currentPlayingArtistRef.current || programArtist,
+                song: currentPlayingSongRef.current || programSongTitle,
+                year: currentPlayingYearRef.current || programYear,
+                currentTime: liveStatus.currentTime,
+                duration: liveStatus.duration
+              };
+              // Immediately clear program song metadata for the previous station
+              setProgramSongResult(null);
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
+            } else if (prevGenre && prevGenre !== genre) {
+              setProgramSongResult(null);
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
+            }
+            if (prevGenre && prevGenre !== genre) {
+              sessionHistoryRef.current = { entries: [], pointer: -1 };
+              songPlayStateRef.current = newPlayState();
+              nextSongRef.current = null;
+            }
+            activeStationGenreRef.current = genre;
+
             if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
+              activeDecadeRef.current = action.decade;
               const currentDec = Math.floor(parseInt(programYear || '1985', 10) / 10) * 10;
               if (currentDec !== action.decade) {
                 setProgramYear(String(action.decade + 5));
-                setTimeout(() => broadcastCurrentRadioState(true), 10);
               }
             }
+
+            // Determine if music is available for this station
+            const decadeNum = action.decade || (programYear ? Math.floor(parseInt(programYear, 10) / 10) * 10 : 1980);
+            const dynamicStations = calculateDynamicStationsForDate(songLibraryRef.current, activeDateRef.current, decadeNum);
+            const stationsForDecade = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[decadeNum] || []);
+            const stationCfg = stationsForDecade.find(s => s.genre === genre || (freq !== null && Math.abs(s.frequency - freq) <= 0.15));
+            nextSongRef.current = null;
+
+            const cachedRaw = stationPlaybackCacheRef.current[genre];
+            // Ensure cached song is actually historically eligible for activeDateRef
+            const cachedSongObj = cachedRaw && songLibraryRef.current.find(s => s.streaming?.youtube?.id === cachedRaw.videoId);
+            const isCachedValidForDate = cachedRaw && (!cachedSongObj || isSongEligibleForGenre(cachedSongObj, genre, activeDateRef.current));
+            if (cachedRaw && !isCachedValidForDate) {
+              delete stationPlaybackCacheRef.current[genre];
+            }
+            const cached = isCachedValidForDate ? cachedRaw : undefined;
+            const preset = stationCfg?.presetKey ? HARDCODED_PRESETS[stationCfg.presetKey] : getPresetForStation(stationCfg);
+
+            // In radio simulation mode, tuning to a genre station always automatically starts or resumes playback
+            isExplicitStoppedRef.current = false;
+            const shouldAutoPlay = true;
+
+            // Broadcast 'seek' with clearSong so green display immediately shows SEEK without previous station song info
+            isTuningSeekingRef.current = true;
+            broadcastCurrentRadioState(true, true);
+
+            if (shouldAutoPlay) {
+              if (tuneSeq !== tuneSequenceRef.current) break;
+
+              if (cached) {
+                // Scenario B: Return to previously visited station
+                logMessage(`[Tuner] Resuming ${genre} from saved position ${Math.round(cached.currentTime)}s ("${cached.title}")`);
+                currentPlayingArtistRef.current = cached.artist;
+                currentPlayingSongRef.current = cached.song;
+                currentPlayingYearRef.current = cached.year;
+                setProgramArtist(cached.artist);
+                setProgramSongTitle(cached.song);
+                setProgramYear(cached.year);
+                setProgramSongResult({
+                  status: 'PLAYING',
+                  requested: `${cached.artist} - ${cached.song}`,
+                  selectedVideoId: cached.videoId,
+                  selectedTitle: cached.song,
+                  selectedDurationSec: cached.duration
+                });
+
+                const currentLive = playbackStatusRef.current || playbackStatus;
+                if (currentLive.connectedTabId && currentLive.videoId === cached.videoId) {
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  if (cached.currentTime > 0 && Math.abs(currentLive.currentTime - cached.currentTime) > 1) {
+                    await musicProviderRef.current.seek(cached.currentTime).catch(() => {});
+                    await new Promise(r => setTimeout(r, 100));
+                  }
+                  await handlePlayMusicRef.current();
+                } else {
+                  const targetVolFraction = getNavVolumeFraction();
+                  const targetUrl = `https://www.youtube.com/watch?v=${cached.videoId}`;
+                  await musicProviderRef.current.navigate(targetUrl, cached.videoId, targetVolFraction, revealYouTubeToStart, cached.currentTime);
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  await handlePlayMusicRef.current();
+                }
+              } else if (songLibraryRef.current.length > 0) {
+                // Scenario A: First visit to station with library loaded
+                const stationGenres = stationsForDecade.map(s => s.genre);
+                const pick = pickSong(
+                  songLibraryRef.current,
+                  activeDateRef.current,
+                  genre,
+                  songPlayStateRef.current,
+                  Math.random,
+                  stationGenres
+                );
+                if (pick) {
+                  logMessage(`[Tuner] Selected library song for ${genre}: "${pick.song.artist} - ${pick.song.title}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
+                  if (tuneSeq !== tuneSequenceRef.current) {
+                    isTuningSeekingRef.current = false;
+                    break;
+                  }
+                  await playLibrarySong(pick, `Tuned to station ${genre}`, tuneSeq);
+                } else {
+                  logMessage(`[Tuner] No eligible library song for ${genre} on ${activeDateRef.current}.`);
+                  currentPlayingArtistRef.current = '';
+                  currentPlayingSongRef.current = '';
+                  setProgramArtist('');
+                  setProgramSongTitle('');
+                  setProgramSongResult(null);
+                  setSongPlaybackNotice({
+                    message: "No eligible songs charting in this genre for this broadcast date",
+                    artist: genre,
+                    song: activeDateRef.current,
+                    type: 'not_found'
+                  });
+                  broadcastCurrentRadioState(true, true);
+                }
+              }
+              if (tuneSeq === tuneSequenceRef.current) {
+                isTuningSeekingRef.current = false;
+                broadcastCurrentRadioState(true);
+              }
+            } else {
+              if (cached) {
+                currentPlayingArtistRef.current = cached.artist;
+                currentPlayingSongRef.current = cached.song;
+                currentPlayingYearRef.current = cached.year;
+                setProgramArtist(cached.artist);
+                setProgramSongTitle(cached.song);
+                setProgramYear(cached.year);
+                setProgramSongResult({
+                  status: 'IDLE',
+                  requested: `${cached.artist} - ${cached.song}`,
+                  selectedVideoId: cached.videoId,
+                  selectedTitle: cached.song,
+                  selectedDurationSec: cached.duration
+                });
+              } else {
+                currentPlayingArtistRef.current = '';
+                currentPlayingSongRef.current = '';
+                setProgramArtist('');
+                setProgramSongTitle('');
+                setProgramSongResult(null);
+              }
+              broadcastCurrentRadioState(true);
+            }
             break;
-          case 'SELECT_DATE_GENRE':
+          }
+          case 'SELECT_DATE_GENRE': {
             if (action.date) {
               logMessage(`[Boom Box Date] Date: ${action.date} | Station: ${action.genre || 'N/A'}`);
               setLastBoomBoxCommand({ action: `SELECT_DATE (${action.date})`, result: 'SUCCESS', time: timeStr });
             }
             const selectedYear = action.year ? String(action.year) : (action.date ? action.date.split('-')[0] : (action.decade ? String(action.decade + 5) : null));
+            if (typeof action.decade === 'number' && action.decade >= 1960 && action.decade <= 2020) {
+              activeDecadeRef.current = action.decade;
+            } else if (selectedYear) {
+              const parsedDec = Math.floor(parseInt(selectedYear, 10) / 10) * 10;
+              if (parsedDec >= 1960 && parsedDec <= 2020) {
+                activeDecadeRef.current = parsedDec;
+              }
+            }
             if (selectedYear) {
               setProgramYear(selectedYear);
-              setTimeout(() => broadcastCurrentRadioState(true), 10);
+            }
+            if (action.genre) {
+              activeStationGenreRef.current = action.genre;
+            }
+            if (action.date) {
+              activeDateRef.current = action.date;
+            }
+
+            const targetDate = action.date || activeDateRef.current;
+            const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
+
+            // Start a new DJ listening session on new date/genre selection
+            djStateRef.current = newDjState();
+            varietyStateRef.current = newVarietyState();
+            sessionHistoryRef.current = { entries: [], pointer: -1 };
+            songPlayStateRef.current = newPlayState();
+            previousLibrarySongRef.current = null;
+            nextSongRef.current = null;
+            preparedBreakRef.current = null;
+            stationPlaybackCacheRef.current = {};
+            if (songLibraryRef.current.length > 0) {
+              logStationPools(targetDate, songLibraryRef.current);
+              const selectedYear = (action.date || activeDateRef.current || '').slice(0, 4);
+              const dec = action.decade || (selectedYear ? Math.floor(parseInt(selectedYear, 10) / 10) * 10 : 1980);
+              const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, targetDate);
+              const pick = pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current, Math.random, stationGenres);
+              if (pick) {
+                await playLibrarySong(pick, 'Date/genre selection');
+              } else {
+                const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+                logMessage(`[Song Selector] ${noticeMsg}`);
+                currentPlayingArtistRef.current = '';
+                currentPlayingSongRef.current = '';
+                setProgramArtist('');
+                setProgramSongTitle('');
+                setProgramSongResult(null);
+                setSongPlaybackNotice({
+                  message: noticeMsg,
+                  artist: targetGenre,
+                  song: targetDate,
+                  type: 'not_found'
+                });
+                broadcastCurrentRadioState(true, true);
+              }
+            } else {
+              currentPlayingArtistRef.current = '';
+              currentPlayingSongRef.current = '';
+              setProgramArtist('');
+              setProgramSongTitle('');
+              setProgramSongResult(null);
+              setTimeout(() => broadcastCurrentRadioState(true, true), 10);
             }
             break;
+          }
+          case 'REQUEST_DATE_STATIONS': {
+            if (action.date) {
+              activeDateRef.current = action.date;
+              if (typeof action.decade === 'number') {
+                activeDecadeRef.current = action.decade;
+              }
+              stationPlaybackCacheRef.current = {};
+              nextSongRef.current = null;
+              preparedBreakRef.current = null;
+              if (songLibraryRef.current.length > 0) {
+                logStationPools(action.date, songLibraryRef.current);
+              }
+              broadcastCurrentRadioState(true);
+            }
+            break;
+          }
           case 'BOOMBOX_RELOADED':
             logMessage('[Boom Box Session] Boom Box reloaded/opened. Resetting playback sequence to station jingle.');
             jingleStateRef.current = 'prepared';
             hasFirstSongStartedPlayingRef.current = false;
             currentQueueIndexRef.current = 0;
             isAdvancingRef.current = false;
+            stationPlaybackCacheRef.current = {};
+            activeStationGenreRef.current = null;
+            stereoBalanceRef.current = 0;
+            setStereoBalance(0);
+            musicProviderRef.current.setBalance(0).catch(() => {});
             // Pre-prepare RetroFM station jingle on background YouTube tab
             prepareSong(RETROFM_JINGLE_CONFIG.videoId, RETROFM_JINGLE_CONFIG.title);
             broadcastCurrentRadioState(true);
             setLastBoomBoxCommand({ action: 'BOOMBOX_RELOADED', result: 'SUCCESS (Reset to jingle)', time: timeStr });
             break;
+          case 'STARTUP_AUDIO_INIT':
+            logMessage('[Startup] Received STARTUP_AUDIO_INIT from Boom Box ON AIR. Initializing DJ audio.');
+            initDjAudioSystem();
+            setLastBoomBoxCommand({ action: 'STARTUP_AUDIO_INIT', result: 'SUCCESS', time: timeStr });
+            break;
+          case 'END_OF_SONG_TRIGGER': {
+            const triggerReason = action.reason || 'silence';
+            const triggerLevel = typeof action.level === 'number' ? action.level.toFixed(4) : 'unknown';
+            const triggerCur = typeof action.currentTime === 'number' ? action.currentTime.toFixed(1) : 'unknown';
+            const triggerRem = typeof action.remaining === 'number' ? action.remaining.toFixed(1) : 'unknown';
+            logMessage(`[End-Of-Song Trigger] Reason: ${triggerReason} | Level: ${triggerLevel} | Time: ${triggerCur}s | Rem: ${triggerRem}s`);
+
+            // 1. Immediately pause current playback so silence/outtro does not linger
+            await handlePauseMusicRef.current();
+
+            // 2. Preload next video in background YouTube tab while DJ talks
+            const nextPick = nextSongRef.current;
+            if (nextPick?.song?.streaming?.youtube?.id) {
+              const nextVid = nextPick.song.streaming.youtube.id;
+              const nextTitle = nextPick.song.title;
+              logMessage(`[Preload] Preloading next song in background while DJ talks: "${nextTitle}" (${nextVid})`);
+              prepareSong(nextVid, nextTitle).catch((err) => {
+                logMessage(`[Preload Error] Failed to preload next song "${nextTitle}": ${err?.message || err}`);
+              });
+            }
+
+            // 3. Immediately trigger prepared DJ break if present
+            const prep = preparedBreakRef.current;
+            const currentSongId = currentSongPickRef.current?.song?.id || playbackStatusRef.current?.videoId;
+            if (prep && prep.text && currentSongId && breakTriggeredForSongIdRef.current !== currentSongId) {
+              breakTriggeredForSongIdRef.current = currentSongId;
+              const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+
+              if (prep.audioData) {
+                if (prep.pendingVarietyState) {
+                  varietyStateRef.current = prep.pendingVarietyState;
+                }
+                if (prep.pendingState) {
+                  djStateRef.current = prep.pendingState;
+                }
+                setLastDjBreak({
+                  text: prep.text,
+                  slot: prep.slot,
+                  kind: prep.kind,
+                  detail: prep.detail,
+                  timing: prep.timing,
+                  wordCount: prep.wordCount,
+                  spokenSeconds: prep.durationSec,
+                  deliverySettings: prep.deliverySettings,
+                });
+                logMessage(`[DJ] Immediately starting speech for end-of-song trigger (${triggerReason}, visibility: ${vis})`);
+
+                playDJSpeech(prep.text, {
+                  duckMusic: false,
+                  alreadyDucked: true,
+                  forceGenerate: false,
+                  preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
+                  preparedDuration: prep.durationSec,
+                  breakId: prep.breakId,
+                }).catch((err) => {
+                  console.warn('[DJ] Error during end-of-song speech playback:', err);
+                });
+              } else {
+                if (prep.breakId) {
+                  reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+                }
+                logMessage(`[DJ] Break audio was not ready at end-of-song trigger (${triggerReason})`);
+              }
+              preparedBreakRef.current = null;
+            } else if (!prep) {
+              logMessage(`[DJ] No prepared break active for end-of-song trigger (${triggerReason})`);
+            }
+
+            setLastBoomBoxCommand({ action: `END_OF_SONG_TRIGGER (${triggerReason})`, result: 'SUCCESS', time: timeStr });
+            break;
+          }
           default:
             setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS', time: timeStr });
             break;
@@ -890,6 +1963,11 @@ export default function App() {
         connectedTabId: prev.connectedTabId || provTabId || null,
       }));
 
+      // Broadcast state update only if startup readiness or playback status actually changed
+      if (!isStartupReadyRef.current) {
+        broadcastCurrentRadioState();
+      }
+
       // If playing a real song (not the station jingle), mark first song as started
       if (rawState === 1) {
         const currentPlayingVid = payload.videoId || playbackStatus.videoId;
@@ -897,14 +1975,193 @@ export default function App() {
           if (!hasFirstSongStartedPlayingRef.current) {
             hasFirstSongStartedPlayingRef.current = true;
             logMessage(`▶ Confirmed real song playback active: "${payload.title || currentPlayingVid}". Unsuppressing Boom Box status.`);
+            broadcastCurrentRadioState(true);
           }
-          broadcastCurrentRadioState();
+        }
+      }
+
+      // Check remaining time for ahead-of-time DJ Break preparation & triggering
+      if (
+        isPlaying &&
+        djMode !== 'off' &&
+        hasFirstSongStartedPlayingRef.current &&
+        jingleStateRef.current !== 'playing'
+      ) {
+        const curSongPick = currentSongPickRef.current;
+        const curTime = typeof payload.currentTime === 'number' ? payload.currentTime : playbackStatusRef.current?.currentTime || 0;
+        const rawDur = typeof payload.duration === 'number' ? payload.duration : playbackStatusRef.current?.duration || 0;
+        const dur = getEffectiveSongDuration(curSongPick, rawDur);
+        const songId = curSongPick?.song?.id || payload.videoId || playbackStatusRef.current?.videoId || null;
+
+        if (songId && curSongPick) {
+          // If duration is unknown or 0, we can't calculate remaining time
+          if (dur > 0 && curTime > 0) {
+            const remaining = dur - curTime;
+
+            // Phase 1: Prepare ahead ~45-55s before end (ensures break audio is ready before the 45s silence detection window)
+            if (
+              remaining <= 55 &&
+              remaining >= 5 &&
+              !preparedBreakRef.current &&
+              !isPreparingBreakRef.current &&
+              breakTriggeredForSongIdRef.current !== songId
+            ) {
+              const history = sessionHistoryRef.current;
+              const p = history.pointer;
+              const prevSong = p > 0 ? history.entries[p - 1].song : null;
+              const rawNextSong = (p >= 0 && p < history.entries.length - 1)
+                ? history.entries[p + 1].song
+                : (nextSongRef.current?.song || null);
+              const isSameSong = rawNextSong && (rawNextSong.id === songId || (currentSongPickRef.current && rawNextSong.id === currentSongPickRef.current.song.id));
+              const nextSong = isSameSong ? null : rawNextSong;
+
+              // Ahead-of-time prep runs while songId is playing to prepare the break that airs when songId ends.
+              // Therefore, the song that just ended when this break airs is songId (the currently playing song).
+              prepareObservationBreakAhead(songId, curSongPick.song, nextSong);
+            }
+
+            const prep = preparedBreakRef.current;
+            if (prep && prep.id === songId && breakTriggeredForSongIdRef.current !== songId) {
+              // Log trigger check ticks as remaining time approaches trigger window
+              if (remaining <= prep.triggerTimeRemaining + 6 && remaining >= prep.triggerTimeRemaining - 2) {
+                console.log(`[DJ] Trigger check: remaining=${remaining.toFixed(1)}s triggerTarget=${prep.triggerTimeRemaining.toFixed(1)}s duckTarget=${prep.duckTriggerTimeRemaining.toFixed(1)}s ducked=${breakDuckingStartedRef.current} audioReady=${Boolean(prep.audioData)}`);
+              }
+
+              // Phase 2: Start lead duck ~500ms before speech start
+              if (prep.text && remaining <= prep.duckTriggerTimeRemaining && !breakDuckingStartedRef.current) {
+                breakDuckingStartedRef.current = true;
+                const vc = volumeControllerRef.current;
+                if (vc && !vc.isSequenceActive()) {
+                  const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+                  logMessage(`[DJ] Early lead duck starting (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+                  vc.duck(fadeDownMs, 'DJ speech start').catch((err) => {
+                    console.warn('[DJ] Early duck error:', err);
+                  });
+                }
+              }
+
+              // Phase 3: Trigger speech at 1.0 - 2.0s before end
+              if (remaining <= prep.triggerTimeRemaining) {
+                breakTriggeredForSongIdRef.current = songId;
+                const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+
+                if (prep.kind === 'jingle' && prep.varietyResult?.jingle) {
+                  // Jingle break: commit variety state and play jingle in YouTube tab
+                  if (prep.pendingVarietyState) {
+                    varietyStateRef.current = prep.pendingVarietyState;
+                  }
+                  setLastDjBreak({
+                    text: '',
+                    slot: 'before',
+                    kind: 'jingle',
+                    detail: prep.detail,
+                  });
+                  console.log(`[DJ] jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+                  logMessage(`[DJ] Jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s`);
+                  pendingJingleRef.current = prep.varietyResult.jingle;
+                  // We do not speak over a jingle; jingle will be played in YouTube tab when song ends naturally
+                } else if (prep.text) {
+                  // Check maxSeconds limit for follow timing
+                  if (prep.timing === 'follow' && prep.maxSeconds && prep.durationSec > prep.maxSeconds) {
+                    console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break" remaining=${remaining.toFixed(1)}s`);
+                    logMessage(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+                    if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+                      volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
+                    }
+                    preparedBreakRef.current = null;
+                    return;
+                  }
+
+                  if (prep.audioData) {
+                    // Audio is ready: commit state and speak!
+                    if (prep.pendingVarietyState) {
+                      varietyStateRef.current = prep.pendingVarietyState;
+                    }
+                    if (prep.pendingState) {
+                      djStateRef.current = prep.pendingState;
+                    }
+                    setLastDjBreak({
+                      text: prep.text,
+                      slot: prep.slot,
+                      kind: prep.kind,
+                      detail: prep.detail,
+                      timing: prep.timing,
+                      wordCount: prep.wordCount,
+                      spokenSeconds: prep.durationSec,
+                      deliverySettings: prep.deliverySettings,
+                    });
+                    console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s audioReady=${Boolean(prep.audioData)} (visibility: ${vis})`);
+                    logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
+
+                    playDJSpeech(prep.text, {
+                      duckMusic: !breakDuckingStartedRef.current,
+                      alreadyDucked: breakDuckingStartedRef.current,
+                      forceGenerate: false,
+                      preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
+                      preparedDuration: prep.durationSec,
+                      breakId: prep.breakId,
+                    }).catch((err) => {
+                      console.warn('[DJ] Error during prepared speech playback:', err);
+                    });
+                  } else {
+                    // Audio not ready: skip break silently, log, cancel any lead duck
+                    if (prep.breakId) {
+                      reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+                    }
+                    console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="audio not ready" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+                    logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+                    if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+                      volumeControllerRef.current.cancel('Audio not ready for DJ speech');
+                    }
+                  }
+                } else {
+                  // Silent break returned from template / variety
+                  console.log(`[DJ] silent break (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+                  if (prep.pendingVarietyState) {
+                    varietyStateRef.current = prep.pendingVarietyState;
+                  }
+                  if (prep.pendingState) {
+                    djStateRef.current = prep.pendingState;
+                  }
+                  setLastDjBreak({
+                    text: '',
+                    slot: prep.slot,
+                    kind: prep.kind,
+                    detail: prep.detail,
+                  });
+                }
+                preparedBreakRef.current = null;
+              }
+            } else if (!prep && remaining <= 2.0 && breakTriggeredForSongIdRef.current !== songId) {
+              // Trigger threshold reached but no prepared break exists / duration wasn't known in time
+              breakTriggeredForSongIdRef.current = songId;
+              const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+              console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="no prepared break ready at trigger threshold" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+              logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+            }
+          }
         }
       }
 
       // Natural Completion: When state is 0 (ended), advance automatically
       if (rawState === 0 && !isAdvancingRef.current) {
         const finishedVideoId = payload.videoId || playbackStatus.videoId;
+        // Check if an active jingle just finished playing
+        if (activeJingleRef.current) {
+          logMessage(`[DJ Variety] Jingle finished naturally: "${activeJingleRef.current.title || activeJingleRef.current.id}". Advancing to next song...`);
+          activeJingleRef.current = null;
+          if (jingleTimeoutRef.current) {
+            clearTimeout(jingleTimeoutRef.current);
+            jingleTimeoutRef.current = null;
+          }
+          if (jingleEndedHandlerRef.current) {
+            const cb = jingleEndedHandlerRef.current;
+            jingleEndedHandlerRef.current = null;
+            cb();
+            return;
+          }
+        }
+
         // Case 1: Station Jingle finished naturally -> mark completed, do not advance queue (waits for PLAY)
         if (jingleStateRef.current === 'playing' || finishedVideoId === RETROFM_JINGLE_CONFIG.videoId) {
           jingleStateRef.current = 'completed';
@@ -913,6 +2170,77 @@ export default function App() {
           broadcastCurrentRadioState(true);
         } else if (hasFirstSongStartedPlayingRef.current && jingleStateRef.current !== 'cancelled') {
           // Case 2: A regular music track finished naturally -> advance to next song in the queue
+          // Check if a variety jingle was triggered for this song transition
+          if (pendingJingleRef.current) {
+            const jingleToPlay = pendingJingleRef.current;
+            pendingJingleRef.current = null;
+            activeJingleRef.current = jingleToPlay;
+            logMessage(`[DJ Variety] Playing jingle "${jingleToPlay.title || jingleToPlay.id}" (${jingleToPlay.youtube_id}) between songs...`);
+
+            // Set LCD display to show "RETRO FM jingle"
+            broadcastCurrentRadioState(true);
+
+            const jingleUrl = `https://www.youtube.com/watch?v=${jingleToPlay.youtube_id}`;
+            const targetVolFraction = getNavVolumeFraction();
+
+            let jingleHandled = false;
+            const onJingleDone = async () => {
+              if (jingleHandled) return;
+              jingleHandled = true;
+              if (jingleTimeoutRef.current) {
+                clearTimeout(jingleTimeoutRef.current);
+                jingleTimeoutRef.current = null;
+              }
+              activeJingleRef.current = null;
+              jingleEndedHandlerRef.current = null;
+              logMessage('[DJ Variety] Jingle ended. Starting next song...');
+              advanceToNextSongRef.current(false).catch((err) => {
+                logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
+              });
+            };
+            jingleEndedHandlerRef.current = onJingleDone;
+
+            // Fallback timeout to duration_sec if video ended state doesn't arrive or load fails
+            const fallbackSec = Math.max(3, jingleToPlay.duration_sec || 5);
+            jingleTimeoutRef.current = setTimeout(() => {
+              if (!jingleHandled) {
+                logMessage(`[DJ Variety] Jingle duration/fallback timeout reached (${fallbackSec}s). Advancing to next song.`);
+                onJingleDone();
+              }
+            }, (fallbackSec + 3) * 1000);
+
+            // Safety check: if jingle fails to load within 4 seconds, skip it and play the next song
+            const loadFailTimeout = setTimeout(() => {
+              if (activeJingleRef.current && playbackStatusRef.current?.videoId !== jingleToPlay.youtube_id && !playbackStatusRef.current?.isPlaying) {
+                logMessage('[DJ Variety] Jingle failed to load within 4s. Skipping to next song...');
+                onJingleDone();
+              }
+            }, 4000);
+
+            musicProviderRef.current.navigateDetailed(jingleUrl, jingleToPlay.youtube_id, targetVolFraction, revealYouTubeToStart)
+              .then((res) => {
+                clearTimeout(loadFailTimeout);
+                if (!res.success) {
+                  logMessage('[DJ Variety] Jingle navigation failed. Skipping to next song...');
+                  onJingleDone();
+                } else {
+                  if (volumeControllerRef.current) {
+                    volumeControllerRef.current.syncInitialVolume(`Jingle start: "${jingleToPlay.title || jingleToPlay.id}"`);
+                  }
+                }
+              })
+              .catch((err) => {
+                clearTimeout(loadFailTimeout);
+                logMessage(`[DJ Variety] Jingle error: ${err?.message || err}. Skipping to next song...`);
+                onJingleDone();
+              });
+            return;
+          }
+
+          // Case 2: A regular music track finished naturally -> advance to next song in the queue
+          if (activeStationGenreRef.current) {
+            delete stationPlaybackCacheRef.current[activeStationGenreRef.current];
+          }
           logMessage('[Auto Advance] Song finished naturally. Advancing to next song in queue...');
           advanceToNextSongRef.current(false).catch((err) => {
             logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
@@ -935,6 +2263,164 @@ export default function App() {
       unsubYtTabActivated();
     };
   }, []);
+
+  // --- Background-Resilient DJ Break Trigger Watchdog ---
+  // Evaluates trigger countdown against high-resolution performance/Date clock even when app tab is hidden/throttled
+  useEffect(() => {
+    const watchdogInterval = setInterval(() => {
+      if (
+        djMode === 'off' ||
+        !hasFirstSongStartedPlayingRef.current ||
+        jingleStateRef.current === 'playing' ||
+        !playbackStatusRef.current?.isPlaying
+      ) {
+        return;
+      }
+
+      const curSongPick = currentSongPickRef.current;
+      const songId = curSongPick?.song?.id || playbackStatusRef.current?.videoId || null;
+      if (!songId || !curSongPick) return;
+
+      const rawDur = playbackStatusRef.current?.duration || 0;
+      const dur = getEffectiveSongDuration(curSongPick, rawDur);
+      if (dur <= 0) return;
+
+      // Elapsed calculation: blend playbackStatus.currentTime with local wall-clock elapsed from song start
+      let curTime = playbackStatusRef.current?.currentTime || 0;
+      if (songStartedAtMsRef.current > 0) {
+        const wallElapsed = (Date.now() - songStartedAtMsRef.current) / 1000;
+        if (wallElapsed > curTime) {
+          curTime = wallElapsed;
+        }
+      }
+
+      const remaining = dur - curTime;
+      if (remaining <= 0) return;
+
+      // Phase 1: Prepare ahead if not already prepared
+      if (
+        remaining <= 55 &&
+        remaining >= 5 &&
+        !preparedBreakRef.current &&
+        !isPreparingBreakRef.current &&
+        breakTriggeredForSongIdRef.current !== songId
+      ) {
+        const history = sessionHistoryRef.current;
+        const p = history.pointer;
+        const rawNextSong = (p >= 0 && p < history.entries.length - 1)
+          ? history.entries[p + 1].song
+          : (nextSongRef.current?.song || null);
+        const isSameSong = rawNextSong && (rawNextSong.id === songId || (curSongPick && rawNextSong.id === curSongPick.song.id));
+        const nextSong = isSameSong ? null : rawNextSong;
+        prepareObservationBreakAhead(songId, curSongPick.song, nextSong);
+      }
+
+      const prep = preparedBreakRef.current;
+      if (!prep || prep.id !== songId || breakTriggeredForSongIdRef.current === songId) return;
+
+      // Phase 2: Lead duck ~500ms before speech start
+      if (prep.text && remaining <= prep.duckTriggerTimeRemaining && !breakDuckingStartedRef.current) {
+        breakDuckingStartedRef.current = true;
+        const vc = volumeControllerRef.current;
+        if (vc && !vc.isSequenceActive()) {
+          const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+          logMessage(`[DJ] Early lead duck starting (watchdog: remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+          vc.duck(fadeDownMs, 'DJ speech start').catch((err) => {
+            console.warn('[DJ] Early duck error:', err);
+          });
+        }
+      }
+
+      // Phase 3: Trigger speech at target remaining threshold
+      if (remaining <= prep.triggerTimeRemaining) {
+        breakTriggeredForSongIdRef.current = songId;
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+
+        if (prep.kind === 'jingle' && prep.varietyResult?.jingle) {
+          if (prep.pendingVarietyState) {
+            varietyStateRef.current = prep.pendingVarietyState;
+          }
+          setLastDjBreak({
+            text: '',
+            slot: 'before',
+            kind: 'jingle',
+            detail: prep.detail,
+          });
+          console.log(`[DJ] jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+          logMessage(`[DJ] Jingle break start (${prep.varietyResult.jingle.id}) remaining=${remaining.toFixed(1)}s`);
+          pendingJingleRef.current = prep.varietyResult.jingle;
+        } else if (prep.text) {
+          if (prep.timing === 'follow' && prep.maxSeconds && prep.durationSec > prep.maxSeconds) {
+            console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break" remaining=${remaining.toFixed(1)}s`);
+            logMessage(`[DJ] skipped: speech duration (${prep.durationSec.toFixed(1)}s) exceeded maxSeconds (${prep.maxSeconds}s) for follow break`);
+            if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+              volumeControllerRef.current.cancel('Follow speech duration exceeded maxSeconds');
+            }
+            preparedBreakRef.current = null;
+            return;
+          }
+
+          if (prep.audioData) {
+            if (prep.pendingVarietyState) {
+              varietyStateRef.current = prep.pendingVarietyState;
+            }
+            if (prep.pendingState) {
+              djStateRef.current = prep.pendingState;
+            }
+            setLastDjBreak({
+              text: prep.text,
+              slot: prep.slot,
+              kind: prep.kind,
+              detail: prep.detail,
+              timing: prep.timing,
+              wordCount: prep.wordCount,
+              spokenSeconds: prep.durationSec,
+              deliverySettings: prep.deliverySettings,
+            });
+            console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s audioReady=${Boolean(prep.audioData)} (visibility: ${vis})`);
+            logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
+
+            playDJSpeech(prep.text, {
+              duckMusic: !breakDuckingStartedRef.current,
+              alreadyDucked: breakDuckingStartedRef.current,
+              forceGenerate: false,
+              preparedAudio: prep.audioData !== 'browser-speech' ? prep.audioData : undefined,
+              preparedDuration: prep.durationSec,
+              breakId: prep.breakId,
+            }).catch((err) => {
+              console.warn('[DJ] Error during prepared speech playback:', err);
+            });
+          } else {
+            if (prep.breakId) {
+              reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
+            }
+            console.log(`[DJ] Break cancelled/skipped: id=${songId} reason="audio not ready" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+            logMessage(`[DJ] skipped: audio not ready (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+            if (breakDuckingStartedRef.current && volumeControllerRef.current?.isSequenceActive()) {
+              volumeControllerRef.current.cancel('Audio not ready for DJ speech');
+            }
+          }
+        } else {
+          console.log(`[DJ] silent break (remaining=${remaining.toFixed(1)}s, visibility: ${vis})`);
+          if (prep.pendingVarietyState) {
+            varietyStateRef.current = prep.pendingVarietyState;
+          }
+          if (prep.pendingState) {
+            djStateRef.current = prep.pendingState;
+          }
+          setLastDjBreak({
+            text: '',
+            slot: prep.slot,
+            kind: prep.kind,
+            detail: prep.detail,
+          });
+        }
+        preparedBreakRef.current = null;
+      }
+    }, 500);
+
+    return () => clearInterval(watchdogInterval);
+  }, [djMode, fadeDownMs]);
 
   // --- Poll YouTube Tab Status (Fallback every 5 seconds) ---
   const lastPolledStatusFingerprintRef = useRef<string>('');
@@ -1072,38 +2558,206 @@ export default function App() {
     }
   };
 
+  // Returns the authoritative duration for a song pick, prioritizing library duration_sec over player anomalies
+  const getEffectiveSongDuration = (pick: SongPick | null, playerDuration: number): number => {
+    const libDur = (pick?.song as any)?.duration_sec;
+    if (typeof libDur === 'number' && libDur > 0) {
+      if (playerDuration <= 0 || isNaN(playerDuration) || Math.abs(playerDuration - libDur) > 20) {
+        return libDur;
+      }
+      return playerDuration;
+    }
+    return playerDuration > 0 && !isNaN(playerDuration) ? playerDuration : 0;
+  };
+
   // Helper to pre-navigate and cue a song in the background without stealing focus or starting playback
   const prepareSong = async (videoId: string, title?: string) => {
     try {
       const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
       logMessage(`[Pre-Prepare] Cueing "${title || videoId}" in background YouTube tab...`);
       const res = await musicProviderRef.current.prepare(targetUrl, videoId, targetVolFraction);
       if (res.success) {
         logMessage(`[Pre-Prepare] Ready: "${title || videoId}" is cued and prepared.`);
-        let updatedStatus = res.status;
-        if (res.status) {
-          setPlaybackStatus((prev) => {
-            const next = {
-              ...prev,
-              ...res.status,
-              connectedTabId: res.status?.connectedTabId || prev.connectedTabId
-            };
-            playbackStatusRef.current = next;
-            return next;
-          });
-          updatedStatus = {
-            ...playbackStatusRef.current,
-            ...res.status
-          };
-        }
-        broadcastCurrentRadioState(true, false, updatedStatus);
+        const provTabId = musicProviderRef.current.getConnectedTabId();
+        const baseStatus = (res.status || {}) as Partial<MusicPlaybackStatus>;
+        // Preserve currently playing song's duration and position; do not clobber with background cued track status
+        const isCurrentPlayingTrack = playbackStatusRef.current?.videoId === videoId;
+        const nextStatus: MusicPlaybackStatus = {
+          ...playbackStatusRef.current,
+          ...baseStatus,
+          available: true,
+          videoId: isCurrentPlayingTrack ? videoId : (playbackStatusRef.current?.videoId || videoId),
+          title: isCurrentPlayingTrack ? (title || baseStatus.title || videoId) : (playbackStatusRef.current?.title || title || videoId),
+          currentTime: isCurrentPlayingTrack ? (baseStatus.currentTime ?? playbackStatusRef.current?.currentTime ?? 0) : (playbackStatusRef.current?.currentTime ?? 0),
+          duration: isCurrentPlayingTrack ? (baseStatus.duration ?? playbackStatusRef.current?.duration ?? 0) : (playbackStatusRef.current?.duration ?? 0),
+          connectedTabId: baseStatus.connectedTabId || playbackStatusRef.current?.connectedTabId || provTabId || null,
+        };
+        setPlaybackStatus(nextStatus);
+        playbackStatusRef.current = nextStatus;
+        broadcastCurrentRadioState(true, false, nextStatus);
       }
       return res.success;
     } catch (err: any) {
       logMessage(`[Pre-Prepare Error] Failed to prepare "${videoId}": ${err?.message || 'unknown error'}`);
       return false;
     }
+  };
+
+  // Helper to play a chosen library song directly via NAVIGATE_YOUTUBE without YouTube search API
+  const playLibrarySong = async (pick: SongPick, reason: string = 'Library song', expectedTuneSeq?: number): Promise<boolean> => {
+    return await playLibrarySongInternal(pick, reason, expectedTuneSeq, false);
+  };
+
+  const playLibrarySongInternal = async (
+    pick: SongPick,
+    reason: string = 'Library song',
+    expectedTuneSeq?: number,
+    fromHistoryNav: boolean = false
+  ): Promise<boolean> => {
+    const videoId = pick.song.streaming?.youtube?.id;
+    if (!videoId) return false;
+
+    if (typeof expectedTuneSeq === 'number' && expectedTuneSeq !== tuneSequenceRef.current) {
+      return false;
+    }
+
+    console.log(`[Song Selector] Chosen song: "${pick.song.title}" by "${pick.song.artist}" | tier: ${pick.tier} | genreMatched: ${pick.genreMatched} | reason: ${reason}`);
+    console.log(`tier: ${pick.tier}, genreMatched: ${pick.genreMatched}`);
+
+    // Update play state and history
+    if (!fromHistoryNav) {
+      const history = sessionHistoryRef.current;
+      history.entries.push({ pick, song: pick.song, videoId });
+      if (history.entries.length > 200) {
+        history.entries.shift();
+      }
+      history.pointer = history.entries.length - 1;
+      syncPlayStateFromHistory();
+    }
+
+    // Reset DJ break preparation and trigger state for the newly started song
+    clearPreparedBreak();
+    preparedForSongIdRef.current = null;
+    breakTriggeredForSongIdRef.current = null;
+
+    // Track previous and current song for DJ commentary
+    if (currentSongPickRef.current) {
+      previousLibrarySongRef.current = currentSongPickRef.current.song;
+    }
+    currentSongPickRef.current = pick;
+    songStartedAtMsRef.current = Date.now();
+    setCurrentSongPick(pick);
+
+    // Notice handling for genreMatched
+    if (!pick.genreMatched) {
+      setSongPlaybackNotice({
+        message: `No songs in genre "${activeStationGenreRef.current || 'selected genre'}" were charting then. Selected a charting contemporary track (${pick.song.title} by ${pick.song.artist}).`,
+        artist: pick.song.artist,
+        song: pick.song.title,
+        type: 'info'
+      });
+    } else {
+      setSongPlaybackNotice(null);
+    }
+
+    const songTitle = pick.song.title;
+    const songArtist = pick.song.artist;
+    const songYear = String(pick.song.chart_year || activeDateRef.current.slice(0, 4));
+
+    setProgramArtist(songArtist);
+    setProgramSongTitle(songTitle);
+    setProgramYear(songYear);
+    currentPlayingArtistRef.current = songArtist;
+    currentPlayingSongRef.current = songTitle;
+    currentPlayingYearRef.current = songYear;
+
+    const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const targetVolFraction = getNavVolumeFraction();
+
+    setProgramSongResult({
+      status: 'NAVIGATING',
+      requested: `${songArtist} — ${songTitle}`,
+      selectedTitle: songTitle,
+      selectedChannel: 'Official Recording',
+      selectedVideoId: videoId,
+      selectedUrl: targetUrl,
+      confidenceScore: 100,
+      reason: `${reason} (Tier ${pick.tier})`,
+      source: 'song library'
+    });
+
+    logMessage(`[Song Selector] Playing "${songArtist} - ${songTitle}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
+
+    const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, videoId, targetVolFraction, revealYouTubeToStart);
+
+    if (typeof expectedTuneSeq === 'number' && expectedTuneSeq !== tuneSequenceRef.current) {
+      logMessage(`[Song Selector] Playback request for "${songTitle}" superseded (seq ${expectedTuneSeq} vs ${tuneSequenceRef.current})`);
+      return false;
+    }
+
+    if (volumeControllerRef.current) {
+      await volumeControllerRef.current.syncInitialVolume(`${reason} start: "${songTitle}"`);
+    }
+
+    jingleStateRef.current = 'completed';
+    isExplicitStoppedRef.current = false;
+    hasFirstSongStartedPlayingRef.current = true;
+    isTuningSeekingRef.current = false;
+
+    const freshStat = navRes.status || (await musicProviderRef.current.getStatus().catch(() => null));
+    const provTabId = musicProviderRef.current.getConnectedTabId();
+    if (freshStat) {
+      setPlaybackStatus({
+        ...freshStat,
+        connectedTabId: freshStat.connectedTabId || provTabId || null
+      });
+    } else if (provTabId) {
+      setPlaybackStatus((prev) => ({
+        ...prev,
+        connectedTabId: provTabId
+      }));
+    }
+
+    setTestResults((prev) => ({ ...prev, playbackControl: true }));
+    broadcastCurrentRadioState();
+
+    // Immediately choose the next song as soon as the current one starts and keep it
+    if (songLibraryRef.current.length > 0) {
+      const history = sessionHistoryRef.current;
+      const isAtEnd = history.pointer === -1 || history.pointer === history.entries.length - 1;
+      if (isAtEnd || !nextSongRef.current) {
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
+        const nextPick = pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
+        );
+        nextSongRef.current = nextPick;
+        if (nextPick) {
+          console.log('[Song Selector] Pre-selected next song:', nextPick.song.title, 'by', nextPick.song.artist, '| tier:', nextPick.tier, '| genreMatched:', nextPick.genreMatched);
+        }
+      }
+
+      // Requirement 5: Start break preparation immediately when current song starts playback
+      const nextSong = nextSongRef.current?.song || null;
+      // When a station has only 1 eligible song (nextSong matches current song), do not introduce it as "next up"
+      const isSameAsCurrent = nextSong && (nextSong.id === pick.song.id || (nextSong.title.toLowerCase() === pick.song.title.toLowerCase() && nextSong.artist.toLowerCase() === pick.song.artist.toLowerCase()));
+      const nextSongForBreak = isSameAsCurrent ? null : nextSong;
+      if (!preparedBreakRef.current && !isPreparingBreakRef.current) {
+        console.log(`[DJ Ahead Prep] Initiating ahead-of-time break preparation immediately at song start for "${songTitle}" (next: ${nextSongForBreak ? `"${nextSongForBreak.title}"` : 'none (single-song or repeat)'})`);
+        // The break being prepared will air when this song ends, so pick.song is passed as the previous song
+        prepareObservationBreakAhead(pick.song.id, pick.song, nextSongForBreak);
+      }
+    }
+
+    return !!(freshStat?.isPlaying || navRes.success);
   };
 
   // --- Playback Controls ---
@@ -1120,13 +2774,31 @@ export default function App() {
       let desiredArtist: string = (programArtist || '').trim();
       let desiredYear: string = (programYear || '').trim();
 
-      // PLAY always plays music track from queue / selection, never the jingle.
-      // 1. Resolve Desired Song:
-      // Priority 1: programSongResult.selectedVideoId if already programmed
       if (programSongResult && programSongResult.selectedVideoId) {
         desiredVideoId = programSongResult.selectedVideoId;
         desiredTitle = programSongResult.selectedTitle || programSongTitle;
-      } else {
+      } else if (songLibraryRef.current.length > 0) {
+        // Priority 1.5: Pick from library for active date and genre
+        const targetDate = activeDateRef.current;
+        const targetGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((targetDate || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, targetDate);
+        const isNextGenreValid = nextSongRef.current && (
+          !targetGenre ||
+          nextSongRef.current.song.genres?.toLowerCase().includes(targetGenre.toLowerCase()) ||
+          hasGenre(nextSongRef.current.song, targetGenre, stationGenres) ||
+          nextSongRef.current.song.primary_genre?.toLowerCase() === targetGenre.toLowerCase()
+        );
+        const pick = (isNextGenreValid ? nextSongRef.current : null) || pickSong(songLibraryRef.current, targetDate, targetGenre, songPlayStateRef.current, Math.random, stationGenres);
+        if (pick) {
+          nextSongRef.current = null;
+          await playLibrarySong(pick, 'Play button library selection');
+          return true;
+        }
+      }
+
+      if (!desiredVideoId) {
         // Priority 2: Check selected preset's video ID
         const lookupKey = `${desiredArtist.toLowerCase()}|${(programSongTitle || '').trim().toLowerCase()}`;
         const preset = HARDCODED_PRESETS[lookupKey];
@@ -1264,7 +2936,7 @@ export default function App() {
       if (!isWatchPage || !currentLoadedVideoId || currentLoadedVideoId !== desiredVideoId) {
         logMessage(`Tab video (${currentLoadedVideoId || 'none/home'}) does not match desired song (${desiredVideoId}). Navigating...`);
         const targetUrl = `https://www.youtube.com/watch?v=${desiredVideoId}`;
-        const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+        const targetVolFraction = getNavVolumeFraction();
 
         const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, desiredVideoId, targetVolFraction, revealYouTubeToStart);
         if (transportCommandSeqRef.current !== seq) return false;
@@ -1452,6 +3124,21 @@ export default function App() {
       const clampedIndex = ((targetIndex % DEFAULT_SONG_QUEUE.length) + DEFAULT_SONG_QUEUE.length) % DEFAULT_SONG_QUEUE.length;
       currentQueueIndexRef.current = clampedIndex;
       const targetSong = DEFAULT_SONG_QUEUE[clampedIndex];
+
+      // Enforce historical eligibility: queue songs must not be released after the broadcast date
+      if (activeDateRef.current && !isReleasedOnOrBefore(targetSong, activeDateRef.current)) {
+        const ineligibleMsg = `Track "${targetSong.artist} - ${targetSong.song}" (${targetSong.year}) was released after the broadcast date (${activeDateRef.current}) and cannot be played.`;
+        logMessage(`[Queue Eligibility] ${ineligibleMsg}`);
+        setSongPlaybackNotice({
+          message: ineligibleMsg,
+          artist: targetSong.artist,
+          song: targetSong.song,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return false;
+      }
+
       logMessage(`[${reason}] Switching to track #${clampedIndex + 1}: "${targetSong.artist} - ${targetSong.song}" (${targetSong.year})...`);
 
       // Update program song state and Boom Box metadata
@@ -1472,7 +3159,7 @@ export default function App() {
       });
 
       const targetUrl = `https://www.youtube.com/watch?v=${targetSong.videoId}`;
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
 
       // Navigate background YouTube tab and trigger playback
       const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, targetSong.videoId, targetVolFraction, revealYouTubeToStart);
@@ -1511,17 +3198,145 @@ export default function App() {
   };
 
   const advanceToNextSong = async (isInitialAfterJingle: boolean = false): Promise<boolean> => {
-    let nextIndex = 0;
-    if (!isInitialAfterJingle) {
-      nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
+    if (isAdvancingRef.current) return false;
+    isAdvancingRef.current = true;
+    broadcastCurrentRadioState(true);
+    try {
+      if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+
+        // Auto advance: take nextSongRef or pick next song if at end of history
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
+        const pick = nextSongRef.current || pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
+        );
+
+        if (pick) {
+          nextSongRef.current = null;
+          const fromId = history.pointer >= 0 && history.pointer < history.entries.length
+            ? history.entries[history.pointer].videoId
+            : 'none';
+          const toId = pick.song.streaming?.youtube?.id || 'unknown';
+          const prevPointer = history.pointer;
+          const prevLen = history.entries.length;
+          const targetPointer = Math.min(prevLen, prevPointer + 1);
+          logMessage(`[Queue] action=AUTO from=${fromId} to=${toId} pointer=${targetPointer}/${prevLen + 1}`);
+
+          return await playLibrarySong(pick, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+        }
+        const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+        logMessage(`[Song Selector] ${noticeMsg}`);
+        setSongPlaybackNotice({
+          message: noticeMsg,
+          artist: activeStationGenreRef.current || 'Station',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return false;
+      }
+      let nextIndex = 0;
+      if (!isInitialAfterJingle) {
+        nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
+      }
+      return await navigateToQueueSong(nextIndex, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
+    } finally {
+      isAdvancingRef.current = false;
     }
-    return navigateToQueueSong(nextIndex, isInitialAfterJingle ? 'Initial Play' : 'Auto Advance');
   };
 
   const handleRewindMusic = async () => {
     musicProviderRef.current.recordTrace('HANDLE_REWIND_START');
     logMessage('Rewinding to beginning of previous song in queue...');
+    clearPreparedBreak('REWIND transport action');
+    if (pendingJingleRef.current) {
+      pendingJingleRef.current = null;
+    }
+    if (activeJingleRef.current) {
+      activeJingleRef.current = null;
+      if (jingleTimeoutRef.current) {
+        clearTimeout(jingleTimeoutRef.current);
+        jingleTimeoutRef.current = null;
+      }
+      jingleEndedHandlerRef.current = null;
+    }
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      volumeControllerRef.current.cancel('REWIND transport action');
+      setMixPhase('IDLE');
+    }
+
     try {
+      if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
+        const currentPointer = history.pointer;
+        const historyLen = history.entries.length;
+
+        if (currentPointer > 0) {
+          const fromId = history.entries[currentPointer].videoId;
+          history.pointer--;
+          const targetEntry = history.entries[history.pointer];
+          const toId = targetEntry.videoId;
+          logMessage(`[Queue] action=REWIND from=${fromId} to=${toId} pointer=${history.pointer}/${historyLen}`);
+
+          const ok = await playLibrarySongInternal(targetEntry.pick, 'REWIND / Previous', undefined, true);
+          if (ok) {
+            logMessage(`⏪ Rewound to previous track: "${targetEntry.song.artist} - ${targetEntry.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, song: targetEntry.song.title });
+            return;
+          }
+        } else if (currentPointer === 0) {
+          // At the first song, restart current song at 0:00 without calling pickSong
+          const currentId = history.entries[0]?.videoId || 'unknown';
+          logMessage(`[Queue] action=REWIND from=${currentId} to=${currentId} pointer=0/${historyLen} (restarted)`);
+          await musicProviderRef.current.seek(0).catch(() => {});
+          await musicProviderRef.current.play(revealYouTubeToStart).catch(() => {});
+          logMessage(`⏪ Restarted current track at 0:00: "${history.entries[0]?.song.artist} - ${history.entries[0]?.song.title}"`);
+          musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, restarted: true });
+          return;
+        }
+
+        // Fallback if history was empty: pickSong(..., 'playLibrarySong(pick, \'REWIND / Previous\')')
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
+        const pick = pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
+        );
+        if (pick) {
+          nextSongRef.current = null;
+          const ok = await playLibrarySong(pick, 'REWIND / Previous');
+          if (ok) {
+            logMessage(`⏪ Rewound to previous track: "${pick.song.artist} - ${pick.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_REWIND_FINISH', { success: true, song: pick.song.title });
+            return;
+          }
+        }
+
+        const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+        logMessage(`[Song Selector] ${noticeMsg}`);
+        setSongPlaybackNotice({
+          message: noticeMsg,
+          artist: activeStationGenreRef.current || 'Station',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return;
+      }
       const prevIndex = (currentQueueIndexRef.current - 1 + DEFAULT_SONG_QUEUE.length) % DEFAULT_SONG_QUEUE.length;
       const ok = await navigateToQueueSong(prevIndex, 'Rewind Previous');
       if (ok) {
@@ -1540,7 +3355,106 @@ export default function App() {
   const handleFastForwardMusic = async () => {
     musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_START');
     logMessage('Fast-forwarding to next song in queue...');
+
+    // Cleanly cancel DJ speech if currently speaking
+    clearPreparedBreak('SKIP transport action');
+    if (pendingJingleRef.current) {
+      logMessage(`[SKIP] Cancelled queued jingle "${pendingJingleRef.current.title || pendingJingleRef.current.id}".`);
+      pendingJingleRef.current = null;
+    }
+    if (activeJingleRef.current) {
+      logMessage(`[SKIP] Skipping active jingle "${activeJingleRef.current.title || activeJingleRef.current.id}" directly to next song.`);
+      activeJingleRef.current = null;
+      if (jingleTimeoutRef.current) {
+        clearTimeout(jingleTimeoutRef.current);
+        jingleTimeoutRef.current = null;
+      }
+      jingleEndedHandlerRef.current = null;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    if (persistentDjAudioRef.current) {
+      try {
+        persistentDjAudioRef.current.pause();
+        persistentDjAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+    if (djAudioRef.current && djAudioRef.current !== persistentDjAudioRef.current) {
+      try {
+        djAudioRef.current.pause();
+        djAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      volumeControllerRef.current.cancel('SKIP while DJ speaking');
+      setMixPhase('IDLE');
+    }
+
     try {
+      if (songLibraryRef.current.length > 0) {
+        const history = sessionHistoryRef.current;
+        const currentPointer = history.pointer;
+        const historyLen = history.entries.length;
+
+        // If pointer is not at the end, move forward one in history
+        if (currentPointer >= 0 && currentPointer < historyLen - 1) {
+          const fromId = history.entries[currentPointer].videoId;
+          history.pointer++;
+          const targetEntry = history.entries[history.pointer];
+          const toId = targetEntry.videoId;
+          logMessage(`[Queue] action=FF from=${fromId} to=${toId} pointer=${history.pointer}/${historyLen}`);
+
+          const ok = await playLibrarySongInternal(targetEntry.pick, 'SKIP / Fast Forward', undefined, true);
+          if (ok) {
+            logMessage(`⏩ Fast-forwarded to history track: "${targetEntry.song.artist} - ${targetEntry.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, song: targetEntry.song.title });
+            return;
+          }
+        }
+
+        // At the end of history: play pre-selected next song (even if genreMatched === false)
+        const currentStationGenre = activeStationGenreRef.current || 'Pop';
+        const yearNum = parseInt((activeDateRef.current || '').slice(0, 4), 10);
+        const dec = activeDecadeRef.current || (!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1980);
+        const stationGenres = getStationGenresForDecade(songLibraryRef.current, dec, activeDateRef.current);
+        const pick = nextSongRef.current || pickSong(
+          songLibraryRef.current,
+          activeDateRef.current,
+          currentStationGenre,
+          songPlayStateRef.current,
+          Math.random,
+          stationGenres
+        );
+
+        if (pick) {
+          const fromId = currentPointer >= 0 && currentPointer < historyLen
+            ? history.entries[currentPointer].videoId
+            : 'none';
+          const toId = pick.song.streaming?.youtube?.id || 'unknown';
+          logMessage(`[Queue] action=FF from=${fromId} to=${toId} pointer=${historyLen}/${historyLen + 1}`);
+
+          nextSongRef.current = null;
+          const ok = await playLibrarySong(pick, 'SKIP / Fast Forward');
+          if (ok) {
+            logMessage(`⏩ Skipped to next track: "${pick.song.artist} - ${pick.song.title}"`);
+            musicProviderRef.current.recordTrace('HANDLE_FAST_FORWARD_FINISH', { success: true, song: pick.song.title });
+            return;
+          }
+        }
+        const noticeMsg = "The library doesn't cover this date yet (currently the 1960s and early 1970s)";
+        logMessage(`[Song Selector] ${noticeMsg}`);
+        setSongPlaybackNotice({
+          message: noticeMsg,
+          artist: activeStationGenreRef.current || 'Station',
+          song: activeDateRef.current,
+          type: 'not_found'
+        });
+        broadcastCurrentRadioState(true, true);
+        return;
+      }
       const nextIndex = (currentQueueIndexRef.current + 1) % DEFAULT_SONG_QUEUE.length;
       const ok = await navigateToQueueSong(nextIndex, 'Fast Forward Next');
       if (ok) {
@@ -1574,6 +3488,9 @@ export default function App() {
       setProgramSongTitle(customOverride.song);
       setProgramYear(customOverride.year);
     }
+    currentPlayingArtistRef.current = artist;
+    currentPlayingSongRef.current = song;
+    currentPlayingYearRef.current = year;
 
     const requestedStr = `${artist} — ${song}${year ? ` (${year})` : ''}`;
 
@@ -1607,7 +3524,7 @@ export default function App() {
       jingleStateRef.current = 'completed';
       logMessage(`[Program Song] Hardcoded preset selected for "${preset.artist} - ${preset.song}". Skipping API search.`);
 
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
       const targetUrl = `https://www.youtube.com/watch?v=${preset.videoId}`;
 
       setProgramSongResult({
@@ -1726,7 +3643,7 @@ export default function App() {
       const sel = data.selected;
       logMessage(`[Program Song] Selected: "${sel.title}" on "${sel.channel}" (Score: ${sel.confidenceScore}). Navigating tab...`);
 
-      const targetVolFraction = (volumeControllerRef.current ? volumeControllerRef.current.getUserVolume() : targetMusicVolume) / 100;
+      const targetVolFraction = getNavVolumeFraction();
 
       setProgramSongResult({
         status: 'NAVIGATING',
@@ -1889,7 +3806,13 @@ export default function App() {
   };
 
   const killAllAudio = () => {
-    if (djAudioRef.current) {
+    if (persistentDjAudioRef.current) {
+      try {
+        persistentDjAudioRef.current.pause();
+        persistentDjAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+    if (djAudioRef.current && djAudioRef.current !== persistentDjAudioRef.current) {
       try {
         djAudioRef.current.pause();
         djAudioRef.current.currentTime = 0;
@@ -1929,18 +3852,51 @@ export default function App() {
     }
   };
 
+  const initDjAudioSystem = async (): Promise<boolean> => {
+    if (typeof window === 'undefined') return false;
+    try {
+      // 1. Create or ensure persistent audio element in DOM
+      if (!persistentDjAudioRef.current) {
+        const audioEl = document.createElement('audio');
+        audioEl.id = 'retrofm-persistent-dj-audio';
+        audioEl.style.display = 'none';
+        audioEl.preload = 'auto';
+        document.body.appendChild(audioEl);
+        persistentDjAudioRef.current = audioEl;
+      }
+
+      // 2. Initialize and attach to DjVoiceEffectsService
+      await djVoiceEffects.ensureInitialized();
+      if (persistentDjAudioRef.current) {
+        djVoiceEffects.attachAudioElement(persistentDjAudioRef.current);
+      }
+
+      // 3. Play a 100ms silent audio sample to prime the audio stack without audible output
+      if (!isDjAudioInitializedRef.current && persistentDjAudioRef.current) {
+        const silentAudioUri = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        persistentDjAudioRef.current.src = silentAudioUri;
+        try {
+          await persistentDjAudioRef.current.play();
+          isDjAudioInitializedRef.current = true;
+          logMessage('[DJ Audio Init] DJ audio system and effects chain initialized successfully.');
+        } catch (playErr: any) {
+          logMessage(`[DJ Audio Init] Silent warmup play deferred: ${playErr?.name}: ${playErr?.message}`);
+        }
+      }
+      return true;
+    } catch (err: any) {
+      logMessage(`[DJ Audio Init Error] ${err?.message}`);
+      return false;
+    }
+  };
+
   const handleStartInteraction = () => {
     setHasInteracted(true);
+    initDjAudioSystem();
     // Initialize Web Audio / speech context via user gesture
     if (typeof window !== 'undefined') {
       try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const ctx = new AudioCtx();
-          if (ctx.state === 'suspended') {
-            ctx.resume();
-          }
-        }
+        djVoiceEffects.ensureInitialized().catch(() => {});
       } catch (e) {}
       if (window.speechSynthesis) {
         try { window.speechSynthesis.resume(); } catch (e) {}
@@ -1950,66 +3906,575 @@ export default function App() {
     logMessage('RetroFM started via user interaction.');
   };
 
-  // --- Generate DJ Audio using Gemini Flash TTS or Kokoro TTS ---
-  const handleGenerateDJ = async (textOverride?: string): Promise<string | null> => {
-    const textToSynthesize = textOverride || djScript;
-    if (!textToSynthesize.trim()) {
+  // --- Central Unified DJ Speech & Mixing Function ---
+  const playDJSpeech = async (
+    textToSpeak: string,
+    options?: {
+      duckMusic?: boolean;
+      alreadyDucked?: boolean;
+      forceGenerate?: boolean;
+      preparedAudio?: string;
+      preparedDuration?: number;
+      delegateToBoomBox?: boolean;
+      breakId?: string;
+    }
+  ): Promise<boolean> => {
+    const text = (textToSpeak || djScript).trim();
+    if (!text) {
       setDjError('Please enter a DJ script.');
-      return null;
+      return false;
+    }
+
+    const vc = volumeControllerRef.current;
+    const shouldDuck = Boolean((options?.duckMusic || options?.alreadyDucked) && vc);
+    const isAlreadyDucked = Boolean(options?.alreadyDucked);
+
+    // Rule: No overlapping DJ sequences if ducking is active or requested (unless already ducked by lead duck)
+    if (shouldDuck && !isAlreadyDucked && vc?.isSequenceActive()) {
+      logMessage('[DJ Speech] Ignored: A DJ mixing sequence is already active.');
+      return false;
+    }
+
+    if (isDjSpeakingRef.current) {
+      logMessage('[DJ Speech] Ignored: A DJ speech playback is already in progress.');
+      return false;
+    }
+    isDjSpeakingRef.current = true;
+
+    // Cancel any previous in-flight speech/audio
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch {}
+    }
+    if (persistentDjAudioRef.current) {
+      try {
+        persistentDjAudioRef.current.pause();
+        persistentDjAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+    if (djAudioRef.current && djAudioRef.current !== persistentDjAudioRef.current) {
+      try {
+        djAudioRef.current.pause();
+        djAudioRef.current.currentTime = 0;
+      } catch {}
     }
 
     setIsGeneratingDJ(true);
     setDjError(null);
 
     const isKokoro = voiceEngine === 'KOKORO';
-    const voiceToUse = isKokoro ? selectedKokoroVoice : selectedVoice;
-    const engineLabel = isKokoro ? 'Kokoro TTS (Local)' : 'Gemini Flash TTS';
-    logMessage(`Generating DJ voice using ${engineLabel} (voice: ${voiceToUse})...`);
+    const isGemini = voiceEngine === 'GEMINI';
+    const isBrowser = voiceEngine === 'BROWSER';
+    const engineLabel = isKokoro ? 'Kokoro TTS (Local)' : isGemini ? 'Gemini Flash TTS' : 'Browser Speech';
+    const normalVol = vc ? vc.getUserVolume() : targetMusicVolume;
+    const duckVol = vc ? vc.getDuckLevel() : 20;
 
-    const startTime = performance.now();
+    let duckSucceeded = false;
+    let safetyTimeout: any = null;
+
     try {
-      const response = await generateTTS({
-        text: textToSynthesize,
-        engine: voiceEngine,
-        voice: voiceToUse,
-        style: djStyle,
-        model: isKokoro ? 'Kokoro-82M-bf16' : selectedModel
-      });
+      // Step A: Prepare or generate audio if using server/local TTS
+      let audioSrc = options?.preparedAudio || djAudioData;
+      let durationSec = options?.preparedDuration || djAudioDuration || 4;
 
-      const latencyMs = Math.round(performance.now() - startTime);
+      if ((isKokoro || isGemini) && !options?.preparedAudio) {
+        if (!audioSrc || options?.forceGenerate || text !== djScript) {
+          const voiceToUse = isKokoro ? selectedKokoroVoice : selectedVoice;
+          logMessage(`[TTS] Synthesizing voice using ${engineLabel} (voice: ${voiceToUse})...`);
 
-      if (response.success && response.audioBase64) {
-        const audioSrc = `data:${response.mimeType || 'audio/wav'};base64,${response.audioBase64}`;
-        setDjAudioData(audioSrc);
-        setDjAudioDuration(response.durationSeconds || 4);
-        setDjModelUsed(response.modelUsed || (isKokoro ? 'Kokoro-82M-bf16' : selectedModel));
-        setTestResults((prev) => ({
-          ...prev,
-          geminiTTS: true
-        }));
-        logMessage(`${engineLabel} audio generated in ${latencyMs}ms (${response.durationSeconds || '~4'}s audio). Ready.`);
-        return audioSrc;
-      } else {
-        if (!isKokoro && response.quotaExceeded) {
-          setVoiceEngine('BROWSER');
-          setDjError('Google Cloud Free Tier TTS quota reached (10 requests/day). Auto-switched to Instant Browser Voice for unlimited speech!');
-          logMessage('Quota reached. Auto-switched to Instant Browser DJ Voice Engine.');
-        } else {
-          setDjError(response.error || `${engineLabel} generation failed`);
-          logMessage(`${engineLabel} Error: ${response.error}`);
+          const startTime = performance.now();
+          const response = await generateTTS({
+            text,
+            engine: voiceEngine,
+            voice: voiceToUse,
+            style: djStyle,
+            model: isKokoro ? 'Kokoro-82M-bf16' : selectedModel,
+            speed: isKokoro ? kokoroSpeed : undefined,
+          });
+
+          const latencyMs = Math.round(performance.now() - startTime);
+
+          if (response.success && response.audioBase64) {
+            audioSrc = `data:${response.mimeType || 'audio/wav'};base64,${response.audioBase64}`;
+            durationSec = response.durationSeconds || 4;
+            setDjAudioData(audioSrc);
+            setDjAudioDuration(durationSec);
+            setDjModelUsed(response.modelUsed || (isKokoro ? 'Kokoro-82M-bf16' : selectedModel));
+            setTestResults((prev) => ({ ...prev, geminiTTS: true }));
+            logMessage(`${engineLabel} audio ready in ${latencyMs}ms (~${durationSec}s).`);
+          } else {
+            if (!isKokoro && response.quotaExceeded) {
+              setVoiceEngine('BROWSER');
+              setDjError('Google Cloud Free Tier TTS quota reached. Auto-switched to Instant Browser Voice.');
+              logMessage('Quota reached. Auto-switched to Instant Browser DJ Voice Engine.');
+            } else {
+              const errMsg = response.error || `${engineLabel} generation failed.`;
+              setDjError(errMsg);
+              logMessage(`[TTS Error] ${errMsg}`);
+            }
+            setTestResults((prev) => ({ ...prev, geminiTTS: false }));
+            return false;
+          }
         }
-        setTestResults((prev) => ({ ...prev, geminiTTS: false }));
-        return null;
       }
-    } catch (err: any) {
-      const msg = err.message || `Network error requesting ${engineLabel}`;
-      setDjError(msg);
-      setTestResults((prev) => ({ ...prev, geminiTTS: false }));
-      logMessage(`Network error requesting ${engineLabel}: ${msg}`);
-      return null;
-    } finally {
-      setIsGeneratingDJ(false);
+
+      // Step B: If music ducking requested, duck music now (skip if already ducked by lead duck)
+      if (shouldDuck && vc) {
+        if (!isAlreadyDucked) {
+          setMixPhase('FADING_DOWN');
+          logMessage(`▶ Ducking YouTube music from ${normalVol}% down to ${duckVol}% (${fadeDownMs}ms fade)...`);
+          const duckPromise = vc.duck(fadeDownMs, 'DJ speech start');
+          const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000));
+          const duckConfirmed = await Promise.race([duckPromise, timeoutPromise]);
+          if (!duckConfirmed) {
+            const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+            logMessage(`[Volume] Duck confirmation timed out after 2s (visibility: ${vis}) — proceeding with DJ speech`);
+          }
+        }
+        duckSucceeded = true;
+        setTestResults((prev) => ({ ...prev, musicDucking: true }));
+      }
+
+      setMixPhase(shouldDuck ? 'DJ_SPEAKING' : 'IDLE');
+      setIsPlayingDJPreview(true);
+
+      // Check if Boom Box is open and available to play audio in the focused tab
+      let playedViaBoomBox = false;
+      const shouldDelegateToBoomBox = options?.delegateToBoomBox !== false && shouldDuck;
+      const isDataUri = Boolean(audioSrc && audioSrc.startsWith('data:'));
+      const isBlobUrl = Boolean(audioSrc && audioSrc.startsWith('blob:'));
+      const isValidAudioSrc = Boolean(audioSrc && (isDataUri || isBlobUrl || audioSrc.startsWith('http')));
+      const audioSrcLen = audioSrc ? audioSrc.length : 0;
+
+      console.log(
+        `[DJ] Speech: Initiating playback: shouldDuck=${shouldDuck} isAlreadyDucked=${isAlreadyDucked} delegateToBoomBox=${shouldDelegateToBoomBox} audioSrcLen=${audioSrcLen} isDataUri=${isDataUri} isBlobUrl=${isBlobUrl} isValidAudio=${isValidAudioSrc} duration=${durationSec.toFixed(1)}s engine=${voiceEngine}`
+      );
+
+      if (shouldDelegateToBoomBox) {
+        console.log(`[DJ] Speech: Attempting delegation to Boom Box...`);
+        try {
+          const boomBoxPayload = {
+            audioSrc: isBrowser ? undefined : audioSrc,
+            durationSec,
+            text,
+            isBrowser,
+            effectsSettings: djVoiceEffects.getSettings()
+          };
+          if (options?.breakId) {
+            reportSegmentStatus(options.breakId, 'aired');
+          }
+
+          // Step 1: Send request to Boom Box with 1000ms start confirmation timeout
+          let boomBoxStarted = false;
+          let boomBoxSettled = false;
+          let boomBoxStartTime = 0;
+
+          const bbResPromise = musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
+          const bbTimeoutPromise = new Promise<{ success: boolean; timedOut?: boolean }>((resolve) =>
+            setTimeout(() => resolve({ success: false, timedOut: true }), 1000)
+          );
+
+          const bbRes = await Promise.race([bbResPromise, bbTimeoutPromise]);
+
+          if (bbRes && bbRes.success && !(bbRes as any).timedOut) {
+            boomBoxStarted = true;
+            boomBoxStartTime = performance.now();
+            console.log(`[DJ] Speech: Boom Box confirmed start within 1s. Playing voice on Boom Box.`);
+            logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
+            setTestResults((prev) => ({
+              ...prev,
+              geminiPlayback: true,
+              simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
+            }));
+
+            // Await speech completion on Boom Box tab
+            const completedCleanly = await new Promise<boolean>((resolve) => {
+              let timeout: any = null;
+              const finishUnsub = musicProviderRef.current.onBoomBoxDjSpeechFinished((finishPayload) => {
+                if (!boomBoxSettled) {
+                  boomBoxSettled = true;
+                  if (timeout) clearTimeout(timeout);
+                  finishUnsub();
+                  const elapsedSec = (performance.now() - boomBoxStartTime) / 1000;
+                  console.log(
+                    `[DJ] Speech: Boom Box finished callback received: success=${finishPayload?.success} error=${finishPayload?.error || 'none'} elapsed=${elapsedSec.toFixed(1)}s expected=${durationSec.toFixed(1)}s`
+                  );
+                  if (elapsedSec < durationSec - 1.0) {
+                    console.error(
+                      `[DJ] Speech Error: Boom Box speech ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`
+                    );
+                  }
+                  resolve(finishPayload?.success !== false);
+                }
+              });
+
+              const waitMs = (durationSec + 3) * 1000;
+              timeout = setTimeout(() => {
+                if (!boomBoxSettled) {
+                  boomBoxSettled = true;
+                  finishUnsub();
+
+                  // Check if song has already ended or has enough time remaining
+                  const curSongPick = currentSongPickRef.current;
+                  const curTime = playbackStatusRef.current?.currentTime || 0;
+                  const rawDur = playbackStatusRef.current?.duration || 0;
+                  const dur = getEffectiveSongDuration(curSongPick, rawDur);
+                  const remaining = dur > 0 ? (dur - curTime) : 0;
+
+                  if (remaining > 1.5) {
+                    console.log(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Falling back to local audio element in app tab.`
+                    );
+                    logMessage(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Falling back to local audio element in app tab.`
+                    );
+                    resolve(false);
+                  } else {
+                    console.log(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Break skipped because song has already ended (remaining=${remaining.toFixed(1)}s).`
+                    );
+                    logMessage(
+                      `[DJ] Speech: Boom Box playback timed out after ${(durationSec + 3).toFixed(1)}s. Break skipped because song has already ended.`
+                    );
+                    resolve(true); // marked as handled, skip local playback
+                  }
+                }
+              }, waitMs);
+            });
+
+            if (completedCleanly) {
+              playedViaBoomBox = true;
+            } else {
+              console.warn(
+                `[DJ] Speech: Boom Box playback reported early failure. Falling back to local audio element in app tab.`
+              );
+            }
+          } else {
+            console.log(
+              `[DJ] Speech: Boom Box did not confirm start within 1s (timedOut=${(bbRes as any)?.timedOut || false}, success=${bbRes?.success || false}). Falling back to local audio element in app tab.`
+            );
+          }
+        } catch (bbErr: any) {
+          console.warn(`[DJ] Speech: Boom Box delegation error (${bbErr?.message}). Falling back to local playback.`);
+        }
+      } else {
+        console.log(`[DJ] Speech: Boom Box delegation bypassed (shouldDelegateToBoomBox=false). Playing via local tab.`);
+      }
+
+      if (!playedViaBoomBox) {
+        console.log(`[DJ] Speech: Playing via local app tab audio path...`);
+        // Step C: Play speech with 15-second safety timeout
+        await new Promise<boolean>(async (resolve, reject) => {
+          let settled = false;
+          let speechStartTime = 0;
+
+          const cleanupTimeout = () => {
+            if (safetyTimeout) {
+              clearTimeout(safetyTimeout);
+              safetyTimeout = null;
+            }
+          };
+
+        safetyTimeout = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            logMessage(`[DJ] TTS Timeout: Speech did not complete within 15 seconds. Forcing safety cleanup.`);
+            if (isBrowser && typeof window !== 'undefined' && window.speechSynthesis) {
+              try { window.speechSynthesis.cancel(); } catch {}
+            }
+            if (persistentDjAudioRef.current) {
+              try { persistentDjAudioRef.current.pause(); } catch {}
+            }
+            if (djAudioRef.current) {
+              try { djAudioRef.current.pause(); } catch {}
+            }
+            resolve(false);
+          }
+        }, 15000);
+
+        if (isBrowser) {
+          if (typeof window === 'undefined' || !window.speechSynthesis) {
+            cleanupTimeout();
+            settled = true;
+            setDjError('Browser speech synthesis is not supported on this browser.');
+            return resolve(false);
+          }
+          const u = new SpeechSynthesisUtterance(text);
+          (window as any).__retroFmDJUtterance = u;
+          u.rate = 1.05;
+          const targetVol = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          u.volume = targetVol;
+          console.log(`[DJ] Speech: Effective voice volume: ${(targetVol * 100).toFixed(0)}% (setting: ${djVoiceVolumePercent}%, effects volume: ${djVoiceEffects.getSettings().voiceVolume})`);
+          u.onstart = () => {
+            speechStartTime = performance.now();
+            console.log(`[DJ] Speech: Browser speech synthesis started.`);
+            if (options?.breakId) {
+              reportSegmentStatus(options.breakId, 'aired');
+            }
+            logMessage('▶ Playing Browser DJ voice.');
+            setTestResults((prev) => ({
+              ...prev,
+              geminiPlayback: true,
+              simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
+            }));
+          };
+          u.onend = () => {
+            if (!settled) {
+              settled = true;
+              cleanupTimeout();
+              const elapsedSec = (performance.now() - speechStartTime) / 1000;
+              console.log(`[DJ] Speech: Browser speech ended cleanly (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+              if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+              }
+              resolve(true);
+            }
+          };
+          u.onerror = (e) => {
+            if (!settled) {
+              settled = true;
+              cleanupTimeout();
+              console.error(`[DJ] Speech Error: Browser speech error: ${e.error || 'speech failed'}`);
+              logMessage(`[Browser Speech Error] ${e.error || 'speech failed'}`);
+              resolve(false);
+            }
+          };
+          window.speechSynthesis.speak(u);
+        } else {
+          // Kokoro or Gemini Audio Playback
+          if (!audioSrc) {
+            cleanupTimeout();
+            settled = true;
+            console.error(`[DJ] Speech Error: No audio source available for playback.`);
+            return resolve(false);
+          }
+
+          // Use persistent audio element if available, falling back to new Audio
+          let audio = persistentDjAudioRef.current;
+          if (!audio && typeof document !== 'undefined') {
+            audio = document.createElement('audio');
+            audio.id = 'retrofm-persistent-dj-audio';
+            audio.style.display = 'none';
+            audio.preload = 'auto';
+            document.body.appendChild(audio);
+            persistentDjAudioRef.current = audio;
+          }
+          if (!audio) {
+            audio = new Audio();
+          }
+
+          audio.src = audioSrc;
+          const targetVol = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+          audio.volume = targetVol;
+          djAudioRef.current = audio;
+
+          const effectsSettings = djVoiceEffects.getSettings();
+          console.log(
+            `[DJ] Speech: Effective voice volume: ${(audio.volume * 100).toFixed(0)}% (setting: ${djVoiceVolumePercent}%, effects volume: ${effectsSettings.voiceVolume})`
+          );
+
+          // Route DJ voice through Web Audio DJ Voice Effects graph
+          try {
+            await djVoiceEffects.ensureInitialized();
+            djVoiceEffects.attachAudioElement(audio);
+          } catch (e) {
+            console.warn('[DjVoiceEffects] Failed to route audio through effects graph, playing directly:', e);
+          }
+
+          audio.onplay = () => {
+            speechStartTime = performance.now();
+            console.log(`[DJ] Speech: Audio element 'play' event fired.`);
+            if (options?.breakId) {
+              reportSegmentStatus(options.breakId, 'aired');
+            }
+          };
+          audio.onended = () => {
+            if (!settled) {
+              settled = true;
+              cleanupTimeout();
+              const elapsedSec = (performance.now() - speechStartTime) / 1000;
+              console.log(`[DJ] Speech: Audio element 'ended' event fired (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+              if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+              }
+              resolve(true);
+            }
+          };
+          audio.onerror = (e) => {
+            if (!settled) {
+              settled = true;
+              cleanupTimeout();
+              console.error(`[DJ] Speech Error: Audio element error:`, e);
+              logMessage(`[Audio Playback Error] Failed to play audio: ${e}`);
+              resolve(false);
+            }
+          };
+
+          try {
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              await playPromise;
+            }
+            console.log(`[DJ] Speech: audio.play() resolved successfully on primary audio element (${engineLabel}).`);
+            logMessage(`▶ Playing ${engineLabel} voice.`);
+            setTestResults((prev) => ({
+              ...prev,
+              geminiPlayback: true,
+              simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
+            }));
+          } catch (err: any) {
+            const audioCtx = djVoiceEffects.getAudioContext();
+            const timestamp = new Date().toISOString();
+            const errName = err?.name || 'Error';
+            const errMsg = err?.message || String(err);
+            const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+            const userAct = typeof navigator !== 'undefined' ? (navigator as any).userActivation?.hasBeenActive : 'unknown';
+            const audioCtxState = audioCtx ? audioCtx.state : 'uninitialized';
+
+            console.warn(
+              `[DJ] Speech Warning: Primary audio.play() rejected (${errName}: ${errMsg}, vis: ${vis}, userAct: ${userAct}, ctx: ${audioCtxState}). Attempting direct unrouted fallback...`
+            );
+
+            // Resilient fallback: attempt direct playback with a clean standalone HTMLAudioElement
+            let fallbackSucceeded = false;
+            try {
+              const fallbackAudio = new Audio(audioSrc);
+              fallbackAudio.volume = Math.max(0, Math.min(1, djVoiceVolumePercent / 100));
+              djAudioRef.current = fallbackAudio;
+
+              fallbackAudio.onplay = () => {
+                speechStartTime = performance.now();
+                console.log(`[DJ] Speech: Direct fallback audio 'play' event fired.`);
+              };
+              fallbackAudio.onended = () => {
+                if (!settled) {
+                  settled = true;
+                  cleanupTimeout();
+                  const elapsedSec = (performance.now() - speechStartTime) / 1000;
+                  console.log(`[DJ] Speech: Direct fallback 'ended' event fired (elapsed: ${elapsedSec.toFixed(1)}s expected: ${durationSec.toFixed(1)}s).`);
+                  if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
+                    console.error(`[DJ] Speech Error: Audio playback ended prematurely (elapsed ${elapsedSec.toFixed(1)}s < expected ${durationSec.toFixed(1)}s)`);
+                  }
+                  resolve(true);
+                }
+              };
+              fallbackAudio.onerror = (e) => {
+                if (!settled) {
+                  settled = true;
+                  cleanupTimeout();
+                  console.error(`[DJ] Speech Error: Direct fallback audio error:`, e);
+                  logMessage(`[Audio Playback Error] Direct fallback error: ${e}`);
+                  resolve(false);
+                }
+              };
+
+              const fallbackPromise = fallbackAudio.play();
+              if (fallbackPromise !== undefined) {
+                await fallbackPromise;
+              }
+              fallbackSucceeded = true;
+              console.log(`[DJ] Speech: Direct fallback audio.play() resolved successfully (${engineLabel}).`);
+              logMessage(`▶ Playing ${engineLabel} voice (direct unrouted fallback).`);
+              setTestResults((prev) => ({
+                ...prev,
+                geminiPlayback: true,
+                simultaneousPlayback: shouldDuck ? true : prev.simultaneousPlayback
+              }));
+            } catch (fallbackErr: any) {
+              const fbMsg = fallbackErr?.message || String(fallbackErr);
+              console.error(
+                `[DJ] Speech Error: Playback failed completely: ${errName}: ${errMsg} (direct fallback also failed: ${fbMsg}) visibility=${vis} userActivation=${userAct} audioCtxState=${audioCtxState}`
+              );
+              logMessage(
+                `[DJ Audio Failure] ${errName}: ${errMsg} (vis: ${vis}, userAct: ${userAct}, ctx: ${audioCtxState})`
+              );
+
+              // Immediate music restoration and sequence safety cancellation
+              if (shouldDuck && vc && vc.isSequenceActive()) {
+                try {
+                  await vc.cancel('DJ audio playback failed');
+                  logMessage('[DJ Audio Failure] Music volume restored immediately.');
+                } catch (cancelErr: any) {
+                  console.warn('[DJ Audio Failure] Error cancelling volume sequence:', cancelErr);
+                }
+              }
+
+              duckSucceeded = false;
+              setMixPhase('IDLE');
+              setIsPlayingDJPreview(false);
+              setDjError(`Audio play rejected: ${errMsg}`);
+
+              if (!settled) {
+                settled = true;
+                cleanupTimeout();
+                resolve(false);
+              }
+            }
+          }
+        }
+      });
     }
+
+    return true;
+    } catch (err: any) {
+      const errMsg = err?.message || 'DJ speech encountered an error.';
+      setDjError(errMsg);
+      logMessage(`[DJ Speech Exception] ${errMsg}`);
+      return false;
+    } finally {
+      isDjSpeakingRef.current = false;
+      if (safetyTimeout) {
+        clearTimeout(safetyTimeout);
+        safetyTimeout = null;
+      }
+      setIsGeneratingDJ(false);
+      setIsPlayingDJPreview(false);
+
+      // Restore music volume if ducked
+      if (duckSucceeded && vc) {
+        try {
+          setMixPhase('FADING_UP');
+          logMessage(`▶ Restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
+          await vc.restore(fadeUpMs, 'DJ speech finished');
+          setMixPhase('COMPLETED');
+          console.log(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
+          logMessage(`[DJ] Break finished playing: "${text.slice(0, 60)}"`);
+          setTestResults((prev) => ({
+            ...prev,
+            musicRestoration: true,
+            overallTransition: true
+          }));
+          setTimeout(() => setMixPhase('IDLE'), 1200);
+        } catch (err: any) {
+          logMessage(`[DJ Speech Restore Error] ${err?.message}`);
+          await vc.cancel('Restore exception');
+          setMixPhase('IDLE');
+        }
+      } else {
+        console.log(`[DJ] Break finished playing (no duck restoration): "${text.slice(0, 60)}"`);
+        logMessage(`[DJ] Break finished playing (no duck restoration): "${text.slice(0, 60)}"`);
+        if (shouldDuck && vc && vc.isSequenceActive()) {
+          try {
+            await vc.cancel('DJ speech failed before clean restoration');
+          } catch {}
+        }
+        setMixPhase('IDLE');
+      }
+    }
+  };
+
+  // --- Generate DJ Audio Button Handler (Synthesizes and immediately plays solo) ---
+  const handleGenerateDJ = async (textOverride?: string): Promise<string | null> => {
+    // Explicit user interaction: ensure Web Audio context is initialized and resumed
+    djVoiceEffects.ensureInitialized().catch(() => {});
+
+    const textToSynthesize = (textOverride || djScript).trim();
+    if (!textToSynthesize) {
+      setDjError('Please enter a DJ script.');
+      return null;
+    }
+
+    const ok = await playDJSpeech(textToSynthesize, { duckMusic: false, forceGenerate: true, delegateToBoomBox: false });
+    return ok ? djAudioData : null;
   };
 
   // --- Preview DJ Audio Solo ---
@@ -2019,256 +4484,560 @@ export default function App() {
       return;
     }
 
-    if (voiceEngine === 'BROWSER') {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        if (isPlayingDJPreview) {
-          window.speechSynthesis.cancel();
-          setIsPlayingDJPreview(false);
-          logMessage('Browser DJ preview stopped.');
-        } else {
-          window.speechSynthesis.cancel();
-          const u = new SpeechSynthesisUtterance(djScript);
-          u.rate = 1.05;
-          u.onstart = () => {
-            setIsPlayingDJPreview(true);
-            setTestResults((prev) => ({ ...prev, geminiPlayback: true }));
-            logMessage('Playing Instant Browser DJ speech preview.');
-          };
-          u.onend = () => setIsPlayingDJPreview(false);
-          u.onerror = () => setIsPlayingDJPreview(false);
-          window.speechSynthesis.speak(u);
-        }
-      }
-      return;
-    }
-
-    if (!djAudioData) return;
-
-    if (!djAudioRef.current) {
-      djAudioRef.current = new Audio(djAudioData);
-    }
-
     if (isPlayingDJPreview) {
-      djAudioRef.current.pause();
-      djAudioRef.current.currentTime = 0;
+      if (persistentDjAudioRef.current) {
+        try {
+          persistentDjAudioRef.current.pause();
+          persistentDjAudioRef.current.currentTime = 0;
+        } catch {}
+      }
+      if (djAudioRef.current && djAudioRef.current !== persistentDjAudioRef.current) {
+        try {
+          djAudioRef.current.pause();
+          djAudioRef.current.currentTime = 0;
+        } catch {}
+      }
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch {}
+      }
       setIsPlayingDJPreview(false);
       logMessage('DJ preview stopped.');
     } else {
-      djAudioRef.current.src = djAudioData;
-      const engineName = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
-      djAudioRef.current.play().then(() => {
-        setIsPlayingDJPreview(true);
-        setTestResults((prev) => ({ ...prev, geminiPlayback: true }));
-        logMessage(`Playing generated ${engineName} DJ speech preview.`);
-      }).catch((e) => {
-        logMessage('DJ preview playback error: ' + e.message);
-      });
-
-      djAudioRef.current.onended = () => {
-        setIsPlayingDJPreview(false);
-      };
+      // Explicit user interaction: ensure Web Audio context is initialized and resumed
+      djVoiceEffects.ensureInitialized().catch(() => {});
+      playDJSpeech(djScript, { duckMusic: false, forceGenerate: false, delegateToBoomBox: false });
     }
+  };
+
+  const reportSegmentStatus = (breakId: string, event: 'queued' | 'aired' | 'discarded', reason?: string) => {
+    try {
+      fetch('/api/dj/segment-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ breakId, event, reason }),
+      }).catch(() => {});
+    } catch {}
   };
 
   // --- Critical Audio Ducking & DJ-Over-Music Execution ---
   const executeDJOverMusic = async (scriptOverride?: string): Promise<boolean> => {
-    const vc = volumeControllerRef.current;
-    if (!vc) return false;
+    // Explicit user interaction: ensure Web Audio context is initialized and resumed
+    djVoiceEffects.ensureInitialized().catch(() => {});
+    return await playDJSpeech(scriptOverride || djScript, { duckMusic: true });
+  };
 
-    // Rule: No overlapping DJ sequences. If a DJ-over-music sequence is running, ignore second request.
-    if (vc.isSequenceActive()) {
-      logMessage('[DJ Over Music] Ignored request: A DJ sequence is already active.');
-      return false;
-    }
-
-    // Rule: Cancel any pending speech before a new sequence.
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {}
-    }
-    if (djAudioRef.current) {
-      try {
-        djAudioRef.current.pause();
-        djAudioRef.current.currentTime = 0;
-      } catch {}
-    }
-
-    const textToSpeak = scriptOverride || djScript;
-    let activeAudioSrc = djAudioData;
-
-    if (voiceEngine === 'GEMINI' || voiceEngine === 'KOKORO') {
-      if (!activeAudioSrc || scriptOverride) {
-        const engineLabel = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
-        logMessage(`DJ audio not yet generated for current script. Generating ${engineLabel} voice now...`);
-        activeAudioSrc = await handleGenerateDJ(textToSpeak);
-        if (!activeAudioSrc) {
-          logMessage(`Cannot run DJ Over Music: ${engineLabel} voice generation failed.`);
-          return false;
-        }
+  // --- Ahead-of-Time DJ Observation Break Builder & Synthesizer ---
+  const clearPreparedBreak = (reason?: string) => {
+    if (preparedBreakRef.current) {
+      if (preparedBreakRef.current.breakId) {
+        reportSegmentStatus(preparedBreakRef.current.breakId, 'discarded', reason || 'cleared');
       }
-    }
-
-    const normalVol = vc.getUserVolume();
-    const duckVol = vc.getDuckLevel();
-
-    setMixPhase('FADING_DOWN');
-    console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] DJ Over Music sequence initiated | normalVol: ${normalVol}% | duckVol: ${duckVol}% | fadeDown: ${fadeDownMs}ms | fadeUp: ${fadeUpMs}ms`
-    );
-    logMessage('▶ Step 1: Initiating DJ Over Music sequence.');
-
-    logMessage(`▶ Step 2: Smoothly ducking YouTube music from ${normalVol}% down to ${duckVol}% (${fadeDownMs}ms fade)...`);
-
-    // Duck YouTube volume through VolumeController (single RAMP_VOLUME command to content script)
-    const duckSuccess = await vc.duck(fadeDownMs, 'DJ speech start');
-    if (!duckSuccess) {
-      setMixPhase('IDLE');
-      return false;
-    }
-
-    setTestResults((prev) => ({ ...prev, musicDucking: true }));
-    setMixPhase('DJ_SPEAKING');
-    console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] DJ Speech started | ducked level active: ${duckVol}% | userVolume: ${normalVol}%`
-    );
-
-    let hasEnded = false;
-    let safetyTimeout: any = null;
-
-    const handleSpeechEnded = async (reason: string, resolve: (v: boolean) => void) => {
-      if (hasEnded) return;
-      hasEnded = true;
-      if (safetyTimeout) {
-        clearTimeout(safetyTimeout);
-        safetyTimeout = null;
+      if (reason) {
+        logMessage(`[DJ] Discarded prepared break: ${reason}`);
       }
-      (window as any).__retroFmDJUtterance = null;
+      preparedBreakRef.current = null;
+    }
+    isPreparingBreakRef.current = false;
+    preparedForSongIdRef.current = null;
+    breakDuckingStartedRef.current = false;
+  };
 
-      console.log(
-        `[RetroFM Volume] [${new Date().toISOString()}] DJ Speech ended (${reason}) | triggering restoration to master volume: ${vc.getUserVolume()}%`
+  const prepareObservationBreakAhead = async (
+    currentSongId: string,
+    prevSongObj: LibrarySong | null,
+    nextSongObj: LibrarySong | null
+  ) => {
+    if (isPreparingBreakRef.current) return;
+    if (preparedForSongIdRef.current === currentSongId) return;
+    if (preparedBreakRef.current?.id === currentSongId) return;
+    if (breakTriggeredForSongIdRef.current === currentSongId) return;
+
+    isPreparingBreakRef.current = true;
+    preparedForSongIdRef.current = currentSongId;
+    try {
+      const prev = toObsSong(prevSongObj);
+      const next = toObsSong(nextSongObj);
+      const date = activeDateRef.current;
+
+      // 2. Build context for buildVarietyBreak
+      const yearNum = parseInt(date.slice(0, 4), 10);
+      const decadeStr = (!isNaN(yearNum) && yearNum >= 1950) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s';
+      const tunedGenre = activeStationGenreRef.current;
+
+      const dynamicStations = calculateDynamicStationsForDate(
+        songLibraryRef.current,
+        date,
+        !isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960
       );
-      logMessage(`DJ speech sequence finished (${reason}). Proceeding to restore music.`);
-      logMessage(`▶ Step 5: DJ speech finished. Smoothly restoring YouTube music back to user volume (${fadeUpMs}ms fade)...`);
-      setMixPhase('FADING_UP');
+      const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960] || []);
+      const activeStation = (tunedGenre ? allStations.find(s => s.genre === tunedGenre) : null)
+        || allStations[0];
+      const frequencyStr = activeStation ? String(activeStation.frequency) : '91.7';
 
-      try {
-        await vc.restore(fadeUpMs, reason);
-        logMessage(`▶ Step 6: Radio mix transition complete! YouTube music returned to master volume (${normalVol}%).`);
-        setMixPhase('COMPLETED');
-        setTestResults((prev) => ({
-          ...prev,
-          musicRestoration: true,
-          overallTransition: true
-        }));
-        setTimeout(() => setMixPhase('IDLE'), 1200);
-        resolve(true);
-      } catch (err: any) {
-        logMessage(`[DJ Over Music Error] Restore failed: ${err?.message}`);
-        await vc.cancel('Restore exception');
-        setMixPhase('IDLE');
-        resolve(false);
+      // Latest chart date on or before the selected date
+      const allWeeks = weeklyTopDataRef.current;
+      let topOfWeek: TopEntry[] | null = null;
+      if (allWeeks) {
+        const validDates = Object.keys(allWeeks).filter((d) => d <= date).sort();
+        if (validDates.length > 0) {
+          topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+        }
       }
-    };
 
-    if (voiceEngine === 'BROWSER') {
-      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting Instant Browser DJ voice over music!`);
-      return new Promise<boolean>((resolve) => {
-        if (typeof window === 'undefined' || !window.speechSynthesis) {
-          logMessage('SpeechSynthesis not available in this browser.');
-          vc.cancel('SpeechSynthesis not available');
-          setMixPhase('IDLE');
-          return resolve(false);
+      // Segment Break Pipeline: query rich segment endpoint (/api/dj/segment-break)
+      const freqMap: Record<'every' | 'often' | 'sometimes' | 'rarely', number> = {
+        every: 1.0,
+        often: 0.85,
+        sometimes: 0.60,
+        rarely: 0.30,
+      };
+      const freqSetting = freqMap[djTalkFrequency] ?? 0.85;
+
+      const aiProvider = ((typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_ai_provider') : null) as 'gemini' | 'lmstudio') || 'gemini';
+      const lmEndpoint = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_endpoint') : null) || getEnv('LM_STUDIO_ENDPOINT') || 'http://localhost:1234/v1';
+      const lmModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('retrofm_lmstudio_model') : null) || getEnv('LM_STUDIO_MODEL') || undefined;
+
+      let segmentResult: any;
+      try {
+        const res = await fetch('/api/dj/segment-break', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selectedDate: date,
+            prevSong: prev ? { title: prev.title, artist: prev.artist, id: prev.id, first_chart_date: prevSongObj?.first_chart_date } : null,
+            nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: nextSongObj?.first_chart_date } : null,
+            frequencySetting: freqSetting,
+            frequencyPreset: djTalkFrequency,
+            frequencySource: djTalkFrequencySource,
+            usedFactKeys: Array.from(specABreakStateRef.current.usedFactKeys),
+            blacklistedFactKeys: Array.from(blacklistedFactKeysRef.current),
+            lastTopic: specABreakStateRef.current.lastBreakType,
+            breaksSinceLastRetroFm: specABreakStateRef.current.breaksSinceLastRetroFm ?? 4,
+            breaksSinceLastMusicNews: specABreakStateRef.current.breaksSinceLastMusicNews ?? 8,
+            lastShortCloser: specABreakStateRef.current.lastShortCloser || null,
+            totalBreaksSession: specABreakStateRef.current.totalBreaksSpoken,
+            lastHandoffGroup: specABreakStateRef.current.lastHandoffGroup,
+            recentHandoffTemplates: specABreakStateRef.current.recentHandoffTemplates || [],
+            provider: aiProvider,
+            endpoint: lmEndpoint,
+            model: lmModel,
+          }),
+        });
+        if (res.ok) {
+          segmentResult = await res.json();
+        } else {
+          throw new Error(`Server returned ${res.status}`);
+        }
+      } catch (err) {
+        console.warn('[DJ] Failed to fetch server segment break, falling back to silence:', err);
+        segmentResult = {
+          decision: 'silence',
+          breakType: null,
+          candidate: null,
+          finalSpeech: '',
+          targetSong: 'none',
+        };
+      }
+
+      // Update client-side session state
+      specABreakStateRef.current.totalSongChanges++;
+      if (Array.isArray(segmentResult.blacklistedKeys)) {
+        for (const bk of segmentResult.blacklistedKeys) {
+          blacklistedFactKeysRef.current.add(bk);
+        }
+      }
+      if (segmentResult.decision === 'speak' && segmentResult.finalSpeech) {
+        if (Array.isArray(segmentResult.usedKeys)) {
+          for (const k of segmentResult.usedKeys) {
+            specABreakStateRef.current.usedFactKeys.add(k);
+          }
+        }
+        specABreakStateRef.current.lastBreakType = segmentResult.breakType;
+        specABreakStateRef.current.totalBreaksSpoken++;
+
+        // Track handoff group and template recency (last 12)
+        if (typeof segmentResult.handoffGroup === 'number') {
+          specABreakStateRef.current.lastHandoffGroup = segmentResult.handoffGroup;
+        }
+        if (typeof segmentResult.handoffTemplate === 'string') {
+          const recents = specABreakStateRef.current.recentHandoffTemplates || [];
+          recents.push(segmentResult.handoffTemplate);
+          if (recents.length > 12) recents.shift();
+          specABreakStateRef.current.recentHandoffTemplates = recents;
         }
 
-        const words = textToSpeak.trim().split(/\s+/).filter(Boolean);
-        const estimatedDurationMs = Math.max(2500, Math.round(words.length * 400));
-        // Rule: Safety restore within estimated speech time PLUS 3 seconds
-        const safetyTimeoutMs = estimatedDurationMs + 3000;
-
-        safetyTimeout = setTimeout(() => {
-          logMessage(`[Safety Restore] Speech end event did not fire within estimated time + 3s (${(safetyTimeoutMs / 1000).toFixed(1)}s). Restoring volume.`);
-          if (typeof window !== 'undefined' && window.speechSynthesis) {
-            try { window.speechSynthesis.cancel(); } catch {}
-          }
-          handleSpeechEnded('safety timeout (estimated speech time + 3s)', resolve);
-        }, safetyTimeoutMs);
-
-        const utterance = new SpeechSynthesisUtterance(textToSpeak);
-        (window as any).__retroFmDJUtterance = utterance;
-
-        try {
-          const voices = window.speechSynthesis.getVoices();
-          const preferred = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Daniel') || v.name.includes('Alex') || v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Natural')));
-          if (preferred) {
-            utterance.voice = preferred;
-          }
-        } catch {}
-
-        utterance.rate = 1.02;
-        utterance.pitch = 1.0;
-
-        utterance.onstart = () => {
-          logMessage('▶ Step 4: Simultaneous playback confirmed: Browser DJ voice speaking over ducked music.');
-          setTestResults((prev) => ({
-            ...prev,
-            geminiPlayback: true,
-            simultaneousPlayback: true
-          }));
-        };
-
-        utterance.onend = () => {
-          handleSpeechEnded('onend event', resolve);
-        };
-
-        utterance.onerror = (e) => {
-          logMessage('Speech synthesis notice: ' + (e.error || 'ended'));
-          handleSpeechEnded(`onerror (${e.error || 'ended'})`, resolve);
-        };
-
-        try {
-          window.speechSynthesis.speak(utterance);
-        } catch (e: any) {
-          logMessage('SpeechSynthesis speak exception: ' + e.message);
-          handleSpeechEnded('exception', resolve);
+        if (typeof segmentResult.shortCloser === 'string') {
+          specABreakStateRef.current.lastShortCloser = segmentResult.shortCloser;
         }
+
+        if (segmentResult.breakType === 'music_news') {
+          specABreakStateRef.current.breaksSinceLastMusicNews = 0;
+        } else {
+          specABreakStateRef.current.breaksSinceLastMusicNews = (specABreakStateRef.current.breaksSinceLastMusicNews ?? 8) + 1;
+        }
+
+        // Track RetroFM in session state (separate station ID)
+        const aired = segmentResult.finalSpeech || '';
+        if (/RetroFM/i.test(aired)) {
+          specABreakStateRef.current.breaksSinceLastRetroFm = 0;
+        } else {
+          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 4) + 1;
+        }
+      }
+
+      // If silence was chosen, enter silent break immediately
+      if (segmentResult.decision === 'silence' || !segmentResult.finalSpeech) {
+        const silenceReason = segmentResult.silenceReason || 'Segment pipeline decided silence';
+        const summary = segmentResult.evalSummary;
+        const details = summary
+          ? `(setting: ${summary.frequencySetting} [preset: ${summary.frequencyPreset || djTalkFrequency}, source: ${summary.frequencySource || djTalkFrequencySource}], roll: ${summary.roll?.toFixed(2) ?? 'N/A'}, rollPassed: ${summary.rollPassed}, prevSong: "${summary.prevSong}", nextSong: "${summary.nextSong}", candidates: [${(summary.candidatesSummary || []).join(' ')}], rejectedReasons: [${(summary.fellThroughReasons || []).join(' | ') || 'none'}])`
+          : `(preset: ${djTalkFrequency}, source: ${djTalkFrequencySource})`;
+        console.log(`[DJ] Segment pipeline selected silence: ${silenceReason} ${details}`);
+        logMessage(`[DJ] Break silent: ${silenceReason}`);
+        preparedBreakRef.current = {
+          id: currentSongId,
+          audioData: null,
+          durationSec: 0,
+          text: '',
+          slot: 'before',
+          kind: 'silent',
+          timing: 'land',
+          pendingVarietyState: varietyStateRef.current,
+          triggerTimeRemaining: 1.5,
+          duckTriggerTimeRemaining: 2.0,
+        };
+        return;
+      }
+
+      const candidateSpokenText = segmentResult.finalSpeech;
+
+      const res = buildVarietyBreak(
+        {
+          prev,
+          next,
+          date,
+          now: new Date(),
+          decade: decadeStr,
+          genre: tunedGenre,
+          frequency: frequencyStr,
+          topOfWeek,
+          jingles: jinglesDataRef.current,
+          news: null,
+          length: djTalkLength,
+        },
+        varietyStateRef.current,
+        Math.random,
+        TALK_PRESETS[djTalkFrequency]
+      );
+
+      // Override with Segment candidate spoken text
+      res.text = candidateSpokenText;
+      if (segmentResult.breakType) {
+        res.kind = segmentResult.breakType as any;
+      }
+
+      const timing = res.timing || 'land';
+      const maxSeconds = res.maxSeconds;
+
+      if (res.kind === 'silent' || (!res.text && res.kind !== 'jingle')) {
+        console.log('[DJ] silent break');
+        preparedBreakRef.current = {
+          id: currentSongId,
+          audioData: null,
+          durationSec: 0,
+          text: '',
+          slot: 'before',
+          kind: res.kind,
+          detail: res.detail,
+          timing,
+          maxSeconds,
+          pendingVarietyState: res.state,
+          varietyResult: res,
+          triggerTimeRemaining: 1.5,
+          duckTriggerTimeRemaining: 2.0,
+        };
+        return;
+      }
+
+      if (res.kind === 'jingle') {
+        console.log(`[DJ] preparing jingle break: ${res.jingle?.id} (${res.jingle?.youtube_id})`);
+        const triggerTimeRemaining = 1.0 + Math.random() * 1.0;
+        preparedBreakRef.current = {
+          id: currentSongId,
+          audioData: null,
+          durationSec: res.jingle?.duration_sec || 5,
+          text: '',
+          slot: 'before',
+          kind: 'jingle',
+          detail: res.jingle?.title || res.jingle?.id,
+          timing: 'land',
+          pendingVarietyState: res.state,
+          varietyResult: res,
+          triggerTimeRemaining,
+          duckTriggerTimeRemaining: triggerTimeRemaining + 0.5,
+        };
+        return;
+      }
+
+      // Delivery Shaping: Shape punctuation before TTS synthesis
+      let finalText = res.text;
+      const protect: string[] = [];
+      if (prev) {
+        const spokenPrev = artistTitle(prev);
+        protect.push(spokenPrev.artist, spokenPrev.title, prev.title, prev.artist);
+      }
+      if (next) {
+        const spokenNext = artistTitle(next);
+        protect.push(spokenNext.artist, spokenNext.title, next.title, next.artist);
+      }
+      const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+      const beforeShaping = finalText;
+      finalText = shapeDelivery(finalText, {
+        excitement: djExcitement,
+        pauses: djPauses,
+        protect: uniqueProtect,
       });
-    } else {
-      const engineLabel = voiceEngine === 'KOKORO' ? 'Kokoro' : 'Gemini';
-      logMessage(`▶ Step 3: Music ducked to ${duckVol}%. Starting ${engineLabel} DJ voice over music!`);
-      return new Promise<boolean>((resolve) => {
-        const durationMs = Math.max(2500, Math.round((djAudioDuration || 5) * 1000));
-        // Rule: Safety restore within estimated speech time PLUS 3 seconds
-        const safetyTimeoutMs = durationMs + 3000;
+      console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${finalText}"`);
+      console.log(`[DJ] preparing break (kind: ${res.kind}, detail: ${res.detail ?? 'none'}): "${finalText}"`);
 
-        safetyTimeout = setTimeout(() => {
-          logMessage(`[Safety Restore] Audio end event did not fire within estimated time + 3s (${(safetyTimeoutMs / 1000).toFixed(1)}s). Restoring volume.`);
-          if (djAudioRef.current) {
-            try { djAudioRef.current.pause(); } catch {}
-          }
-          handleSpeechEnded('safety timeout (estimated audio duration + 3s)', resolve);
-        }, safetyTimeoutMs);
+      // Synthesize audio ahead of time
+      let audioBase64: string | null = null;
+      let durationSec = 4;
 
-        const djAudio = new Audio(activeAudioSrc!);
-        djAudioRef.current = djAudio;
-
-        djAudio.play().then(() => {
-          logMessage(`▶ Step 4: Simultaneous playback confirmed: ${engineLabel} DJ voice speaking over ducked music.`);
-          setTestResults((prev) => ({
-            ...prev,
-            geminiPlayback: true,
-            simultaneousPlayback: true
-          }));
-        }).catch((err) => {
-          logMessage('Error starting DJ audio: ' + err.message);
-          handleSpeechEnded('audio playback error', resolve);
+      if (voiceEngine === 'BROWSER') {
+        // Browser SpeechSynthesis does not produce base64 audio, estimate ~2.5 words/sec
+        audioBase64 = 'browser-speech';
+        const words = finalText.split(/\s+/).filter(Boolean);
+        durationSec = Math.max(3, Math.round(words.length / 2.5));
+      } else {
+        const voiceToUse = voiceEngine === 'KOKORO' ? selectedKokoroVoice : selectedVoice;
+        const resp = await generateTTS({
+          text: finalText,
+          engine: voiceEngine,
+          voice: voiceToUse,
+          style: djStyle,
+          model: voiceEngine === 'KOKORO' ? 'Kokoro-82M-bf16' : selectedModel,
+          speed: voiceEngine === 'KOKORO' ? kokoroSpeed : undefined,
+          breakId: segmentResult.breakId,
         });
 
-        djAudio.onended = () => {
-          handleSpeechEnded('audio onended', resolve);
-        };
-      });
+        if (resp.success && resp.audioBase64) {
+          audioBase64 = `data:${resp.mimeType || 'audio/wav'};base64,${resp.audioBase64}`;
+          durationSec = resp.durationSeconds || Math.max(3, Math.round(finalText.split(/\s+/).filter(Boolean).length / 2.5));
+        } else {
+          console.warn('[DJ] TTS generation failed during ahead-of-time prep:', resp.error);
+          if (segmentResult.breakId) {
+            reportSegmentStatus(segmentResult.breakId, 'discarded', 'TTS failure');
+          }
+        }
+      }
+
+      // Check if song changed while we were synthesizing
+      if (currentSongPickRef.current?.song?.id !== currentSongId && playbackStatusRef.current?.videoId !== currentSongId) {
+        console.log('[DJ] Discarding prepared break: active song changed during synthesis');
+        if (segmentResult.breakId) {
+          reportSegmentStatus(segmentResult.breakId, 'discarded', 'skipped song / song change');
+        }
+        return;
+      }
+
+      // Timing calculation based on measured audio duration
+      let triggerTimeRemaining = 1.5;
+      if (timing === 'land') {
+        const landOffset = 0.5 + Math.random() * 1.5; // Random in [0.5, 2.0]
+        triggerTimeRemaining = durationSec - landOffset;
+        if (triggerTimeRemaining > 25) {
+          triggerTimeRemaining = 25;
+        }
+        if (triggerTimeRemaining < 1.0) {
+          triggerTimeRemaining = 1.0;
+        }
+      } else {
+        // follow: speech starts 1.0 to 2.0 seconds before current song ends
+        triggerTimeRemaining = 1.0 + Math.random() * 1.0;
+      }
+
+      const duckTriggerTimeRemaining = triggerTimeRemaining + 0.5; // Duck 500ms before speech starts
+      const wordCount = finalText.split(/\s+/).filter(Boolean).length;
+
+      console.log(`[DJ] timing=${timing} audio=${durationSec.toFixed(1)}s start=remaining ${triggerTimeRemaining.toFixed(1)}s`);
+      logMessage(`[DJ] timing=${timing} audio=${durationSec.toFixed(1)}s start=remaining ${triggerTimeRemaining.toFixed(1)}s`);
+
+      preparedBreakRef.current = {
+        id: currentSongId,
+        breakId: segmentResult.breakId,
+        audioData: audioBase64,
+        durationSec,
+        text: finalText,
+        slot: 'before',
+        kind: res.kind,
+        detail: res.detail,
+        timing,
+        maxSeconds,
+        wordCount,
+        deliverySettings: {
+          length: djTalkLength,
+          excitement: djExcitement,
+          pauses: djPauses,
+        },
+        pendingVarietyState: res.state,
+        varietyResult: res,
+        triggerTimeRemaining,
+        duckTriggerTimeRemaining,
+        newsText: null,
+      };
+
+      if (segmentResult.breakId) {
+        reportSegmentStatus(segmentResult.breakId, 'queued');
+      }
+
+      const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+      const curCurTime = playbackStatusRef.current?.currentTime || 0;
+      const curDur = getEffectiveSongDuration(currentSongPickRef.current, playbackStatusRef.current?.duration || 0);
+      const curRemaining = curDur > 0 ? (curDur - curCurTime) : 0;
+      const readyRelSongChangeSec = ((Date.now() - songStartedAtMsRef.current) / 1000).toFixed(1);
+      console.log(`[DJ] break ready relative to song change: +${readyRelSongChangeSec}s | prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
+      logMessage(`[DJ] Break ready relative to song change: +${readyRelSongChangeSec}s | Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
+      console.log(`[DJ] Break scheduled: id=${currentSongId} duration=${curDur}s elapsed=${curCurTime.toFixed(1)}s remaining=${curRemaining.toFixed(1)}s triggerAtRemaining=${triggerTimeRemaining.toFixed(1)}s duckAtRemaining=${duckTriggerTimeRemaining.toFixed(1)}s (visibility: ${vis})`);
+    } catch (e: any) {
+      console.warn('[DJ] Error preparing ahead break:', e);
+    } finally {
+      isPreparingBreakRef.current = false;
     }
+  };
+
+  // --- Observation Break Builder & Test Helper ---
+  const generateObservationBreak = (
+    prev?: LibrarySong | null,
+    next?: LibrarySong | null
+  ): { text: string; slot: 'before' | 'after'; kind: string | null; detail?: string; timing?: 'land' | 'follow'; wordCount?: number } => {
+    const history = sessionHistoryRef.current;
+    const p = history.pointer;
+    const historyPrev = p > 0 ? history.entries[p - 1].song : (previousLibrarySongRef.current || currentSongPickRef.current?.song);
+    const historyNext = (p >= 0 && p < history.entries.length - 1)
+      ? history.entries[p + 1].song
+      : (nextSongRef.current?.song || null);
+
+    const prevSong = toObsSong(prev !== undefined ? prev : historyPrev);
+    const rawNext = next !== undefined ? next : historyNext;
+    const isSameSong = rawNext && (rawNext.id === currentSongPickRef.current?.song.id || (rawNext.title.toLowerCase() === currentSongPickRef.current?.song.title.toLowerCase() && rawNext.artist.toLowerCase() === currentSongPickRef.current?.song.artist.toLowerCase()));
+    const nextSong = toObsSong(isSameSong ? null : rawNext);
+    const date = activeDateRef.current;
+
+    const yearNum = parseInt(date.slice(0, 4), 10);
+    const decadeStr = (!isNaN(yearNum) && yearNum >= 1950) ? `${Math.floor(yearNum / 10) * 10}s` : '1960s';
+    const tunedGenre = activeStationGenreRef.current;
+
+    const dynamicStations = calculateDynamicStationsForDate(
+      songLibraryRef.current,
+      date,
+      !isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960
+    );
+    const allStations = dynamicStations.length > 0 ? dynamicStations : (STATIONS_BY_DECADE[!isNaN(yearNum) ? Math.floor(yearNum / 10) * 10 : 1960] || []);
+    const activeStation = (tunedGenre ? allStations.find(s => s.genre === tunedGenre) : null)
+      || allStations[0];
+    const frequencyStr = activeStation ? String(activeStation.frequency) : '91.7';
+
+    const allWeeks = weeklyTopDataRef.current;
+    let topOfWeek: TopEntry[] | null = null;
+    if (allWeeks) {
+      const validDates = Object.keys(allWeeks).filter((d) => d <= date).sort();
+      if (validDates.length > 0) {
+        topOfWeek = allWeeks[validDates[validDates.length - 1]] || null;
+      }
+    }
+
+    const res = buildVarietyBreak(
+      {
+        prev: prevSong,
+        next: nextSong,
+        date,
+        now: new Date(),
+        decade: decadeStr,
+        genre: tunedGenre,
+        frequency: frequencyStr,
+        topOfWeek,
+        jingles: jinglesDataRef.current,
+        news: null,
+        length: djTalkLength,
+      },
+      varietyStateRef.current,
+      Math.random,
+      TALK_PRESETS[djTalkFrequency]
+    );
+    varietyStateRef.current = res.state;
+
+    let spokenText = res.text;
+    if (spokenText && res.kind !== 'jingle') {
+      const protect: string[] = [];
+      if (prevSong) {
+        const spokenPrev = artistTitle(prevSong);
+        protect.push(spokenPrev.artist, spokenPrev.title, prevSong.title, prevSong.artist);
+      }
+      if (nextSong) {
+        const spokenNext = artistTitle(nextSong);
+        protect.push(spokenNext.artist, spokenNext.title, nextSong.title, nextSong.artist);
+      }
+      const uniqueProtect = Array.from(new Set(protect.filter(Boolean)));
+      const beforeShaping = spokenText;
+      spokenText = shapeDelivery(spokenText, {
+        excitement: djExcitement,
+        pauses: djPauses,
+        protect: uniqueProtect,
+      });
+      console.log(`[DJ Delivery] before: "${beforeShaping}" after: "${spokenText}"`);
+    }
+
+    const kindFormatted = res.kind ? res.kind : 'none';
+    if (!spokenText) {
+      console.log('[DJ] silent break');
+    } else {
+      console.log(`[DJ] mode=observations kind=${kindFormatted} detail=${res.detail ?? 'none'} text="${spokenText}"`);
+    }
+
+    const wordCount = spokenText ? spokenText.split(/\s+/).filter(Boolean).length : 0;
+    setLastDjBreak({
+      text: spokenText,
+      slot: 'before',
+      kind: res.kind,
+      detail: res.detail,
+      timing: res.timing || 'land',
+      wordCount,
+      spokenSeconds: spokenText ? Math.max(3, Math.round(wordCount / 2.5)) : 0,
+      deliverySettings: {
+        length: djTalkLength,
+        excitement: djExcitement,
+        pauses: djPauses,
+      },
+    });
+
+    return {
+      text: spokenText,
+      slot: 'before',
+      kind: res.kind,
+      detail: res.detail,
+      timing: res.timing || 'land',
+      wordCount,
+    };
+  };
+
+  const handleTestDjLine = async () => {
+    if (volumeControllerRef.current?.isSequenceActive()) {
+      logMessage('[Test DJ Line] DJ sequence active. Please wait for mix sequence to complete.');
+      return;
+    }
+    logMessage('[Test DJ Line] Generating observation break for current and next song...');
+    const prev = currentSongPickRef.current?.song || null;
+    const next = nextSongRef.current?.song || null;
+    const { text, slot, kind } = generateObservationBreak(prev, next);
+
+    if (!text) {
+      logMessage('[Test DJ Line] Observation break produced empty text (no comment generated).');
+      return;
+    }
+
+    logMessage(`[Test DJ Line] Speaking observation break (${slot}, kind: ${kind ?? 'none'}): "${text}"`);
+    await executeDJOverMusic(text);
   };
 
   // --- Timing Test Handler ---
@@ -2335,6 +5104,48 @@ export default function App() {
     );
   };
 
+  // Helper to render TTS capability badge with configured model name or FAIL
+  const renderTTSBadge = () => {
+    let modelName = selectedModel || 'gemini-2.5-flash-preview-tts';
+    let isAvailable = true;
+
+    if (voiceEngine === 'KOKORO') {
+      modelName = 'Kokoro-82M-bf16';
+      if (isKokoroAvailable === false) {
+        isAvailable = false;
+      }
+    } else if (voiceEngine === 'GEMINI') {
+      modelName = selectedModel || 'gemini-2.5-flash-preview-tts';
+      if (hasGeminiApiKey === false) {
+        isAvailable = false;
+      }
+    } else if (voiceEngine === 'BROWSER') {
+      modelName = 'Web Speech API';
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        isAvailable = false;
+      }
+    }
+
+    if (testResults.geminiTTS === false) {
+      isAvailable = false;
+    }
+
+    if (!isAvailable) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800">
+          <XCircle className="w-3.5 h-3.5" /> FAIL
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+        <CheckCircle2 className="w-3.5 h-3.5" /> {modelName}
+      </span>
+    );
+  };
+
+
   return (
     <div className="min-h-screen bg-[#0d0f14] text-zinc-200 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -2345,30 +5156,40 @@ export default function App() {
             className={`p-4 rounded-lg shadow-2xl flex items-start justify-between gap-3 font-mono text-xs animate-in fade-in duration-200 border-2 ${
               songPlaybackNotice.type === 'api_error'
                 ? 'bg-amber-950/90 border-amber-500 text-amber-100'
+                : songPlaybackNotice.type === 'info'
+                ? 'bg-blue-950/90 border-blue-500 text-blue-100'
                 : 'bg-rose-950/90 border-rose-600 text-rose-100'
             }`}
           >
             <div className="flex items-start gap-3">
               <AlertCircle
                 className={`w-5 h-5 shrink-0 mt-0.5 ${
-                  songPlaybackNotice.type === 'api_error' ? 'text-amber-400' : 'text-rose-400'
+                  songPlaybackNotice.type === 'api_error' ? 'text-amber-400' : songPlaybackNotice.type === 'info' ? 'text-blue-400' : 'text-rose-400'
                 }`}
               />
               <div>
                 <div
                   className={`font-bold text-sm tracking-wide uppercase flex items-center gap-2 ${
-                    songPlaybackNotice.type === 'api_error' ? 'text-amber-300' : 'text-rose-300'
+                    songPlaybackNotice.type === 'api_error' ? 'text-amber-300' : songPlaybackNotice.type === 'info' ? 'text-blue-300' : 'text-rose-300'
                   }`}
                 >
-                  <span>{songPlaybackNotice.type === 'api_error' ? 'API / QUOTA NOTICE' : 'RECORDING NOT FOUND'}</span>
+                  <span>
+                    {songPlaybackNotice.type === 'api_error'
+                      ? 'API / QUOTA NOTICE'
+                      : songPlaybackNotice.type === 'info'
+                      ? 'GENRE UNAVAILABLE ON THIS DATE'
+                      : 'RECORDING NOT FOUND'}
+                  </span>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded border font-normal ${
                       songPlaybackNotice.type === 'api_error'
                         ? 'bg-amber-900/60 border-amber-700 text-amber-200'
+                        : songPlaybackNotice.type === 'info'
+                        ? 'bg-blue-900/60 border-blue-700 text-blue-200'
                         : 'bg-rose-900/60 border-rose-700 text-rose-200'
                     }`}
                   >
-                    Nothing was played
+                    {songPlaybackNotice.type === 'info' ? 'Playing Contemporary Track' : 'Nothing was played'}
                   </span>
                 </div>
                 <div className="mt-1 text-zinc-100 text-xs leading-relaxed font-semibold">
@@ -2445,10 +5266,8 @@ export default function App() {
               <div className="p-3 bg-black/40 rounded border border-amber-900/60 space-y-1.5">
                 <strong className="text-amber-300 uppercase block font-bold text-[11px]">First Time Setup:</strong>
                 <ol className="list-decimal list-inside space-y-1 text-zinc-300 text-[11px]">
-                  <li>Download, unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).</li>
-                  <li>Open <code className="text-amber-300">chrome://extensions</code> (click button above).</li>
-                  <li>Turn on <strong className="text-zinc-100">Developer mode</strong> toggle in top-right.</li>
-                  <li>Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.</li>
+                  <li><strong className="text-zinc-100">Cloned the repo:</strong> In Google Chrome, go to <code className="text-amber-300">chrome://extensions</code>, turn on <strong className="text-zinc-100">Developer mode</strong> in the top-right, click <strong className="text-zinc-100">Load unpacked</strong>, and select the <code className="text-amber-200">extension</code> folder inside the project.</li>
+                  <li><strong className="text-zinc-100">Without the repo:</strong> Click <strong className="text-zinc-100">Download Extension</strong> above, unzip to a folder you’ll keep (e.g. <code className="text-amber-200">Documents/retrofm-extension</code>), and use <strong className="text-zinc-100">Load unpacked</strong> on that folder.</li>
                 </ol>
               </div>
 
@@ -3057,6 +5876,34 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1.5">
+                    {/* Consistency check between LCD text, Song Details panel, and session history */}
+                    {(() => {
+                      const history = sessionHistoryRef.current;
+                      const histEntry = (history.pointer >= 0 && history.pointer < history.entries.length)
+                        ? history.entries[history.pointer]
+                        : null;
+                      const histSongTitle = histEntry?.song.title || '';
+                      const histArtist = histEntry?.song.artist || '';
+
+                      const detailsTitle = programSongResult?.selectedTitle || programSongTitle || '';
+                      const detailsArtist = programArtist || currentPlayingArtistRef.current || '';
+
+                      // Extract current LCD text from last recorded broadcast payload if available
+                      // Compare title and artist when history has an active entry and details has a selection
+                      if (histSongTitle && detailsTitle && (histSongTitle !== detailsTitle || (histArtist && detailsArtist && histArtist !== detailsArtist))) {
+                        console.warn(
+                          '[STATE MISMATCH]',
+                          JSON.stringify({
+                            LCD: `${currentPlayingArtistRef.current} - ${currentPlayingSongRef.current}`,
+                            Details: `${detailsArtist} - ${detailsTitle}`,
+                            History: `${histArtist} - ${histSongTitle}`,
+                            pointer: `${history.pointer}/${history.entries.length}`
+                          })
+                        );
+                        console.trace();
+                      }
+                      return null;
+                    })()}
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-zinc-500">Requested:</span>
                       <span className="text-zinc-200 text-right font-semibold">
@@ -3121,6 +5968,120 @@ export default function App() {
                         <strong className="text-zinc-300">Selection Reason:</strong> {programSongResult.reason}
                       </div>
                     )}
+
+                    {/* Selected Date & Song Selector Tier / Genre Match Test Aids */}
+                    <div className="pt-1.5 border-t border-zinc-900 space-y-1 text-[11px]">
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">Selected Date:</span>
+                        <span className="text-amber-300 font-bold font-mono">{activeDateRef.current}</span>
+                      </div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">News Status:</span>
+                        <span className="text-amber-400 font-mono text-[10px] truncate max-w-[240px]" title={newsDebugStatus.uiText}>
+                          {newsDebugStatus.uiText}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">Tier / Genre Match:</span>
+                        <span className="text-zinc-300 font-mono">
+                          {currentSongPick
+                            ? `Tier ${currentSongPick.tier} | Matched: ${currentSongPick.genreMatched ? 'Yes' : 'No'}`
+                            : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-zinc-500">DJ Mode:</span>
+                        <span className={`font-bold ${djMode === 'off' ? 'text-zinc-500' : 'text-amber-400'}`}>
+                          {djMode === 'ai' ? 'AI-written (current)' : djMode === 'observations' ? 'Observations (template)' : 'Off'}
+                        </span>
+                      </div>
+                      {djMode === 'observations' && (
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="text-zinc-500">DJ talk frequency:</span>
+                          <span className="font-bold text-amber-400 capitalize">{djTalkFrequency}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* DJ Last Line Display & Test DJ line Button */}
+                    <div className="pt-2 border-t border-zinc-900 space-y-1.5">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-zinc-400 font-bold uppercase flex items-center gap-1.5">
+                          <Mic2 className="w-3 h-3 text-amber-400" />
+                          <span>Last DJ Line:</span>
+                        </span>
+                        <span className="text-zinc-400 text-[10px]">
+                          kind:{' '}
+                          <strong className="text-amber-400">
+                            {lastDjBreak
+                              ? (lastDjBreak.kind
+                                  ? (lastDjBreak.detail ? `${lastDjBreak.kind}/${lastDjBreak.detail}` : lastDjBreak.kind)
+                                  : 'null (announcement)')
+                              : 'none'}
+                          </strong>
+                        </span>
+                      </div>
+                      <div className="p-2 bg-black/50 border border-zinc-800 rounded text-zinc-300 text-[11px] italic leading-relaxed">
+                        {lastDjBreak?.text
+                          ? `"${lastDjBreak.text}"`
+                          : (lastDjBreak?.kind === 'jingle' ? '[Played RETRO FM jingle]' : '(No DJ break generated yet)')}
+                      </div>
+
+                      {/* Debug line: kind, detail, timing, word count, spoken length, delivery settings */}
+                      {lastDjBreak && (
+                        <div className="text-[10px] text-zinc-400 font-mono bg-zinc-950/80 px-2 py-1 rounded border border-zinc-800/60 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                          <div>
+                            <span className="text-zinc-500">break:</span>{' '}
+                            <span className="text-amber-300 font-semibold">{lastDjBreak.kind || 'plain'}</span>
+                            {lastDjBreak.detail && <span className="text-zinc-400"> ({lastDjBreak.detail})</span>}
+                            {lastDjBreak.timing && (
+                              <>
+                                <span className="text-zinc-600"> • </span>
+                                <span className="text-zinc-500">timing:</span>{' '}
+                                <span className="text-cyan-300">{lastDjBreak.timing}</span>
+                              </>
+                            )}
+                          </div>
+                          <div>
+                            {typeof lastDjBreak.wordCount === 'number' && (
+                              <>
+                                <span className="text-zinc-500">words:</span>{' '}
+                                <span className="text-zinc-300">{lastDjBreak.wordCount}</span>
+                                <span className="text-zinc-600"> • </span>
+                              </>
+                            )}
+                            {typeof lastDjBreak.spokenSeconds === 'number' && (
+                              <>
+                                <span className="text-zinc-500">spoken:</span>{' '}
+                                <span className="text-zinc-300">{lastDjBreak.spokenSeconds.toFixed(1)}s</span>
+                                <span className="text-zinc-600"> • </span>
+                              </>
+                            )}
+                            <span className="text-zinc-500">settings:</span>{' '}
+                            <span className="text-amber-400">
+                              len={lastDjBreak.deliverySettings?.length ?? djTalkLength}, ex={lastDjBreak.deliverySettings?.excitement ?? djExcitement}, pa={lastDjBreak.deliverySettings?.pauses ?? djPauses}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {lastDjBreak?.kind === 'news' && (
+                        <div className="text-[10px] text-zinc-400 font-medium flex items-center justify-end gap-1">
+                          <span>News:</span>
+                          <span className="text-zinc-300 font-semibold">The New York Times</span>
+                        </div>
+                      )}
+                      <div className="flex justify-end pt-0.5">
+                        <button
+                          type="button"
+                          onClick={handleTestDjLine}
+                          className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Mic2 className="w-3 h-3 text-amber-400" />
+                          <span>Test DJ line</span>
+                        </button>
+                      </div>
+                    </div>
 
                     {programSongResult.error && (
                       <div
@@ -3207,6 +6168,22 @@ export default function App() {
                   max="100"
                   value={targetMusicVolume}
                   onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer"
+                />
+              </div>
+
+              {/* DJ Voice Volume Slider */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-400">DJ Voice Volume:</span>
+                  <span className="text-amber-400 font-bold">{djVoiceVolumePercent}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={djVoiceVolumePercent}
+                  onChange={(e) => handleDjVoiceVolumeChange(Number(e.target.value))}
                   className="w-full accent-amber-500 cursor-pointer"
                 />
               </div>
@@ -3468,6 +6445,85 @@ export default function App() {
                       </select>
                     </div>
 
+                    {/* Kokoro TTS Speaking Speed Control */}
+                    <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-2">
+                      <div className="flex items-center justify-between text-xs font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-zinc-400">Speed:</span>
+                          {kokoroSpeed >= 1.05 && kokoroSpeed <= 1.15 && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Radio DJ
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-amber-400 font-bold">
+                          {kokoroSpeed.toFixed(2)}×{kokoroSpeed === 1.0 ? ' (Normal)' : ''}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2.0"
+                          step="0.05"
+                          value={kokoroSpeed}
+                          onChange={(e) => {
+                            const val = Math.round(parseFloat(e.target.value) * 100) / 100;
+                            setKokoroSpeed(val);
+                            setDjAudioData(null);
+                          }}
+                          className="w-full accent-amber-500 cursor-pointer h-1.5"
+                        />
+                        <div className="flex justify-between text-[10px] font-mono text-zinc-500 px-0.5">
+                          <span>0.50× (Slow)</span>
+                          <span className={kokoroSpeed === 1.0 ? 'text-amber-400 font-bold' : 'text-zinc-500'}>1.00× (Normal)</span>
+                          <span>2.00× (Fast)</span>
+                        </div>
+                      </div>
+
+                      {/* Speed Presets */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className="text-[10px] font-mono text-zinc-500 shrink-0">Presets:</span>
+                        <div className="grid grid-cols-4 gap-1.5 flex-1">
+                          {[
+                            { label: 'Slow', val: 0.85 },
+                            { label: 'Normal', val: 1.00 },
+                            { label: 'Energetic', val: 1.10 },
+                            { label: 'Fast', val: 1.25 },
+                          ].map((preset) => {
+                            const isSelected = Math.abs(kokoroSpeed - preset.val) < 0.001;
+                            return (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => {
+                                  setKokoroSpeed(preset.val);
+                                  setDjAudioData(null);
+                                }}
+                                className={`px-1.5 py-1 text-[10px] font-mono rounded border transition-colors cursor-pointer text-center ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-black font-bold border-amber-400'
+                                    : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-zinc-100'
+                                }`}
+                              >
+                                {preset.label} ({preset.val.toFixed(2)}×)
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Speed Guidance Helper */}
+                      <div className="text-[10px] font-mono text-zinc-400 bg-zinc-900/60 rounded px-2 py-1 border border-zinc-800/60">
+                        {kokoroSpeed <= 0.80 && '0.50×–0.80×: Slow and deliberate delivery.'}
+                        {kokoroSpeed > 0.80 && kokoroSpeed <= 1.00 && '0.85×–1.00×: Relaxed to normal pace.'}
+                        {kokoroSpeed > 1.00 && kokoroSpeed <= 1.15 && '1.05×–1.15×: Energetic radio DJ delivery (recommended).'}
+                        {kokoroSpeed > 1.15 && kokoroSpeed <= 1.40 && '1.20×–1.40×: Fast delivery.'}
+                        {kokoroSpeed > 1.40 && '1.45×–2.00×: Very fast delivery.'}
+                      </div>
+                    </div>
+
                     {isKokoroAvailable === false && (
                       <div className="p-2.5 rounded bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs font-mono flex items-start gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -3508,7 +6564,7 @@ export default function App() {
                       <div className="p-2.5 bg-[#0a0c10] border border-zinc-800 rounded flex items-center justify-between text-xs font-mono text-zinc-400">
                         <div className="flex items-center gap-2">
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          <span>Duration: ~{djAudioDuration}s | Voice: {selectedKokoroVoice}</span>
+                          <span>Duration: ~{djAudioDuration}s | Voice: {selectedKokoroVoice} | Speed: {kokoroSpeed.toFixed(2)}×</span>
                         </div>
                         <span className="text-[11px] text-zinc-500">24kHz 16-bit mono WAV</span>
                       </div>
@@ -3529,6 +6585,314 @@ export default function App() {
                   </button>
                 </div>
               )}
+              {/* DJ Voice Audio Effects (Reverb, AM Radio, FM Sparkle, Analog Saturation) */}
+              <div className="pt-3 border-t border-zinc-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-xs font-mono font-bold text-zinc-200 uppercase tracking-wider">
+                      DJ Voice Effects (Web Audio DSP)
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    Applies strictly to DJ voice
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                  {/* Effect 1: Reverb */}
+                  <div className={`p-3 rounded border transition-colors ${djEffects.reverbEnabled ? 'bg-amber-500/10 border-amber-500/40' : 'bg-[#0a0c10] border-zinc-800'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={djEffects.reverbEnabled}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ reverbEnabled: e.target.checked });
+                            setDjEffects(updated);
+                          }}
+                          className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 accent-amber-500 cursor-pointer"
+                        />
+                        <span className={`font-bold ${djEffects.reverbEnabled ? 'text-amber-400' : 'text-zinc-300'}`}>
+                          1. Reverb
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-zinc-500">Studio Ambience</span>
+                    </div>
+                    {djEffects.reverbEnabled && (
+                      <div className="space-y-1.5 pt-1 border-t border-zinc-800/60">
+                        <div className="flex justify-between text-[11px] text-zinc-400">
+                          <span>Wet Mix:</span>
+                          <span className="text-amber-400 font-bold">{Math.round(djEffects.reverbWetMix * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={djEffects.reverbWetMix}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ reverbWetMix: Number(e.target.value) });
+                            setDjEffects(updated);
+                          }}
+                          className="w-full accent-amber-500 cursor-pointer h-1.5"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Effect 2: AM Radio */}
+                  <div className={`p-3 rounded border transition-colors ${djEffects.amRadioEnabled ? 'bg-amber-500/10 border-amber-500/40' : 'bg-[#0a0c10] border-zinc-800'}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={djEffects.amRadioEnabled}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ amRadioEnabled: e.target.checked });
+                            setDjEffects(updated);
+                          }}
+                          className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 accent-amber-500 cursor-pointer"
+                        />
+                        <span className={`font-bold ${djEffects.amRadioEnabled ? 'text-amber-400' : 'text-zinc-300'}`}>
+                          2. AM Radio
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-zinc-500">250Hz - 3.0kHz</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
+                      Restricts frequency band to simulate authentic 1960s-1970s transistor AM broadcast.
+                    </p>
+                  </div>
+
+                  {/* Effect 3: FM Sparkle */}
+                  <div className={`p-3 rounded border transition-colors ${djEffects.fmSparkleEnabled ? 'bg-amber-500/10 border-amber-500/40' : 'bg-[#0a0c10] border-zinc-800'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={djEffects.fmSparkleEnabled}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ fmSparkleEnabled: e.target.checked });
+                            setDjEffects(updated);
+                          }}
+                          className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 accent-amber-500 cursor-pointer"
+                        />
+                        <span className={`font-bold ${djEffects.fmSparkleEnabled ? 'text-amber-400' : 'text-zinc-300'}`}>
+                          3. FM Sparkle
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-zinc-500">5kHz Peaking</span>
+                    </div>
+                    {djEffects.fmSparkleEnabled && (
+                      <div className="space-y-1.5 pt-1 border-t border-zinc-800/60">
+                        <div className="flex justify-between text-[11px] text-zinc-400">
+                          <span>Presence Boost:</span>
+                          <span className="text-amber-400 font-bold">+{djEffects.fmSparkleBoost} dB</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="12"
+                          step="0.5"
+                          value={djEffects.fmSparkleBoost}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ fmSparkleBoost: Number(e.target.value) });
+                            setDjEffects(updated);
+                          }}
+                          className="w-full accent-amber-500 cursor-pointer h-1.5"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Effect 4: Analog Saturation */}
+                  <div className={`p-3 rounded border transition-colors ${djEffects.saturationEnabled ? 'bg-amber-500/10 border-amber-500/40' : 'bg-[#0a0c10] border-zinc-800'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={djEffects.saturationEnabled}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ saturationEnabled: e.target.checked });
+                            setDjEffects(updated);
+                          }}
+                          className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 accent-amber-500 cursor-pointer"
+                        />
+                        <span className={`font-bold ${djEffects.saturationEnabled ? 'text-amber-400' : 'text-zinc-300'}`}>
+                          4. Analog Saturation
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-zinc-500">4x Oversampled</span>
+                    </div>
+                    {djEffects.saturationEnabled && (
+                      <div className="space-y-1.5 pt-1 border-t border-zinc-800/60">
+                        <div className="flex justify-between text-[11px] text-zinc-400">
+                          <span>Drive Intensity:</span>
+                          <span className="text-amber-400 font-bold">{djEffects.saturationDrive}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="40"
+                          step="1"
+                          value={djEffects.saturationDrive}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ saturationDrive: Number(e.target.value) });
+                            setDjEffects(updated);
+                          }}
+                          className="w-full accent-amber-500 cursor-pointer h-1.5"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Effect 5: Audio Compression */}
+                  <div className={`p-3 rounded border transition-colors col-span-1 sm:col-span-2 ${djEffects.compressionEnabled ? 'bg-amber-500/10 border-amber-500/40' : 'bg-[#0a0c10] border-zinc-800'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={djEffects.compressionEnabled}
+                          onChange={(e) => {
+                            const updated = djVoiceEffects.updateSettings({ compressionEnabled: e.target.checked });
+                            setDjEffects(updated);
+                          }}
+                          className="rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-0 accent-amber-500 cursor-pointer"
+                        />
+                        <span className={`font-bold ${djEffects.compressionEnabled ? 'text-amber-400' : 'text-zinc-300'}`}>
+                          5. Audio Compression
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-zinc-500">DynamicsCompressorNode + Makeup Gain</span>
+                    </div>
+
+                    {djEffects.compressionEnabled && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-zinc-800/60 text-[11px] text-zinc-400">
+                        {/* Threshold */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Threshold:</span>
+                            <span className="text-amber-400 font-bold">{djEffects.compressionThreshold} dB</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-60"
+                            max="0"
+                            step="1"
+                            value={djEffects.compressionThreshold}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionThreshold: Number(e.target.value) });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+
+                        {/* Ratio */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Ratio:</span>
+                            <span className="text-amber-400 font-bold">{djEffects.compressionRatio}:1</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="12"
+                            step="0.5"
+                            value={djEffects.compressionRatio}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionRatio: Number(e.target.value) });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+
+                        {/* Makeup Gain */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Makeup Gain:</span>
+                            <span className="text-amber-400 font-bold">+{djEffects.compressionMakeupGain} dB</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="12"
+                            step="0.5"
+                            value={djEffects.compressionMakeupGain}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionMakeupGain: Number(e.target.value) });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+
+                        {/* Attack */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Attack:</span>
+                            <span className="text-amber-400 font-bold">{Math.round(djEffects.compressionAttack * 1000)} ms</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="100"
+                            step="1"
+                            value={Math.round(djEffects.compressionAttack * 1000)}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionAttack: Number(e.target.value) / 1000 });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+
+                        {/* Release */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Release:</span>
+                            <span className="text-amber-400 font-bold">{Math.round(djEffects.compressionRelease * 1000)} ms</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="20"
+                            max="1000"
+                            step="10"
+                            value={Math.round(djEffects.compressionRelease * 1000)}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionRelease: Number(e.target.value) / 1000 });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+
+                        {/* Knee */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span>Knee:</span>
+                            <span className="text-amber-400 font-bold">{djEffects.compressionKnee} dB</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="30"
+                            step="1"
+                            value={djEffects.compressionKnee}
+                            onChange={(e) => {
+                              const updated = djVoiceEffects.updateSettings({ compressionKnee: Number(e.target.value) });
+                              setDjEffects(updated);
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer h-1.5"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* SECTION 4: RADIO MIX TEST (Duck Volume, Fades, DJ OVER MUSIC) */}
@@ -3580,7 +6944,13 @@ export default function App() {
                         max="3000"
                         step="50"
                         value={fadeDownMs}
-                        onChange={(e) => setFadeDownMs(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFadeDownMs(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('retrofm_fade_down_ms', String(val));
+                          }
+                        }}
                         className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-1.5 text-xs font-mono text-zinc-200"
                       />
                       <span className="text-xs font-mono text-zinc-500">ms</span>
@@ -3595,10 +6965,16 @@ export default function App() {
                       <input
                         type="number"
                         min="100"
-                        max="3000"
+                        max="10000"
                         step="50"
                         value={fadeUpMs}
-                        onChange={(e) => setFadeUpMs(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFadeUpMs(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('retrofm_fade_up_ms', String(val));
+                          }
+                        }}
                         className="w-full bg-[#0a0c10] border border-zinc-700 rounded px-2.5 py-1.5 text-xs font-mono text-zinc-200"
                       />
                       <span className="text-xs font-mono text-zinc-500">ms</span>
@@ -4188,8 +7564,8 @@ export default function App() {
             </div>
 
             <div className="p-3 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
-              <span className="text-zinc-300">Gemini Flash TTS:</span>
-              {renderBadge(testResults.geminiTTS)}
+              <span className="text-zinc-300">TTS:</span>
+              {renderTTSBadge()}
             </div>
 
             <div className="p-3 bg-[#0a0c10] border border-zinc-800 rounded flex justify-between items-center">
@@ -4226,21 +7602,39 @@ export default function App() {
         <DJBreakGeneratorTest
           onLogEvent={logMessage}
           onSpeakScript={(script) => {
-            if (volumeControllerRef.current?.isSequenceActive()) {
-              logMessage('DJ sequence active. Please wait for mix sequence to complete.');
-              return;
-            }
-            if (typeof window !== 'undefined' && window.speechSynthesis) {
-              window.speechSynthesis.cancel();
-              const u = new SpeechSynthesisUtterance(script);
-              u.rate = 1.05;
-              window.speechSynthesis.speak(u);
-            }
+            playDJSpeech(script, { duckMusic: false, forceGenerate: true });
           }}
           onSpeakOverMusic={(script) => {
             executeDJOverMusic(script);
           }}
           isMixingAudio={isDuckingActive}
+          initialDate={activeDateRef.current}
+          initialSongPlayed={
+            programArtist && programSongTitle
+              ? `${programArtist} - ${programSongTitle}`
+              : undefined
+          }
+          initialSongNext={
+            nextSongRef.current
+              ? `${nextSongRef.current.song.artist} - ${nextSongRef.current.song.title}`
+              : undefined
+          }
+          djMode={djMode}
+          onDjModeChange={handleDjModeChange}
+          djTalkFrequency={djTalkFrequency}
+          onDjTalkFrequencyChange={handleDjTalkFrequencyChange}
+          onTestDjLine={handleTestDjLine}
+          librarySongPlayed={currentSongPickRef.current?.song || null}
+          librarySongNext={nextSongRef.current?.song || null}
+          voiceEngine={voiceEngine}
+          selectedVoiceName={voiceEngine === 'KOKORO' ? selectedKokoroVoice : selectedVoice}
+          onObservationBreakGenerated={(breakData) => {
+            setLastDjBreak({
+              text: breakData.text,
+              slot: breakData.slot,
+              kind: breakData.kind,
+            });
+          }}
         />
 
         {/* --- SECTION 7: LIVE SYSTEM CONSOLE / LOG --- */}
@@ -4510,16 +7904,10 @@ export default function App() {
                     </h4>
                     <ol className="space-y-2 text-zinc-300 list-decimal list-inside text-xs leading-relaxed">
                       <li>
-                        Download the extension ZIP below and unzip to a folder you’ll keep (for example <code className="text-amber-200">Documents/retrofm-extension</code>).
+                        <strong className="text-zinc-100">If you cloned the repo:</strong> In Google Chrome, navigate to <code className="text-amber-300">chrome://extensions</code>, turn on <strong className="text-zinc-100">Developer mode</strong> in the top-right corner, click <strong className="text-zinc-100">Load unpacked</strong>, and select the <code className="text-amber-200">extension</code> folder inside your cloned RetroFM project directory.
                       </li>
                       <li>
-                        Open <code className="text-amber-300">chrome://extensions</code> in Google Chrome.
-                      </li>
-                      <li>
-                        Toggle <strong className="text-zinc-100">Developer mode</strong> in the top-right corner to <strong className="text-emerald-400">ON</strong>.
-                      </li>
-                      <li>
-                        Click <strong className="text-zinc-100">Load unpacked</strong> and pick that folder.
+                        <strong className="text-zinc-100">If running without the repo:</strong> Click <strong className="text-amber-400">Download Extension (ZIP)</strong> below, unzip to a permanent folder you’ll keep (e.g. <code className="text-amber-200">Documents/retrofm-extension</code>), and use <strong className="text-zinc-100">Load unpacked</strong> to select that unzipped folder.
                       </li>
                       <li>
                         Return to RetroFM and click <strong className="text-amber-400">Launch RetroFM</strong> to connect!

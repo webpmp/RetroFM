@@ -8,6 +8,7 @@ export interface KokoroVoiceInfo {
 
 export const FALLBACK_KOKORO_VOICES: KokoroVoiceInfo[] = [
   { id: 'am_michael', name: 'Michael (American Male - DJ/Host)', description: 'Default energetic American male' },
+  { id: 'am_echo', name: 'Echo (American Male)', description: 'Smooth resonant American male' },
   { id: 'bm_george', name: 'George (British Male - BBC Host)', description: 'Authoritative British male' },
   { id: 'af_bella', name: 'Bella (American Female)', description: 'Clear upbeat American female' },
   { id: 'af_sarah', name: 'Sarah (American Female)', description: 'Warm conversational American female' },
@@ -20,7 +21,8 @@ export class KokoroTTSProvider implements TTSProvider {
   private baseUrl: string;
 
   constructor(customBaseUrl?: string) {
-    this.baseUrl = customBaseUrl || process.env.KOKORO_BASE_URL || 'http://127.0.0.1:8880';
+    const envUrl = process.env.KOKORO_BASE_URL?.trim();
+    this.baseUrl = customBaseUrl || (envUrl ? envUrl : 'http://127.0.0.1:8880');
   }
 
   /**
@@ -94,13 +96,16 @@ export class KokoroTTSProvider implements TTSProvider {
    * Synthesize text into audio using Kokoro
    */
   async generate(request: TTSGenerateRequest): Promise<TTSGenerateResult> {
-    const { text, voice } = request;
+    const { text, voice, speed } = request;
     if (!text || !text.trim()) {
       throw new Error('Script text cannot be empty for Kokoro TTS.');
     }
 
     const candidateUrls = this.getCandidateUrls();
     const voiceToUse = voice || 'am_michael';
+    const speedToUse = typeof speed === 'number' && !isNaN(speed)
+      ? Math.max(0.5, Math.min(2.0, speed))
+      : 1.0;
     let lastError: Error | null = null;
 
     for (const url of candidateUrls) {
@@ -116,6 +121,7 @@ export class KokoroTTSProvider implements TTSProvider {
           body: JSON.stringify({
             text: text.trim(),
             voice: voiceToUse,
+            speed: speedToUse,
           }),
           signal: controller.signal,
         });

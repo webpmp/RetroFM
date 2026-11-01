@@ -1,3 +1,5 @@
+![RetroFM Radio Player](rm-retrofm-player.png)
+
 # RetroFM
 
 RetroFM is an AI-powered historical radio simulator and broadcast mixer that recreates authentic, era-accurate radio broadcasts for any chosen historical date. By combining real historical news facts from the New York Times Archive API, music lookup and video playback via YouTube, automatic real-time audio ducking through a companion Chrome extension bridge, and customizable DJ personalities (Mike & Lisa) driven by Google Gemini Flash Text-to-Speech and native browser speech engines, RetroFM delivers an immersive, interactive recreation of listening to top-40 radio in decades past.
@@ -46,9 +48,22 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
   docker compose up --build
   ```
 
+### Port and Local Access
+- **With Docker**: RetroFM runs at [http://localhost:3003](http://localhost:3003) (mapped from container port `3000`).
+- **Without Docker (`npm run dev`)**: RetroFM runs on the port printed by `npm run dev` (typically [http://localhost:3000](http://localhost:3000), or another available port). The companion extension and app communication automatically adapt to whatever port is in use.
+
 ---
 
 ## Getting Started (Local Node/npm)
+
+### Prerequisites
+- Node.js `>=20.19.0` (tested with Node `v26.11.1` and `npm v11.20.0`) or Bun `1.x`
+- Google Chrome (to load the companion Chrome extension bridge)
+
+1. Install dependencies:
+   ```bash
+   npm install # or bun install
+   ```
 
 2. Configure environment variables:
    Copy the example environment file:
@@ -61,9 +76,10 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
    ```bash
    npm run dev
    ```
-   Open [http://localhost:3000](http://localhost:3000) in Google Chrome.
+   Open the application in Google Chrome at the URL printed in the terminal (e.g. `http://localhost:3000`).
 
 4. Build for production:
+
    ```bash
    npm run build
    npm run start
@@ -71,7 +87,62 @@ RetroFM is an AI-powered historical radio simulator and broadcast mixer that rec
 
 ---
 
-## Environment Variables
+## Library Setups & Running Modes
+
+RetroFM is designed so that anyone who clones the repository can immediately run it with full DJ features and without requiring an external SQLite database.
+
+### Setup 1: Out-of-the-Box (Sample Dataset)
+A fresh clone includes a bundled sample dataset in `public/data/sample/` with ~50 curated songs across multiple dates and decades (1960s to 2000s), complete with authentic Billboard chart rankings, songwriter/producer credits, and active band member histories.
+
+When the full library files are not present, RetroFM detects this and **automatically loads the sample data**:
+```bash
+# 1. Clone the repository and install dependencies
+git clone https://github.com/chris-schmitz/RetroFM.git
+cd RetroFM
+npm install # or bun install
+
+# 2. Configure .env with your Gemini API key
+cp .env.example .env
+
+# 3. Launch the development server
+npm run dev # or docker compose up -d
+```
+Open the URL in Google Chrome ([http://localhost:3003](http://localhost:3003) when running Docker, or the port `npm run dev` prints when running locally). The DJ commentary, era-accurate chart trivia, and song stories will work out of the box using the sample dataset.
+
+
+---
+
+### Setup 2: Full Historical Library (Building with Database & Builder Scripts)
+For power users and contributors wanting the entire 70-year library (~1,800 verified YouTube tracks and 355,800 Billboard Hot 100 weekly chart entries spanning 1958 through today):
+
+1. **SQLite Database Warehouse**:
+   The authoritative historical data is maintained in an SQLite database at `~/retrofm/library.sqlite` (containing `songs`, `song_facts`, `band_members`, `artist_aliases`, and `weekly_chart`).
+   * **Weekly Chart Data (`weekly_chart`)**:
+     * **Source**: Scraped Billboard Hot 100 weekly chart compilation from the open-source repository [`utdata/rwd-billboard-data`](https://github.com/utdata/rwd-billboard-data) maintained by the University of Texas at Austin School of Journalism data journalism program. Specifically fetched from `https://raw.githubusercontent.com/utdata/rwd-billboard-data/main/data-out/hot-100-current.csv` via `~/retrofm/import_charts.py`.
+     * **Fetched Date**: October 11, 2026 (355,800 weekly rank rows covering 3,558 consecutive chart weeks from August 4, 1958 through October 10, 2026).
+     * **Update Mechanism**: An automated GitHub Actions workflow (`action_scrape_charts.R`) runs weekly in the upstream repository, scraping the latest weekly Billboard Hot 100 chart from Billboard.com and committing updated rows to `data-out/hot-100-current.csv`. Re-running `~/retrofm/import_charts.py` downloads the latest CSV and repopulates `weekly_chart`.
+     * **License / Terms**: The `utdata/rwd-billboard-data` code and compilation are licensed under the **MIT License**. The underlying historical chart rankings are factual historical records published by *Billboard* (Penske Media Corporation).
+   * **MusicBrainz Metadata**:
+     * Used for canonical track durations, release dates, recording IDs (`recording_mbid`), songwriter and producer credits, and band member line-ups.
+     * `bun run scripts/populate-library-credits.ts` queries the MusicBrainz API (`https://musicbrainz.org/ws/2/recording/${mbid}?inc=artist-rels+work-rels+recording-rels&fmt=json`) to populate songwriter (`written by`, `composed by`, `lyrics by`) and production credits into `song_credits`.
+     * `bun run scripts/populate-band-members.ts` queries the MusicBrainz Artist API (`https://musicbrainz.org/ws/2/artist/${mbid}?inc=artist-rels&fmt=json`) to populate band membership history (member names, begin/end join years, active line-up states).
+     * `src/services/music/songStoryCardService.ts` and `src/services/music/songSearch.ts` query MusicBrainz for canonical release years and artist origins.
+   * **Wikipedia Data**:
+     * Used by `src/services/music/songStoryCardService.ts` via the MediaWiki Action API (`action=query&prop=extracts|revisions`) to fetch page summaries and wikitext for song articles (or artist articles if no standalone song article exists).
+     * Parses behind-the-scenes writing history, recording trivia, cover song origins, sample/interpolation sources, and cultural impact to build rich DJ story cards evaluated by Gemini and LM Studio commentary prompts.
+
+2. **Deterministic Exporter Command**:
+   Whenever you enrich or build `library.sqlite`, run:
+   ```bash
+   npm run export-library
+   ```
+   This command:
+   * Validates referential integrity (ensuring every credit and fact maps to a valid song ID).
+   * Fully regenerates the verified catalog (`public/data/retrofm_library_youtube.json`), extra song references (`public/data/songs_extra.json`), song facts, band members, and artist aliases.
+   * Splits the 355,800 weekly chart rankings into decade JSON files (`public/data/chart_facts_<decade>.json`), atomically rewriting **only** decades whose content changed.
+   * Clears `.cache/song-cards/` so no stale cache persists.
+   * Prints row counts and file sizes. All exported files stay git-ignored.
+
 
 Configure the following variables in your local `.env` file (do not commit real values to version control):
 
@@ -92,12 +163,9 @@ RetroFM includes a companion Chrome extension that provides bidirectional tab co
 > **Tip**: Web browsers prevent pages from directly linking to `chrome://` URLs. RetroFM provides a convenient **"Copy chrome://extensions"** button right in the app header and modal.
 
 ### First Time Setup
-1. Download the extension ZIP (click **Download Extension** in the RetroFM app or download from the repository).
-2. Unzip the archive to a folder you will keep (for example, `Documents/retrofm-extension`).
-3. In Google Chrome, navigate to `chrome://extensions/`.
-4. Turn on the **Developer mode** toggle in the top-right corner.
-5. Click **Load unpacked** in the top-left corner and select your `retrofm-extension` folder.
-6. Return to RetroFM and click **Launch RetroFM** to automatically open YouTube and group both tabs into an orange "RetroFM" Chrome Tab Group.
+1. **If you cloned the repo**: In Google Chrome, navigate to `chrome://extensions/`. Turn on the **Developer mode** toggle in the top-right corner, click **Load unpacked**, and select the `extension` folder inside the cloned project directory.
+2. **If running without the repo**: Download the extension ZIP (click **Download Extension** in the RetroFM app), unzip the archive to a permanent folder (e.g. `Documents/retrofm-extension`), and use **Load unpacked** on that folder.
+3. Return to RetroFM and click **Launch RetroFM** to automatically open YouTube and group both tabs into an orange "RetroFM" Chrome Tab Group.
 
 ### Updating to a New Version
 1. Download the new version ZIP package from the RetroFM app.

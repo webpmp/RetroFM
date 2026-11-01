@@ -1,0 +1,513 @@
+[
+  {
+    "id": 85,
+    "band_name": "Creedence Clearwater Revival",
+    "member_name": "John Fogerty",
+    "begin_date": "1967",
+    "end_date": "1972"
+  },
+  {
+    "id": 86,
+    "band_name": "Creedence Clearwater Revival",
+    "member_name": "Tom Fogerty",
+    "begin_date": "1967",
+    "end_date": "1971"
+  },
+  {
+    "id": 87,
+    "band_name": "Creedence Clearwater Revival",
+    "member_name": "Stu Cook",
+    "begin_date": "1967",
+    "end_date": "1972"
+  },
+  {
+    "id": 88,
+    "band_name": "Creedence Clearwater Revival",
+    "member_name": "Doug Clifford",
+    "begin_date": "1967",
+    "end_date": "1972"
+  },
+  {
+    "id": 468,
+    "band_name": "Kool & The Gang",
+    "member_name": "Dennis “D.T.” Thomas",
+    "begin_date": "1964",
+    "end_date": "2021"
+  },
+  {
+    "id": 469,
+    "band_name": "Kool & The Gang",
+    "member_name": "George Brown",
+    "begin_date": "1964",
+    "end_date": "2023"
+  },
+  {
+    "id": 470,
+    "band_name": "Kool & The Gang",
+    "member_name": "Robert “Kool” Bell",
+    "begin_date": "1964",
+    "end_date": null
+  },
+  {
+    "id": 471,
+    "band_name": "Kool & The Gang",
+    "member_name": "James “J.T.” Taylor",
+    "begin_date": "1978",
+    "end_date": "1988"
+  },
+  {
+    "id": 472,
+    "band_name": "Kool & The Gang",
+    "member_name": "Clifford Adams",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 473,
+    "band_name": "Kool & The Gang",
+    "member_name": "Kevin Bell",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 474,
+    "band_name": "Kool & The Gang",
+    "member_name": "Ronald Bell",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 475,
+    "band_name": "Kool & The Gang",
+    "member_name": "Don Boyce",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 476,
+    "band_name": "Kool & The Gang",
+    "member_name": "Shawn McQuiller",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 477,
+    "band_name": "Kool & The Gang",
+    "member_name": "Robert Spike Mickens",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 478,
+    "band_name": "Kool & The Gang",
+    "member_name": "Mohamed Moretta",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 479,
+    "band_name": "Kool & The Gang",
+    "member_name": "Al Paris",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 480,
+    "band_name": "Kool & The Gang",
+    "member_name": "Michael Ray",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 481,
+    "band_name": "Kool & The Gang",
+    "member_name": "Claydes Smith",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 482,
+    "band_name": "Kool & The Gang",
+    "member_name": "Woody Sparrow",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 483,
+    "band_name": "Kool & The Gang",
+    "member_name": "Earl Toon, Jr.",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 484,
+    "band_name": "Kool & The Gang",
+    "member_name": "Ricky West",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 485,
+    "band_name": "Kool & The Gang",
+    "member_name": "Curtis “Fitz” Williams",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 486,
+    "band_name": "Kool & The Gang",
+    "member_name": "Odeen Mays",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 512,
+    "band_name": "Kool & The Gang",
+    "member_name": "Jim Bonnefond",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 39,
+    "band_name": "Queen",
+    "member_name": "Freddie Mercury",
+    "begin_date": "1970",
+    "end_date": "1991"
+  },
+  {
+    "id": 40,
+    "band_name": "Queen",
+    "member_name": "Brian May",
+    "begin_date": "1970",
+    "end_date": null
+  },
+  {
+    "id": 41,
+    "band_name": "Queen",
+    "member_name": "Roger Taylor",
+    "begin_date": "1970",
+    "end_date": null
+  },
+  {
+    "id": 42,
+    "band_name": "Queen",
+    "member_name": "John Deacon",
+    "begin_date": "1971",
+    "end_date": "1997"
+  },
+  {
+    "id": 203,
+    "band_name": "R.E.M.",
+    "member_name": "Michael Stipe",
+    "begin_date": "1980",
+    "end_date": "2011"
+  },
+  {
+    "id": 204,
+    "band_name": "R.E.M.",
+    "member_name": "Peter Buck",
+    "begin_date": "1980",
+    "end_date": "2011"
+  },
+  {
+    "id": 205,
+    "band_name": "R.E.M.",
+    "member_name": "Mike Mills",
+    "begin_date": "1980",
+    "end_date": "2011"
+  },
+  {
+    "id": 206,
+    "band_name": "R.E.M.",
+    "member_name": "Bill Berry",
+    "begin_date": "1980",
+    "end_date": "1997"
+  },
+  {
+    "id": 498,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Flea",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 499,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Anthony Kiedis",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 500,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Chad Smith",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 501,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "John Frusciante",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 502,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Josh Klinghoffer",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 503,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Dave Navarro",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 504,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Jack Irons",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 505,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Hillel Slovak",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 506,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Cliff Martinez",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 507,
+    "band_name": "Red Hot Chili Peppers",
+    "member_name": "Jack Sherman",
+    "begin_date": null,
+    "end_date": null
+  },
+  {
+    "id": 12,
+    "band_name": "The Beach Boys",
+    "member_name": "Brian Wilson",
+    "begin_date": "1961",
+    "end_date": null
+  },
+  {
+    "id": 13,
+    "band_name": "The Beach Boys",
+    "member_name": "Mike Love",
+    "begin_date": "1961",
+    "end_date": null
+  },
+  {
+    "id": 14,
+    "band_name": "The Beach Boys",
+    "member_name": "Carl Wilson",
+    "begin_date": "1961",
+    "end_date": "1998"
+  },
+  {
+    "id": 15,
+    "band_name": "The Beach Boys",
+    "member_name": "Dennis Wilson",
+    "begin_date": "1961",
+    "end_date": "1983"
+  },
+  {
+    "id": 16,
+    "band_name": "The Beach Boys",
+    "member_name": "Al Jardine",
+    "begin_date": "1961",
+    "end_date": null
+  },
+  {
+    "id": 17,
+    "band_name": "The Beach Boys",
+    "member_name": "David Marks",
+    "begin_date": "1962",
+    "end_date": "1963"
+  },
+  {
+    "id": 18,
+    "band_name": "The Beach Boys",
+    "member_name": "Bruce Johnston",
+    "begin_date": "1965",
+    "end_date": null
+  },
+  {
+    "id": 1,
+    "band_name": "The Beatles",
+    "member_name": "John Lennon",
+    "begin_date": "1960",
+    "end_date": "1969"
+  },
+  {
+    "id": 2,
+    "band_name": "The Beatles",
+    "member_name": "Paul McCartney",
+    "begin_date": "1960",
+    "end_date": "1970"
+  },
+  {
+    "id": 3,
+    "band_name": "The Beatles",
+    "member_name": "George Harrison",
+    "begin_date": "1960",
+    "end_date": "1970"
+  },
+  {
+    "id": 4,
+    "band_name": "The Beatles",
+    "member_name": "Ringo Starr",
+    "begin_date": "1962",
+    "end_date": "1970"
+  },
+  {
+    "id": 5,
+    "band_name": "The Beatles",
+    "member_name": "Stuart Sutcliffe",
+    "begin_date": "1960",
+    "end_date": "1961"
+  },
+  {
+    "id": 6,
+    "band_name": "The Beatles",
+    "member_name": "Pete Best",
+    "begin_date": "1960",
+    "end_date": "1962"
+  },
+  {
+    "id": 26,
+    "band_name": "The Doors",
+    "member_name": "Jim Morrison",
+    "begin_date": "1965",
+    "end_date": "1971"
+  },
+  {
+    "id": 27,
+    "band_name": "The Doors",
+    "member_name": "Ray Manzarek",
+    "begin_date": "1965",
+    "end_date": "1973"
+  },
+  {
+    "id": 28,
+    "band_name": "The Doors",
+    "member_name": "Robby Krieger",
+    "begin_date": "1965",
+    "end_date": "1973"
+  },
+  {
+    "id": 29,
+    "band_name": "The Doors",
+    "member_name": "John Densmore",
+    "begin_date": "1965",
+    "end_date": "1973"
+  },
+  {
+    "id": 109,
+    "band_name": "The Monkees",
+    "member_name": "Micky Dolenz",
+    "begin_date": "1965",
+    "end_date": "1971"
+  },
+  {
+    "id": 110,
+    "band_name": "The Monkees",
+    "member_name": "Davy Jones",
+    "begin_date": "1965",
+    "end_date": "1971"
+  },
+  {
+    "id": 111,
+    "band_name": "The Monkees",
+    "member_name": "Michael Nesmith",
+    "begin_date": "1965",
+    "end_date": "1970"
+  },
+  {
+    "id": 112,
+    "band_name": "The Monkees",
+    "member_name": "Peter Tork",
+    "begin_date": "1965",
+    "end_date": "1968"
+  },
+  {
+    "id": 59,
+    "band_name": "The Police",
+    "member_name": "Sting",
+    "begin_date": "1977",
+    "end_date": "1986"
+  },
+  {
+    "id": 60,
+    "band_name": "The Police",
+    "member_name": "Andy Summers",
+    "begin_date": "1977",
+    "end_date": "1986"
+  },
+  {
+    "id": 61,
+    "band_name": "The Police",
+    "member_name": "Stewart Copeland",
+    "begin_date": "1977",
+    "end_date": "1986"
+  },
+  {
+    "id": 19,
+    "band_name": "The Rolling Stones",
+    "member_name": "Mick Jagger",
+    "begin_date": "1962",
+    "end_date": null
+  },
+  {
+    "id": 20,
+    "band_name": "The Rolling Stones",
+    "member_name": "Keith Richards",
+    "begin_date": "1962",
+    "end_date": null
+  },
+  {
+    "id": 21,
+    "band_name": "The Rolling Stones",
+    "member_name": "Brian Jones",
+    "begin_date": "1962",
+    "end_date": "1969"
+  },
+  {
+    "id": 22,
+    "band_name": "The Rolling Stones",
+    "member_name": "Bill Wyman",
+    "begin_date": "1962",
+    "end_date": "1993"
+  },
+  {
+    "id": 23,
+    "band_name": "The Rolling Stones",
+    "member_name": "Charlie Watts",
+    "begin_date": "1963",
+    "end_date": "2021"
+  },
+  {
+    "id": 24,
+    "band_name": "The Rolling Stones",
+    "member_name": "Mick Taylor",
+    "begin_date": "1969",
+    "end_date": "1974"
+  },
+  {
+    "id": 25,
+    "band_name": "The Rolling Stones",
+    "member_name": "Ronnie Wood",
+    "begin_date": "1975",
+    "end_date": null
+  }
+]

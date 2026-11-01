@@ -22,14 +22,22 @@ body{margin:0;background:#000;transition:background .3s;color:#e9d9b8;font:13px/
 html:not(.dark),body:not(.dark){background:#fff}
 body.dark{--img:var(--imgB)}
 #tgl{margin-left:6px;flex:none;align-self:center;width:26px;height:22px;padding:0;border:1px solid #4fbf7a;border-radius:4px;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-#tglIcon{display:block;flex:none;transform-origin:center center;transition:transform .2s ease}
-#panel.collapsed #tglIcon{transform:rotate(180deg)}
+#tglIcon{display:block;flex:none}
 #panel.collapsed #chips{display:none}
 #copy{flex:1;white-space:nowrap}
 #freq{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0;flex:1;align-self:center}
 #sg{display:inline-flex;align-items:center;min-width:0;flex:0 1 auto;height:20px;min-height:20px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 1.2s ease-in-out;transform:none !important;margin:0;padding:0;vertical-align:middle}#sg.dim{opacity:.55}
 @media (prefers-reduced-motion: reduce){#sg{transition:none !important}}
 #sdot{flex:none;width:14px;height:14px;padding:0;border:0;background:transparent;color:#8dffb0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;line-height:14px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:1;vertical-align:middle;transform:translateY(1px)}#sdot[aria-pressed=false]{opacity:.38}
+#sdot.mode-hidden{opacity:.35;font-size:16px;color:#8dffb0}
+#sdot.mode-spectrum{display:inline-flex;align-items:center;justify-content:center}
+#sdot svg{display:block;flex:none}
+#saWrap{display:inline-flex;align-items:flex-end;justify-content:flex-end;gap:6px;height:24px;min-height:24px;min-width:0;flex:0 1 auto;overflow:hidden;padding:2px 0 1px;margin:0 4px 0 0;box-sizing:border-box}
+#saWrap.sa-hidden{display:none !important}
+.sa-col{display:inline-flex;flex-direction:column-reverse;justify-content:flex-start;gap:1.5px;height:21px;width:15px;flex:none}
+.sa-blk{width:15px;height:2px;background:rgba(79,191,122,.14);border-radius:0.5px;flex:none;transition:background .05s ease}
+.sa-blk.on{background:#8dffb0;box-shadow:var(--lcd-glow-seg, 0 0 3px rgba(120,255,160,.65))}
+.sa-blk.peak{background:#baffcb;box-shadow:0 0 4px rgba(186,255,203,.9), 0 0 7px rgba(120,255,160,.45)}
 #panel.entry{background:#151311;color:#e9d9b8}
 #panel.entry #decades,#panel.entry #row,#panel.entry #chips{display:none}
 #panel.live #board{display:none}
@@ -45,7 +53,13 @@ body.dark{--img:var(--imgB)}
 #board[data-s=date] #bDate,#board[data-s=genre] #bGen{opacity:1;color:#ffb347;font-weight:700}
 .foc[data-s=date] #fDate .fl.cur{box-shadow:inset 0 0 0 1px #ffb347}
 #bHint{font-size:11px;margin-top:8px;opacity:.7}#bHint.err{color:#ff9a6b;opacity:1}
-#decades{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+#decades{display:flex;gap:6px;margin-bottom:8px;align-items:center;min-height:23px}
+#stereo{display:inline-flex;align-items:center;height:23px;flex:none;line-height:0;margin-left:14px;pointer-events:none;will-change:opacity,filter}
+#panel.collapsed #stereo{margin-left:19px}
+#stereo.stereo-off{opacity:0;filter:none;transition:opacity 90ms ease-out}
+#stereo.stereo-searching{opacity:var(--stereo-flicker-op,.26);filter:brightness(.72) drop-shadow(0 0 2px rgba(126,255,164,.22));transition:opacity 42ms linear}
+#stereo.stereo-locked{opacity:1;filter:brightness(1.12) drop-shadow(0 0 5px rgba(126,255,164,.65));transition:opacity 140ms ease-out,filter 140ms ease-out}
+#stereo svg{display:block;width:44px;height:29.22px;transform:translateY(-0.25px)}
 button.tag{background:transparent;color:#8dffb0;font:inherit;font-size:11px;cursor:pointer;transition:background .15s}button.tag:hover,button.tag:focus-visible{background:rgba(141,255,176,.2)}
 .tag{border:1px solid #4fbf7a;border-radius:4px;padding:0 8px;height:23px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;line-height:1;font:inherit;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
 #hUp{margin-left:auto;padding:3px 10px;border:1px solid #4fbf7a;border-radius:4px;background:#8dffb0;color:#0e2217;font:inherit;font-size:11px;cursor:pointer}
@@ -112,16 +126,29 @@ html,body{overflow:hidden}
 #panel .tag,#panel button.tag,#panel #hDate,#panel .chip{font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-feature-settings:'cv02','cv03','cv04','cv11'}
 #panel .chip.sel{font-weight:600}
 #panel #sg{font-family:'DotGothic16',ui-monospace,Menlo,Consolas,monospace;font-size:17px}
+#panel{--lcd-glow-text-sm:0 0 1.5px rgba(141,255,176,.62),0 0 4.5px rgba(126,255,164,.32);--lcd-glow-text-md:0 0 1.5px rgba(141,255,176,.52),0 0 4.5px rgba(126,255,164,.26);--lcd-glow-status:0 0 1.5px rgba(141,255,176,.62),0 0 5px rgba(126,255,164,.34);--lcd-glow-seg:0 0 2px rgba(141,255,176,.75),0 0 6px rgba(126,255,164,.38);--lcd-glow-frame:0 0 1.5px rgba(141,255,176,.68),0 0 4.5px rgba(141,255,176,.42),0 0 8.5px rgba(126,255,164,.24),inset 0 0 3px rgba(141,255,176,.28);--lcd-glow-pill-lit:0 0 2px rgba(141,255,176,.8),0 0 6px rgba(141,255,176,.48),0 0 11px rgba(126,255,164,.28),inset 0 0 2px rgba(255,255,255,.22)}
+#panel #sg,#panel #sdot{text-shadow:var(--lcd-glow-text-md)}
+#panel #sg{will-change:opacity;backface-visibility:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+#panel .seg-st-sym,#panel .seg-st-text{text-shadow:var(--lcd-glow-status)}
+#panel .seg-bar.on,#panel .seg-dp-box,#panel .seg-st-bar.on{box-shadow:var(--lcd-glow-seg)}
+#panel .seg-unit{text-shadow:none}
+#panel .seg-unit-fm{text-shadow:var(--lcd-glow-text-md)}
+#panel .seg-unit-mhz{text-shadow:var(--lcd-glow-text-sm)}
+#panel .tag,#panel button.tag,#panel #hDate,#panel .chip,#panel .dec{text-shadow:var(--lcd-glow-text-sm);box-shadow:var(--lcd-glow-frame)}
+#panel #tgl{box-shadow:var(--lcd-glow-frame);transition:background .15s,box-shadow .15s}
+#panel #tgl:hover,#panel #tgl:focus-visible,#panel .chip:not(.sel):hover,#panel .chip:not(.sel):focus-visible{background:rgba(141,255,176,.2)}
+#panel #tglIcon{overflow:visible;filter:drop-shadow(0 0 2px rgba(126,255,164,.45))}
+#panel .chip.sel,#panel .dec.sel,#panel #hUp{text-shadow:none;box-shadow:var(--lcd-glow-pill-lit)}
 #hint{margin-top:6px;font-size:11px;opacity:.55}
 #app.rfm-dimmed{filter:blur(6px) brightness(0.35);pointer-events:none;user-select:none;transition:filter .4s ease,opacity .4s ease}
 .rfm-modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:99999;background:#000000;transition:opacity .3s ease}
 .rfm-modal-overlay.hidden{display:none}
 .rfm-modal-box{background:#000000;border:2px solid #000000;border-radius:10px;padding:24px 32px;box-shadow:none;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px;transition:border-color 0.8s ease,box-shadow 0.8s ease}
-.rfm-modal-box.ready{border-color:#4fbf7a;box-shadow:0 12px 36px rgba(0,0,0,0.85),0 0 16px rgba(79,191,122,0.25)}
+.rfm-modal-box.ready{border-color:#d22a1c;box-shadow:0 12px 36px rgba(0,0,0,0.85),0 0 16px rgba(210,42,28,0.35)}
 .rfm-modal-logo{max-height:72px;max-width:240px;width:auto;height:auto;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.6))}
 .rfm-start-btn{background:#000000;color:#000000;font:700 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.08em;padding:12px 26px;border:none;border-radius:6px;cursor:default;box-shadow:none;transition:background 0.8s ease,color 0.8s ease,box-shadow 0.8s ease,transform .15s ease}
-.rfm-start-btn.ready{background:#8dffb0;color:#0e2217;cursor:pointer;box-shadow:0 4px 14px rgba(141,255,176,0.35)}
-.rfm-start-btn.ready:hover:not(:disabled){background:#a9ffd5;transform:translateY(-1px);box-shadow:0 6px 18px rgba(141,255,176,0.5)}
+.rfm-start-btn.ready{background:#d22a1c;color:#ffffff;cursor:pointer;box-shadow:0 4px 14px rgba(210,42,28,0.4)}
+.rfm-start-btn.ready:hover:not(:disabled){background:#e03425;color:#ffffff;transform:translateY(-1px);box-shadow:0 6px 18px rgba(210,42,28,0.55)}
 .rfm-start-btn.ready:active:not(:disabled){transform:translateY(0)}
 .rfm-start-btn:disabled{cursor:default;transform:none}
 

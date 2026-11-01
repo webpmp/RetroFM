@@ -1,0 +1,20 @@
+[
+  {
+    "id": 33,
+    "artist_name": "Elton John",
+    "alias_name": "Reginald Dwight",
+    "alias_type": "Legal name"
+  },
+  {
+    "id": 41,
+    "artist_name": "Kool & The Gang",
+    "alias_name": "Jim Bonnefond",
+    "alias_type": "producer/writer collaborator"
+  },
+  {
+    "id": 19,
+    "artist_name": "Prince",
+    "alias_name": "Prince Rogers Nelson",
+    "alias_type": "Legal name"
+  }
+]

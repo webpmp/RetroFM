@@ -6,6 +6,7 @@ let activeRetroFmTabId = null;
 let activeBoomBoxTabId = null;
 let lastKnownRadioState = null;
 let latestYouTubeState = null;
+let lastKnownBalance = 0;
 
 // Unified Transport Trace Log (max 300 entries, stored in memory and persisted to chrome.storage.session)
 const MAX_TRANSPORT_TRACE_ENTRIES = 300;
@@ -183,10 +184,11 @@ async function resolveRetroFmTab(requestedTabId) {
     const tabs = await chrome.tabs.query({});
     const appTab = tabs.find(t =>
       t.url &&
-      (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
+      (t.url.startsWith('http://localhost') || t.url.startsWith('http://127.0.0.1') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
       !t.url.includes('player/index.html') &&
       !t.url.includes('youtube.com')
     );
+
     if (appTab && appTab.id) {
       await setStoredRegisteredAppTabId(appTab.id);
       return appTab.id;
@@ -278,6 +280,64 @@ async function resolveYouTubeTab(requestedTabId) {
     return activeTab.id;
   }
   return null;
+}
+
+// Check whether a YouTube tab exists and RetroFM integration is ready
+async function checkYouTubeReadiness() {
+  const tabId = await resolveYouTubeTab();
+  if (!tabId) {
+    return { ready: false, tabId: null };
+  }
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url || !tab.url.includes('youtube.com')) {
+      return { ready: false, tabId: null };
+    }
+    if (tab.status !== 'complete') {
+      return { ready: false, tabId, loading: true };
+    }
+    const injected = await ensureYouTubeScriptInjected(tabId);
+    if (!injected) {
+      return { ready: false, tabId };
+    }
+    activeConnectedTabId = tabId;
+    return { ready: true, tabId };
+  } catch (e) {
+    return { ready: false, tabId: null };
+  }
+}
+
+// Notify connected Boom Box and RetroFM app when YouTube integration is ready
+async function notifyYouTubeReadiness(tabId) {
+  if (lastKnownRadioState) {
+    lastKnownRadioState.isStartupReady = true;
+  }
+  const bbTabId = await resolveBoomBoxTab();
+  if (bbTabId) {
+    try {
+      chrome.tabs.sendMessage(bbTabId, {
+        type: 'RADIO_STATE',
+        payload: {
+          ...(lastKnownRadioState || {}),
+          appConnected: true,
+          isStartupReady: true
+        }
+      }).catch(() => {});
+      chrome.tabs.sendMessage(bbTabId, {
+        type: 'YT_READY',
+        payload: { tabId, isStartupReady: true }
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  const retroTabId = await resolveRetroFmTab();
+  if (retroTabId) {
+    try {
+      chrome.tabs.sendMessage(retroTabId, {
+        type: 'YT_PAGE_READY',
+        payload: { connectedTabId: tabId }
+      }).catch(() => {});
+    } catch (e) {}
+  }
 }
 
 // Helper: Find existing tab group named "RetroFM" or "Retro FM" in window
@@ -499,6 +559,26 @@ function handleIncomingRequest(request, sender, sendResponse) {
         return;
       }
 
+      // Feature: YT_PAGE_READY - YouTube content script announced presence and readiness
+      if (type === 'YT_PAGE_READY') {
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+          activeConnectedTabId = tabId;
+        }
+        if (payload?.videoId) {
+          latestYouTubeState = {
+            state: -1,
+            videoId: payload.videoId,
+            title: payload.title || '',
+            currentTime: 0,
+            duration: 0
+          };
+        }
+        await notifyYouTubeReadiness(tabId);
+        sendResponse({ success: true, connectedTabId: tabId });
+        return;
+      }
+
       // Feature: YT_STATE_CHANGED - Pushed YouTube player state update
       if (type === 'YT_STATE_CHANGED') {
         const statePayload = payload || {};
@@ -535,6 +615,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           } catch (e) {}
         }
 
+        sendResponse({ success: true });
+        return;
+      }
+
+      // Feature: VU_AUDIO_LEVELS - Real-time audio signal levels from YouTube tab to Boom Box
+      if (type === 'VU_AUDIO_LEVELS') {
+        const bbTabId = await resolveBoomBoxTab();
+        if (bbTabId) {
+          try {
+            await chrome.tabs.sendMessage(bbTabId, {
+              type: 'VU_AUDIO_LEVELS',
+              payload
+            });
+          } catch (e) {}
+        }
         sendResponse({ success: true });
         return;
       }
@@ -614,6 +709,17 @@ function handleIncomingRequest(request, sender, sendResponse) {
         (async () => {
           let boomBoxId = sender?.tab?.id || activeBoomBoxTabId || await resolveBoomBoxTab();
           let ytTabId = activeConnectedTabId || await resolveYouTubeTab();
+          let appTabId = activeRetroFmTabId || await getStoredRegisteredAppTabId();
+
+          // Notify RetroFM app to initialize DJ audio and voice effects
+          if (appTabId) {
+            try {
+              chrome.tabs.sendMessage(appTabId, {
+                type: 'BOOMBOX_ACTION',
+                payload: { action: 'STARTUP_AUDIO_INIT' }
+              }).catch(() => {});
+            } catch (e) {}
+          }
 
           if (ytTabId) {
             try {
@@ -695,6 +801,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (actionName === 'STOP' || actionName === 'PAUSE') {
             clearPendingPlayIntent(`boombox_${actionName.toLowerCase()}`);
           }
+          if (actionName === 'SET_BALANCE' && typeof payload?.balance === 'number' && !isNaN(payload.balance)) {
+            lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.balance)).toFixed(4));
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                chrome.tabs.sendMessage(ytTabId, { action: 'SET_BALANCE', balance: lastKnownBalance }).catch(() => {});
+              }
+            }).catch(() => {});
+          } else if (actionName === 'BOOMBOX_RELOADED') {
+            lastKnownBalance = 0;
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                chrome.tabs.sendMessage(ytTabId, { action: 'SET_BALANCE', balance: 0 }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
           const retroTabId = await resolveRetroFmTab();
           recordTrace('background', 'BOOMBOX_ACTION_ARRIVED', {
             action: payload?.action,
@@ -727,6 +848,56 @@ function handleIncomingRequest(request, sender, sendResponse) {
           sendResponse({ success: false, error: err.message });
         }
         return;
+      }
+
+      // Feature: PLAY_BOOMBOX_DJ_SPEECH - routes DJ speech playback to focused Boom Box tab
+      if (type === 'PLAY_BOOMBOX_DJ_SPEECH') {
+        (async () => {
+          const bbTabId = await resolveBoomBoxTab();
+          recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_ARRIVED', {
+            targetTab: bbTabId ? `tab:${bbTabId}` : 'none',
+            hasAudioSrc: Boolean(payload?.audioSrc),
+            durationSec: payload?.durationSec,
+            isBrowser: Boolean(payload?.isBrowser)
+          });
+          if (!bbTabId) {
+            sendResponse({ success: false, reason: 'no_boombox' });
+            return;
+          }
+          try {
+            const res = await chrome.tabs.sendMessage(bbTabId, {
+              type: 'PLAY_DJ_SPEECH',
+              payload
+            });
+            recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_FORWARDED_SUCCESS', { targetTab: bbTabId, res });
+            sendResponse({ success: !!res?.success, data: res });
+          } catch (err) {
+            recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_FORWARDED_ERROR', { error: err.message });
+            sendResponse({ success: false, error: err.message });
+          }
+        })();
+        return true;
+      }
+
+      // Feature: BOOMBOX_DJ_SPEECH_FINISHED - relays speech finished event from Boom Box back to RetroFM app
+      if (type === 'BOOMBOX_DJ_SPEECH_FINISHED') {
+        (async () => {
+          const retroTabId = await resolveRetroFmTab();
+          recordTrace('background', 'BOOMBOX_DJ_SPEECH_FINISHED_ARRIVED', {
+            targetTab: retroTabId ? `tab:${retroTabId}` : 'none',
+            payload
+          });
+          if (retroTabId) {
+            try {
+              await chrome.tabs.sendMessage(retroTabId, {
+                type: 'BOOMBOX_DJ_SPEECH_FINISHED',
+                payload
+              });
+            } catch (e) {}
+          }
+          sendResponse({ success: true });
+        })();
+        return true;
       }
 
       // Feature: BROADCAST_RADIO_STATE - caches and relays live radio state from app to Boom Box
@@ -769,12 +940,15 @@ function handleIncomingRequest(request, sender, sendResponse) {
       if (type === 'GET_RADIO_STATE') {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
+          const ytCheck = await checkYouTubeReadiness();
+          const isYtReady = ytCheck.ready;
+
           const retroTabId = await resolveRetroFmTab();
           if (!retroTabId) {
             sendResponse({
               success: false,
               error: 'RetroFM app not connected',
-              data: { appConnected: false, playbackStatus: 'stopped' }
+              data: { appConnected: false, playbackStatus: 'stopped', isStartupReady: isYtReady }
             });
             return;
           }
@@ -793,7 +967,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
             sendResponse({
               success: false,
               error: 'RetroFM app not connected',
-              data: { appConnected: false, playbackStatus: 'stopped' }
+              data: { appConnected: false, playbackStatus: 'stopped', isStartupReady: isYtReady }
             });
             return;
           }
@@ -801,10 +975,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           if (!freshState && lastKnownRadioState) {
             freshState = { ...lastKnownRadioState, appConnected: true };
           }
+          if (freshState) {
+            freshState.isStartupReady = freshState.isStartupReady || isYtReady;
+            if (latestYouTubeState && latestYouTubeState.videoId) {
+              freshState.videoId = latestYouTubeState.videoId;
+            }
+          }
 
           sendResponse({
             success: true,
-            data: freshState || { appConnected: true, playbackStatus: 'stopped' }
+            data: freshState || {
+              appConnected: true,
+              playbackStatus: 'stopped',
+              isStartupReady: isYtReady,
+              videoId: latestYouTubeState?.videoId || null
+            }
           });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
@@ -829,13 +1014,14 @@ function handleIncomingRequest(request, sender, sendResponse) {
           }
 
           if (!retroFmTab) {
-            // Find tab matching sender URL or localhost:3003
+            // Find tab matching sender URL or localhost / 127.0.0.1 on any port
             try {
               const allTabs = await chrome.tabs.query({});
               retroFmTab = allTabs.find(t =>
                 t.url &&
-                (t.url.startsWith('http://localhost:3003') || t.url.startsWith('http://127.0.0.1:3003')) &&
-                !t.url.includes('player/index.html')
+                (t.url.startsWith('http://localhost') || t.url.startsWith('http://127.0.0.1') || t.url.includes('localhost') || t.url.includes('127.0.0.1')) &&
+                !t.url.includes('player/index.html') &&
+                !t.url.includes('youtube.com')
               ) || null;
             } catch (e) {}
           }
@@ -853,12 +1039,26 @@ function handleIncomingRequest(request, sender, sendResponse) {
             retroFmTab = allTabs.find(t => !t.url?.includes('player/index.html') && !t.url?.includes('youtube.com')) || allTabs[0];
           }
 
-          // If the resolved tab is blank or new tab, ensure it is directed to RetroFM test page
+          // If the resolved tab is blank or new tab, ensure it is directed to the sender's origin or registered app tab origin
           if (retroFmTab && retroFmTab.id && (!retroFmTab.url || retroFmTab.url === 'about:blank' || retroFmTab.url.startsWith('chrome://'))) {
             try {
-              await chrome.tabs.update(retroFmTab.id, { url: 'http://localhost:3003/' });
+              let targetOrigin = sender?.origin;
+              if (!targetOrigin && sender?.url) {
+                try { targetOrigin = new URL(sender.url).origin; } catch (e) {}
+              }
+              if (!targetOrigin && registeredId) {
+                try {
+                  const regTab = await chrome.tabs.get(registeredId);
+                  if (regTab?.url) targetOrigin = new URL(regTab.url).origin;
+                } catch (e) {}
+              }
+              if (!targetOrigin) {
+                targetOrigin = 'http://localhost:3000';
+              }
+              await chrome.tabs.update(retroFmTab.id, { url: targetOrigin.endsWith('/') ? targetOrigin : `${targetOrigin}/` });
             } catch (e) {}
           }
+
 
           if (retroFmTab && retroFmTab.id) {
             await setStoredRegisteredAppTabId(retroFmTab.id);
@@ -1050,6 +1250,8 @@ function handleIncomingRequest(request, sender, sendResponse) {
         const actionName = (payload?.command?.action || '').toUpperCase();
         if (actionName === 'STOP' || actionName === 'PAUSE') {
           clearPendingPlayIntent(`command_${actionName.toLowerCase()}`);
+        } else if (actionName === 'SET_BALANCE' && typeof payload?.command?.balance === 'number' && !isNaN(payload.command.balance)) {
+          lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.command.balance)).toFixed(4));
         } else if (actionName === 'PLAY') {
           const hasActiveClick = !!(latestAudioDiagnosticsSnapshot?.userActivation?.hasBeenActive);
           if (!hasActiveClick && !hasSessionActivation) {
@@ -1135,7 +1337,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
           // Ensure content script is injected into the newly loaded page
           await ensureYouTubeScriptInjected(tabId);
 
-          // 2.5 Apply requested targetVolume BEFORE telling video to play
+          // 2.5 Apply requested targetVolume and targetBalance BEFORE telling video to play
           const targetVol = typeof payload?.targetVolume === 'number' ? payload.targetVolume : null;
           if (targetVol !== null) {
             try {
@@ -1143,6 +1345,15 @@ function handleIncomingRequest(request, sender, sendResponse) {
             } catch (volErr) {
               console.warn('[Retro FM] Pre-play setVolume notice:', volErr);
             }
+          }
+          const targetBal = typeof payload?.targetBalance === 'number' && !isNaN(payload.targetBalance)
+            ? Number(Math.max(-1, Math.min(1, payload.targetBalance)).toFixed(4))
+            : lastKnownBalance;
+          lastKnownBalance = targetBal;
+          try {
+            await chrome.tabs.sendMessage(tabId, { action: 'SET_BALANCE', balance: targetBal });
+          } catch (balErr) {
+            console.warn('[Retro FM] Pre-play setBalance notice:', balErr);
           }
 
           // If prepareOnly, do not trigger play or recovery!
@@ -1160,6 +1371,32 @@ function handleIncomingRequest(request, sender, sendResponse) {
             } catch (e) {
               preparedStatus = { available: true, videoId: videoId || null, url: targetUrl };
             }
+            if (!preparedStatus || typeof preparedStatus !== 'object') {
+              preparedStatus = { available: true, videoId: videoId || null, url: targetUrl };
+            }
+            preparedStatus.connectedTabId = tabId;
+            preparedStatus.available = true;
+            if (videoId) preparedStatus.videoId = videoId;
+
+            // Cache and push YT_STATE_CHANGED to Boom Box
+            latestYouTubeState = {
+              state: -1,
+              videoId: videoId || null,
+              title: preparedStatus.title || '',
+              currentTime: 0,
+              duration: preparedStatus.duration || 0
+            };
+
+            const bbTabId = await resolveBoomBoxTab();
+            if (bbTabId) {
+              try {
+                chrome.tabs.sendMessage(bbTabId, {
+                  type: 'YT_STATE_CHANGED',
+                  payload: latestYouTubeState
+                }).catch(() => {});
+              } catch (e) {}
+            }
+
             sendResponse({
               success: true,
               data: {
@@ -1172,6 +1409,20 @@ function handleIncomingRequest(request, sender, sendResponse) {
               }
             });
             return;
+          }
+
+          // 2.5. If an initial playback time is requested (e.g. seamless station resumption), seek before starting playback
+          if (typeof payload.initialTime === 'number' && payload.initialTime > 0) {
+            try {
+              await chrome.tabs.sendMessage(tabId, { action: 'SEEK', time: payload.initialTime });
+              await new Promise((r) => setTimeout(r, 100));
+            } catch (seekErr) {
+              await ensureYouTubeScriptInjected(tabId);
+              try {
+                await chrome.tabs.sendMessage(tabId, { action: 'SEEK', time: payload.initialTime });
+                await new Promise((r) => setTimeout(r, 100));
+              } catch (e) {}
+            }
           }
 
           // 3. Start playback using the same message pattern as PLAY command
@@ -1253,10 +1504,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return handleIncomingRequest(request, sender, sendResponse);
 });
 
-// 3. Monitor tab closures for reliable connection recovery
+// 3. Monitor tab loading/updates to detect YouTube readiness immediately
+if (chrome.tabs?.onUpdated) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tab?.url && tab.url.includes('youtube.com')) {
+      if (changeInfo.status === 'complete') {
+        const check = await checkYouTubeReadiness();
+        if (check.ready) {
+          await notifyYouTubeReadiness(check.tabId);
+        }
+      }
+    }
+  });
+}
+
+// 4. Monitor tab closures for reliable connection recovery
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (tabId === activeConnectedTabId) {
     activeConnectedTabId = null;
+    const remainingYt = await resolveYouTubeTab();
+    if (!remainingYt) {
+      latestYouTubeState = null;
+      if (lastKnownRadioState) {
+        lastKnownRadioState.isStartupReady = false;
+      }
+    }
   }
   if (tabId === activeBoomBoxTabId) {
     activeBoomBoxTabId = null;
