@@ -118,6 +118,8 @@ interface DJBreakGeneratorTestProps {
   librarySongPlayed?: LibrarySong | null;
   librarySongNext?: LibrarySong | null;
   onObservationBreakGenerated?: (breakData: { text: string; slot: 'before' | 'after'; kind: string | null }) => void;
+  voiceEngine?: 'GEMINI' | 'KOKORO' | 'BROWSER';
+  selectedVoiceName?: string;
 }
 
 export function DJBreakGeneratorTest({
@@ -136,6 +138,8 @@ export function DJBreakGeneratorTest({
   librarySongPlayed,
   librarySongNext,
   onObservationBreakGenerated,
+  voiceEngine = 'BROWSER',
+  selectedVoiceName = 'Default',
 }: DJBreakGeneratorTestProps) {
   // Input parameters
   const [selectedDate, setSelectedDate] = useState<string>('1985-07-13');
@@ -314,6 +318,17 @@ export function DJBreakGeneratorTest({
   const [isTestingLmConnection, setIsTestingLmConnection] = useState<boolean>(false);
   const [lmTestResult, setLmTestResult] = useState<string | null>(null);
 
+  // State for "Force DJ break now" testing aid
+  const [isForcingBreak, setIsForcingBreak] = useState<boolean>(false);
+  const [forceBreakResult, setForceBreakResult] = useState<{
+    decision: string;
+    breakType: string;
+    text: string;
+    scriptWriter: string;
+    voice: string;
+    error: string | null;
+  } | null>(null);
+
   // Execution & state
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | null>(null);
@@ -441,6 +456,92 @@ export function DJBreakGeneratorTest({
       setLmTestResult(`✗ Network error: ${err?.message || 'Could not reach server'}`);
     } finally {
       setIsTestingLmConnection(false);
+    }
+  };
+
+  const handleForceDjBreakNow = async () => {
+    setIsForcingBreak(true);
+    setForceBreakResult(null);
+
+    const scriptWriterLabel = aiProvider === 'lmstudio' ? 'LM Studio' : 'Gemini';
+    const voiceLabel = `${voiceEngine} (${selectedVoiceName})`;
+
+    try {
+      const prev = toObsSong(librarySongPlayed);
+      const next = toObsSong(librarySongNext);
+      const date = selectedDate || '1977-05-01';
+
+      onLogEvent?.(`[Force DJ Break] Running segment break pipeline (prevSong: ${prev ? `${prev.artist} - ${prev.title}` : 'none'}, script writer: ${scriptWriterLabel})...`);
+
+      const res = await fetch('/api/dj/segment-break', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedDate: date,
+          prevSong: prev ? { title: prev.title, artist: prev.artist, id: prev.id, first_chart_date: librarySongPlayed?.first_chart_date } : null,
+          nextSong: next ? { title: next.title, artist: next.artist, id: next.id, first_chart_date: librarySongNext?.first_chart_date } : null,
+          frequencySetting: 1.0, // Force break decision
+          frequencyPreset: djTalkFrequency,
+          frequencySource: 'forced_test',
+          usedFactKeys: [],
+          blacklistedFactKeys: [],
+          lastTopic: null,
+          provider: aiProvider,
+          endpoint: lmStudioEndpoint,
+          model: selectedLmModel,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const decision = data.decision || 'unknown';
+      const breakType = data.breakType || 'none';
+      const text = data.finalSpeech || '';
+
+      if (decision === 'speak' && text) {
+        setForceBreakResult({
+          decision,
+          breakType,
+          text,
+          scriptWriter: scriptWriterLabel,
+          voice: voiceLabel,
+          error: null,
+        });
+
+        onLogEvent?.(`[Force DJ Break] Decision: speak (${breakType}) | Speaking via ${voiceLabel}: "${text}"`);
+        if (onSpeakOverMusic) {
+          onSpeakOverMusic(text);
+        } else if (onSpeakScript) {
+          onSpeakScript(text);
+        }
+      } else {
+        const reason = data.silenceReason || 'Pipeline returned silence';
+        setForceBreakResult({
+          decision,
+          breakType,
+          text: '',
+          scriptWriter: scriptWriterLabel,
+          voice: voiceLabel,
+          error: reason,
+        });
+        onLogEvent?.(`[Force DJ Break] Decision: ${decision} (${reason})`);
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || 'Unknown error';
+      setForceBreakResult({
+        decision: 'error',
+        breakType: 'none',
+        text: '',
+        scriptWriter: scriptWriterLabel,
+        voice: voiceLabel,
+        error: errMsg,
+      });
+      onLogEvent?.(`[Force DJ Break Error] ${errMsg}`);
+    } finally {
+      setIsForcingBreak(false);
     }
   };
 
@@ -1053,6 +1154,33 @@ export function DJBreakGeneratorTest({
 
       {/* DJ Mode & Provider Selector Section */}
       <div className="p-3.5 bg-[#0a0c10] border border-zinc-800 rounded space-y-3">
+        {/* DJ Talk Frequency (Placed at top of DJ section, drives breaks across modes) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+          <div className="flex items-center gap-2">
+            <Mic2 className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
+              DJ talk frequency:
+            </span>
+          </div>
+
+          <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
+            {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
+              <button
+                key={freq}
+                type="button"
+                onClick={() => handleTalkFrequencyChange(freq)}
+                className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
+                  djTalkFrequency === freq
+                    ? 'bg-amber-500 text-black shadow'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {freq}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* DJ Mode Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
           <div className="flex items-center gap-2">
@@ -1099,35 +1227,9 @@ export function DJBreakGeneratorTest({
           </div>
         </div>
 
-        {/* DJ Talk Frequency (Only shown when DJ Mode is Observations (template)) */}
+        {/* Template Observation Options (Talk length, Delivery sliders) */}
         {djMode === 'observations' && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
-              <div className="flex items-center gap-2">
-                <Mic2 className="w-4 h-4 text-amber-400" />
-                <span className="text-[11px] uppercase text-zinc-300 font-bold tracking-wider">
-                  DJ talk frequency:
-                </span>
-              </div>
-
-              <div className="flex items-center bg-zinc-900 p-0.5 rounded border border-zinc-800 text-[11px]">
-                {(['every', 'often', 'sometimes', 'rarely'] as const).map((freq) => (
-                  <button
-                    key={freq}
-                    type="button"
-                    onClick={() => handleTalkFrequencyChange(freq)}
-                    className={`px-3 py-1 rounded font-semibold transition-colors cursor-pointer capitalize ${
-                      djTalkFrequency === freq
-                        ? 'bg-amber-500 text-black shadow'
-                        : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {freq}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* DJ Talk Length: Short / Mixed / Long */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
               <div className="flex items-center gap-2">
@@ -1574,6 +1676,35 @@ export function DJBreakGeneratorTest({
                   : 'Generate 3 Breaks'}
               </span>
             </button>
+
+            {/* Force DJ break now button */}
+            <button
+              type="button"
+              onClick={handleForceDjBreakNow}
+              disabled={isForcingBreak}
+              className="px-4 py-2.5 rounded bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/60 disabled:opacity-50 text-amber-300 font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              title="Force DJ break now using currently playing song as previous song"
+            >
+              <Radio className={`w-3.5 h-3.5 text-amber-400 ${isForcingBreak ? 'animate-spin' : ''}`} />
+              <span>{isForcingBreak ? 'Forcing Break...' : 'Force DJ break now'}</span>
+            </button>
+
+            {/* Plain text result next to button */}
+            {forceBreakResult && (
+              <div className="text-[11px] font-mono text-zinc-300 bg-zinc-950/80 p-2 rounded border border-zinc-800 max-w-full leading-relaxed break-words">
+                <span className="text-amber-400 font-bold">Decision:</span> {forceBreakResult.decision}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Type:</span> {forceBreakResult.breakType}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Script Writer:</span> {forceBreakResult.scriptWriter}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Voice:</span> {forceBreakResult.voice}
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Text:</span> &quot;{forceBreakResult.text}&quot;
+                <span className="text-zinc-600 mx-1.5">|</span>
+                <span className="text-amber-400 font-bold">Error:</span> {forceBreakResult.error || 'none'}
+              </div>
+            )}
           </div>
         </div>
 

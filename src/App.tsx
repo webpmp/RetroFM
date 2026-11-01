@@ -572,6 +572,7 @@ export default function App() {
     uiText: 'Segment pipeline active',
   });
   const isPreparingBreakRef = useRef<boolean>(false);
+  const preparedForSongIdRef = useRef<string | null>(null);
   const breakTriggeredForSongIdRef = useRef<string | null>(null);
   const breakDuckingStartedRef = useRef<boolean>(false);
 
@@ -1982,7 +1983,7 @@ export default function App() {
       // Check remaining time for ahead-of-time DJ Break preparation & triggering
       if (
         isPlaying &&
-        djMode === 'observations' &&
+        djMode !== 'off' &&
         hasFirstSongStartedPlayingRef.current &&
         jingleStateRef.current !== 'playing'
       ) {
@@ -2089,8 +2090,8 @@ export default function App() {
                       spokenSeconds: prep.durationSec,
                       deliverySettings: prep.deliverySettings,
                     });
-                    console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
-                    logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+                    console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s audioReady=${Boolean(prep.audioData)} (visibility: ${vis})`);
+                    logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
 
                     playDJSpeech(prep.text, {
                       duckMusic: !breakDuckingStartedRef.current,
@@ -2268,7 +2269,7 @@ export default function App() {
   useEffect(() => {
     const watchdogInterval = setInterval(() => {
       if (
-        djMode !== 'observations' ||
+        djMode === 'off' ||
         !hasFirstSongStartedPlayingRef.current ||
         jingleStateRef.current === 'playing' ||
         !playbackStatusRef.current?.isPlaying
@@ -2376,8 +2377,8 @@ export default function App() {
               spokenSeconds: prep.durationSec,
               deliverySettings: prep.deliverySettings,
             });
-            console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
-            logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s (visibility: ${vis})`);
+            console.log(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s audioReady=${Boolean(prep.audioData)} (visibility: ${vis})`);
+            logMessage(`[DJ] Break started playing: "${prep.text}" remaining=${remaining.toFixed(1)}s duration=${prep.durationSec.toFixed(1)}s (visibility: ${vis})`);
 
             playDJSpeech(prep.text, {
               duckMusic: !breakDuckingStartedRef.current,
@@ -2637,6 +2638,7 @@ export default function App() {
 
     // Reset DJ break preparation and trigger state for the newly started song
     clearPreparedBreak();
+    preparedForSongIdRef.current = null;
     breakTriggeredForSongIdRef.current = null;
 
     // Track previous and current song for DJ commentary
@@ -4038,6 +4040,7 @@ export default function App() {
       // Check if Boom Box is open and available to play audio in the focused tab
       let playedViaBoomBox = false;
       const shouldDelegateToBoomBox = options?.delegateToBoomBox !== false && shouldDuck;
+      console.log(`[DJ Speech] Initiating playback: shouldDuck=${shouldDuck} isAlreadyDucked=${isAlreadyDucked} delegateToBoomBox=${shouldDelegateToBoomBox} audioSrcLen=${audioSrc ? audioSrc.length : 0} duration=${durationSec.toFixed(1)}s`);
       if (shouldDelegateToBoomBox) {
         try {
           const boomBoxPayload = {
@@ -4053,6 +4056,7 @@ export default function App() {
           const bbRes = await musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
           if (bbRes && bbRes.success) {
             playedViaBoomBox = true;
+            console.log(`[DJ Speech] Playing voice on Boom Box.`);
             logMessage(`▶ Playing ${engineLabel} voice on Boom Box.`);
             setTestResults((prev) => ({
               ...prev,
@@ -4210,6 +4214,7 @@ export default function App() {
 
           try {
             await audio.play();
+            console.log(`[DJ Speech] Playing voice on primary audio element (${engineLabel}).`);
             logMessage(`▶ Playing ${engineLabel} voice.`);
             setTestResults((prev) => ({
               ...prev,
@@ -4419,6 +4424,7 @@ export default function App() {
       preparedBreakRef.current = null;
     }
     isPreparingBreakRef.current = false;
+    preparedForSongIdRef.current = null;
     breakDuckingStartedRef.current = false;
   };
 
@@ -4428,10 +4434,12 @@ export default function App() {
     nextSongObj: LibrarySong | null
   ) => {
     if (isPreparingBreakRef.current) return;
+    if (preparedForSongIdRef.current === currentSongId) return;
     if (preparedBreakRef.current?.id === currentSongId) return;
     if (breakTriggeredForSongIdRef.current === currentSongId) return;
 
     isPreparingBreakRef.current = true;
+    preparedForSongIdRef.current = currentSongId;
     try {
       const prev = toObsSong(prevSongObj);
       const next = toObsSong(nextSongObj);
@@ -7504,6 +7512,8 @@ export default function App() {
           onTestDjLine={handleTestDjLine}
           librarySongPlayed={currentSongPickRef.current?.song || null}
           librarySongNext={nextSongRef.current?.song || null}
+          voiceEngine={voiceEngine}
+          selectedVoiceName={voiceEngine === 'KOKORO' ? selectedKokoroVoice : selectedVoice}
           onObservationBreakGenerated={(breakData) => {
             setLastDjBreak({
               text: breakData.text,
