@@ -315,6 +315,125 @@ assert.strictEqual(djAudioPaused, false, "Test (j) FAIL: DJ audio must not be pa
 assert.strictEqual(djAudioTimeReset, false, "Test (j) FAIL: DJ audio currentTime must not be reset");
 console.log("✓ PASS: Test (j) verified: Next song starting does not pause or reset DJ audio element.");
 
+// -----------------------------------------------------------------------------
+// Test (k): Boom Box reports started, then finished with success=true at 13.4s of a 14.4s clip:
+// Speech plays once, no local replay
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (k): Boom Box confirms start, finishes with success=true at 13.4s of 14.4s clip (no local replay) ---");
+function simulateBoomBoxExecution(params: {
+  durationSec: number;
+  boomBoxConfirmsStart: boolean;
+  finishSuccess?: boolean;
+  finishElapsedSec?: number;
+  finishError?: string;
+}) {
+  const { durationSec, boomBoxConfirmsStart, finishSuccess = true, finishElapsedSec = durationSec, finishError = "none" } = params;
+  let playedViaBoomBox = false;
+  let localAudioPlayCount = 0;
+  let speechCompletedCleanly = false;
+  const logs: string[] = [];
+
+  if (boomBoxConfirmsStart) {
+    logs.push("[DJ] Speech: Boom Box confirmed start within 2.5s. Playing voice on Boom Box.");
+    // Simulate Boom Box finished callback
+    const elapsedSec = finishElapsedSec;
+    logs.push(
+      `[DJ] Speech: Boom Box finished callback received: success=${finishSuccess} error=${finishError} elapsed=${elapsedSec.toFixed(1)}s expected=${durationSec.toFixed(1)}s`
+    );
+
+    if (finishSuccess === false || (finishError && finishError !== "none")) {
+      logs.push(`[DJ] Speech Error: ended early (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s), cause=${finishError}`);
+      speechCompletedCleanly = false;
+    } else if (elapsedSec < durationSec * 0.85 && durationSec > 2) {
+      logs.push(
+        `[DJ] Speech Warning: Boom Box finished under nominal duration (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s). Treating as finished without replay.`
+      );
+      speechCompletedCleanly = true;
+    } else {
+      speechCompletedCleanly = true;
+    }
+
+    // Rule: Once Boom Box has confirmed start, playedViaBoomBox is permanently true, suppressing local fallback
+    playedViaBoomBox = true;
+  } else {
+    logs.push("[DJ] Speech: Boom Box did not confirm start within 2.5s. Falling back to local audio element in app tab.");
+  }
+
+  if (!playedViaBoomBox) {
+    logs.push("[DJ] Speech: Playing via local app tab audio path...");
+    localAudioPlayCount++;
+    speechCompletedCleanly = true;
+  }
+
+  return {
+    playedViaBoomBox,
+    localAudioPlayCount,
+    speechCompletedCleanly,
+    totalPlays: (playedViaBoomBox ? 1 : 0) + localAudioPlayCount,
+    logs,
+  };
+}
+
+const testK = simulateBoomBoxExecution({
+  durationSec: 14.4,
+  boomBoxConfirmsStart: true,
+  finishSuccess: true,
+  finishElapsedSec: 13.4,
+});
+testK.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testK.playedViaBoomBox, true, "Test (k) FAIL: Should be marked as played via Boom Box");
+assert.strictEqual(testK.localAudioPlayCount, 0, "Test (k) FAIL: Local audio element must not replay");
+assert.strictEqual(testK.totalPlays, 1, "Test (k) FAIL: Speech must play exactly once");
+assert.strictEqual(testK.speechCompletedCleanly, true, "Test (k) FAIL: 13.4s / 14.4s (93%) must be treated as clean finish");
+console.log("✓ PASS: Test (k) verified: Boom Box started & finished cleanly at 13.4s of 14.4s clip, no local replay.");
+
+// -----------------------------------------------------------------------------
+// Test (l): Boom Box never confirms start: local fallback plays once
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (l): Boom Box never confirms start -> local fallback plays once ---");
+const testL = simulateBoomBoxExecution({
+  durationSec: 10.0,
+  boomBoxConfirmsStart: false,
+});
+testL.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testL.playedViaBoomBox, false, "Test (l) FAIL: Not played via Boom Box");
+assert.strictEqual(testL.localAudioPlayCount, 1, "Test (l) FAIL: Local fallback must play once");
+assert.strictEqual(testL.totalPlays, 1, "Test (l) FAIL: Speech must play exactly once");
+console.log("✓ PASS: Test (l) verified: When Boom Box does not confirm start, local fallback plays exactly once.");
+
+// -----------------------------------------------------------------------------
+// Test (m): Boom Box reports failure after starting: no replay, error is logged
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (m): Boom Box reports failure after starting -> no replay, error logged ---");
+const testM = simulateBoomBoxExecution({
+  durationSec: 14.4,
+  boomBoxConfirmsStart: true,
+  finishSuccess: false,
+  finishElapsedSec: 4.2,
+  finishError: "audio_element_error",
+});
+testM.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testM.playedViaBoomBox, true, "Test (m) FAIL: Started on Boom Box");
+assert.strictEqual(testM.localAudioPlayCount, 0, "Test (m) FAIL: Local audio element must not replay after failure");
+assert.strictEqual(testM.totalPlays, 1, "Test (m) FAIL: Line played at most once");
+assert.strictEqual(testM.speechCompletedCleanly, false, "Test (m) FAIL: Failure must be recorded");
+console.log("✓ PASS: Test (m) verified: Boom Box failure after starting does not replay locally; error logged.");
+
+// -----------------------------------------------------------------------------
+// Test (n): A 25s clip plays once
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (n): 25s clip plays once ---");
+const testN = simulateBoomBoxExecution({
+  durationSec: 25.0,
+  boomBoxConfirmsStart: true,
+  finishSuccess: true,
+  finishElapsedSec: 24.8,
+});
+testN.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testN.totalPlays, 1, "Test (n) FAIL: 25s clip must play exactly once");
+assert.strictEqual(testN.localAudioPlayCount, 0, "Test (n) FAIL: 25s clip must not replay locally");
+console.log("✓ PASS: Test (n) verified: 25s clip plays once on Boom Box.");
+
 console.log("\n==================================================================");
-console.log("      ALL 10 DJ TIMING & SEAMLESS HANDOFF TESTS PASSED");
+console.log("      ALL 14 DJ TIMING & SEAMLESS HANDOFF TESTS PASSED");
 console.log("==================================================================");

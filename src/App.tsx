@@ -4217,18 +4217,20 @@ export default function App() {
                   console.log(
                     `[DJ] Speech: Boom Box finished callback received: success=${finishPayload?.success} error=${finishPayload?.error || 'none'} elapsed=${elapsedSec.toFixed(1)}s expected=${durationSec.toFixed(1)}s`
                   );
-                  if (finishPayload?.success === false || finishPayload?.error) {
+                  if (finishPayload?.success === false || (finishPayload?.error && finishPayload.error !== 'none')) {
                     speechFailureCause = finishPayload?.error || 'boombox_reported_error';
                     console.error(
                       `[DJ] Speech Error: ended early (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s), cause=${speechFailureCause}`
                     );
                     resolve(false);
-                  } else if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
-                    speechFailureCause = `ended_early_under_duration (${elapsedSec.toFixed(1)}s < ${durationSec.toFixed(1)}s)`;
-                    console.error(
-                      `[DJ] Speech Error: ended early (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s), cause=${speechFailureCause}`
+                  } else if (elapsedSec < durationSec * 0.85 && durationSec > 2) {
+                    // Shorter finish with success=true is logged as warning only and treated as complete (never replays)
+                    speechFailureCause = `ended_shorter_than_expected (${elapsedSec.toFixed(1)}s < ${(durationSec * 0.85).toFixed(1)}s)`;
+                    console.warn(
+                      `[DJ] Speech Warning: Boom Box finished under nominal duration (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s, expected >= ${(durationSec * 0.85).toFixed(1)}s). Treating as finished without replay.`
                     );
-                    resolve(false);
+                    speechCompletedCleanly = true;
+                    resolve(true);
                   } else {
                     speechCompletedCleanly = true;
                     resolve(true);
@@ -4247,41 +4249,20 @@ export default function App() {
                   console.error(
                     `[DJ] Speech Error: ended early (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s), cause=${speechFailureCause}`
                   );
-
-                  // Check if song has already ended or has enough time remaining
-                  const curSongPick = currentSongPickRef.current;
-                  const curTime = playbackStatusRef.current?.currentTime || 0;
-                  const rawDur = playbackStatusRef.current?.duration || 0;
-                  const dur = getEffectiveSongDuration(curSongPick, rawDur);
-                  const remaining = dur > 0 ? (dur - curTime) : 0;
-
-                  if (remaining > 1.5) {
-                    console.log(
-                      `[DJ] Speech: Boom Box playback timed out after ${(waitMs / 1000).toFixed(1)}s. Falling back to local audio element in app tab.`
-                    );
-                    logMessage(
-                      `[DJ] Speech: Boom Box playback timed out after ${(waitMs / 1000).toFixed(1)}s. Falling back to local audio element in app tab.`
-                    );
-                    resolve(false);
-                  } else {
-                    console.log(
-                      `[DJ] Speech: Boom Box playback timed out after ${(waitMs / 1000).toFixed(1)}s. Break skipped because song has already ended (remaining=${remaining.toFixed(1)}s).`
-                    );
-                    logMessage(
-                      `[DJ] Speech: Boom Box playback timed out after ${(waitMs / 1000).toFixed(1)}s. Break skipped because song has already ended.`
-                    );
-                    resolve(false); // Do not mark as clean completion
-                  }
+                  // Rule: Once Boom Box has confirmed start, never replay that line on the local audio element
+                  resolve(false);
                 }
               }, waitMs);
             });
 
-            if (completedCleanly) {
-              playedViaBoomBox = true;
-              speechEngineUsed = 'Boom Box';
-            } else {
+            // Boom Box started playback: under all circumstances (clean completion, early finish, error, timeout),
+            // mark playedViaBoomBox = true so local fallback NEVER replays this line!
+            playedViaBoomBox = true;
+            speechEngineUsed = 'Boom Box';
+
+            if (!completedCleanly) {
               console.warn(
-                `[DJ] Speech: Boom Box playback reported early failure. Falling back to local audio element in app tab.`
+                `[DJ] Speech: Boom Box playback ended with failure/timeout (cause: ${speechFailureCause || 'unknown'}). Suppressing local replay because audio already started on Boom Box.`
               );
             }
           } else {
