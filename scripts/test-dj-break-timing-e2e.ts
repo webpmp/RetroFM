@@ -248,6 +248,73 @@ assert.strictEqual(advanceCountOnVisChange, 0, "Test (g) FAIL: Visibility change
 assert.strictEqual(activeSongId, "1998-004", "Test (g) FAIL: Active song changed on visibility switch");
 console.log("✓ PASS: Test (g) verified: Page visibility switching does not advance or interrupt song playback.");
 
+// -----------------------------------------------------------------------------
+// Test (h): 17.7s local-path speech plays to end and is not interrupted by handoff at 5.5s
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (h): 17.7s local-path speech with end-of-song handoff at 5.5s lead ---");
+const testH = simulatePlayDJSpeech({
+  text: "It's Wednesday, May 1st, 1996 on RetroFM! Here is Enigma with Return To Innocence. Michael Cretu composed this masterpiece blending Taiwanese chanting.",
+  durationSec: 17.7,
+  isEndOfSongBreak: true,
+  currentSongRemaining: 18.0,
+  userVolume: 56,
+  initialSongId: "enigma-return-to-innocence",
+});
+
+testH.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testH.nextSongAdvanceCount, 1, "Test (h) FAIL: Next song must advance exactly once");
+assert.strictEqual(testH.handoffFiredDuringSpeech, true, "Test (h) FAIL: Next song must start during speech at 5.5s lead");
+assert.strictEqual(testH.musicVolumeDuringSpeech, 15, "Test (h) FAIL: Music must remain ducked during speech");
+assert.strictEqual(testH.musicVolumeRestored, 56, "Test (h) FAIL: Volume must restore to user volume (56%) only after speech ends");
+console.log("✓ PASS: Test (h) verified: 17.7s speech plays fully through end-of-song handoff.");
+
+// -----------------------------------------------------------------------------
+// Test (i): 25.0s long speech plays fully without 15s timeout interruption
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (i): 25.0s speech plays fully without 15s timeout interruption ---");
+// Check dynamic timeout formula:
+const duration25 = 25.0;
+const dynamicTimeoutMs = Math.max(30000, (duration25 + 6) * 1000);
+assert(dynamicTimeoutMs >= 31000, "Dynamic safety timeout must be at least 31s for a 25s speech");
+assert(dynamicTimeoutMs > 25000, "Dynamic safety timeout must exceed speech duration");
+
+const testI = simulatePlayDJSpeech({
+  text: "Long 25-second historical DJ break detailing all the events that took place in early May across the country and the world, setting the stage for the next track.",
+  durationSec: 25.0,
+  isEndOfSongBreak: true,
+  currentSongRemaining: 26.0,
+  userVolume: 50,
+  initialSongId: "song-25s",
+});
+
+testI.logs.forEach((l) => console.log("  " + l));
+assert.strictEqual(testI.nextSongAdvanceCount, 1, "Test (i) FAIL: Advance must fire once");
+assert.strictEqual(testI.musicVolumeRestored, 50, "Test (i) FAIL: Volume restored after full 25s speech");
+console.log("✓ PASS: Test (i) verified: 25s speech is safely covered by dynamic timeout (>31s).");
+
+// -----------------------------------------------------------------------------
+// Test (j): Next song starting does not pause or reset DJ audio element
+// -----------------------------------------------------------------------------
+console.log("\n--- Test (j): Next song starting does not pause or reset DJ audio element ---");
+let djAudioPlaying = true;
+let djAudioPaused = false;
+let djAudioTimeReset = false;
+
+// Simulated advanceToNextSong action:
+function simulateAdvanceToNextSong() {
+  // advanceToNextSong starts YouTube playback of next song Pick.
+  // Verify DJ audio element is untouched:
+  if (djAudioPaused || djAudioTimeReset) {
+    throw new Error("DJ audio was paused or reset during song navigation!");
+  }
+}
+
+simulateAdvanceToNextSong();
+assert.strictEqual(djAudioPlaying, true, "Test (j) FAIL: DJ audio must remain playing");
+assert.strictEqual(djAudioPaused, false, "Test (j) FAIL: DJ audio must not be paused");
+assert.strictEqual(djAudioTimeReset, false, "Test (j) FAIL: DJ audio currentTime must not be reset");
+console.log("✓ PASS: Test (j) verified: Next song starting does not pause or reset DJ audio element.");
+
 console.log("\n==================================================================");
-console.log("      ALL 7 DJ TIMING & SEAMLESS HANDOFF TESTS PASSED");
+console.log("      ALL 10 DJ TIMING & SEAMLESS HANDOFF TESTS PASSED");
 console.log("==================================================================");

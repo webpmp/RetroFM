@@ -608,7 +608,7 @@ function playBoomBoxDjSpeech(payload) {
 
   boomBoxDjSafetyTimer = setTimeout(() => {
     notifyFinished(true, 'safety_timeout');
-  }, Math.max(12000, (durationSec + 4) * 1000));
+  }, Math.max(30000, (durationSec + 6) * 1000));
 
   if (isBrowser) {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
