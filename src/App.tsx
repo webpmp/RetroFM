@@ -108,7 +108,8 @@ function compareVersions(v1: string, v2: string): number {
 }
 
 // Seamless DJ hand-off: overlap duration where next song plays ducked under DJ speech
-export const DEFAULT_DJ_HANDOFF_OVERLAP_SEC = 3.5;
+export const DEFAULT_DJ_HANDOFF_LEAD_SEC = 5.5;
+export const DEFAULT_DJ_HANDOFF_OVERLAP_SEC = DEFAULT_DJ_HANDOFF_LEAD_SEC;
 
 // Pre-defined 5 critical validation test songs
 export const CRITICAL_TEST_SONGS = [
@@ -578,8 +579,6 @@ export default function App() {
   const preparedForSongIdRef = useRef<string | null>(null);
   const breakTriggeredForSongIdRef = useRef<string | null>(null);
   const breakDuckingStartedRef = useRef<boolean>(false);
-  const isNextSongPreloadedRef = useRef<boolean>(false);
-  const preloadedVideoIdRef = useRef<string | null>(null);
   const nextSongHandoffTimerRef = useRef<any>(null);
   const hasHandoffFiredForCurrentBreakRef = useRef<boolean>(false);
 
@@ -1770,6 +1769,14 @@ export default function App() {
             nextSongRef.current = null;
             preparedBreakRef.current = null;
             stationPlaybackCacheRef.current = {};
+            currentPlayingArtistRef.current = '';
+            currentPlayingSongRef.current = '';
+            currentPlayingYearRef.current = '';
+            setProgramArtist('');
+            setProgramSongTitle('');
+            setProgramYear('');
+            setProgramSongResult(null);
+            broadcastCurrentRadioState(true, true);
             if (songLibraryRef.current.length > 0) {
               logStationPools(targetDate, songLibraryRef.current);
               const selectedYear = (action.date || activeDateRef.current || '').slice(0, 4);
@@ -1851,18 +1858,7 @@ export default function App() {
             // 1. Immediately pause current playback so silence/outtro does not linger
             await handlePauseMusicRef.current();
 
-            // 2. Preload next video in background YouTube tab while DJ talks
-            const nextPick = nextSongRef.current;
-            if (nextPick?.song?.streaming?.youtube?.id) {
-              const nextVid = nextPick.song.streaming.youtube.id;
-              const nextTitle = nextPick.song.title;
-              logMessage(`[Preload] Preloading next song in background while DJ talks: "${nextTitle}" (${nextVid})`);
-              prepareSong(nextVid, nextTitle).catch((err) => {
-                logMessage(`[Preload Error] Failed to preload next song "${nextTitle}": ${err?.message || err}`);
-              });
-            }
-
-            // 3. Immediately trigger prepared DJ break if present
+            // 2. Immediately trigger prepared DJ break if present
             const prep = preparedBreakRef.current;
             const currentSongId = currentSongPickRef.current?.song?.id || playbackStatusRef.current?.videoId;
             if (prep && prep.text && currentSongId && breakTriggeredForSongIdRef.current !== currentSongId) {
@@ -2699,6 +2695,12 @@ export default function App() {
 
     logMessage(`[Song Selector] Playing "${songArtist} - ${songTitle}" (Tier ${pick.tier}, genreMatched: ${pick.genreMatched})`);
 
+    const curCurTime = playbackStatusRef.current?.currentTime || 0;
+    const curRawDur = playbackStatusRef.current?.duration || 0;
+    const curEffectiveDur = getEffectiveSongDuration(currentSongPickRef.current, curRawDur);
+    const curRemaining = curEffectiveDur > 0 ? (curEffectiveDur - curCurTime) : 0;
+    console.log(`[Song Navigation] Caller: playLibrarySongInternal | Reason: ${reason} | Target: "${songTitle}" (${videoId}) | Remaining: ${curRemaining.toFixed(1)}s`);
+
     const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, videoId, targetVolFraction, revealYouTubeToStart);
 
     if (typeof expectedTuneSeq === 'number' && expectedTuneSeq !== tuneSequenceRef.current) {
@@ -2948,6 +2950,12 @@ export default function App() {
         const targetUrl = `https://www.youtube.com/watch?v=${desiredVideoId}`;
         const targetVolFraction = getNavVolumeFraction();
 
+        const curCurTime = playbackStatusRef.current?.currentTime || 0;
+        const curRawDur = playbackStatusRef.current?.duration || 0;
+        const curEffectiveDur = getEffectiveSongDuration(currentSongPickRef.current, curRawDur);
+        const curRemaining = curEffectiveDur > 0 ? (curEffectiveDur - curCurTime) : 0;
+        console.log(`[Song Navigation] Caller: handlePlayMusic | Reason: Play desired song | Target: "${desiredTitle || desiredVideoId}" (${desiredVideoId}) | Remaining: ${curRemaining.toFixed(1)}s`);
+
         const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, desiredVideoId, targetVolFraction, revealYouTubeToStart);
         if (transportCommandSeqRef.current !== seq) return false;
         if (!navRes.success) {
@@ -3170,6 +3178,12 @@ export default function App() {
 
       const targetUrl = `https://www.youtube.com/watch?v=${targetSong.videoId}`;
       const targetVolFraction = getNavVolumeFraction();
+
+      const curCurTime = playbackStatusRef.current?.currentTime || 0;
+      const curRawDur = playbackStatusRef.current?.duration || 0;
+      const curEffectiveDur = getEffectiveSongDuration(currentSongPickRef.current, curRawDur);
+      const curRemaining = curEffectiveDur > 0 ? (curEffectiveDur - curCurTime) : 0;
+      console.log(`[Song Navigation] Caller: advanceStationSongDirectly | Reason: ${reason} | Target: "${targetSong.title}" (${targetSong.videoId}) | Remaining: ${curRemaining.toFixed(1)}s`);
 
       // Navigate background YouTube tab and trigger playback
       const navRes = await musicProviderRef.current.navigateDetailed(targetUrl, targetSong.videoId, targetVolFraction, revealYouTubeToStart);
@@ -4061,13 +4075,11 @@ export default function App() {
       const remainingAtSpeechStart = durForHandoff > 0 ? (durForHandoff - curTimeForHandoff) : 0;
       isEndOfSongBreak = Boolean(options?.isEndOfSongBreak);
 
-      overlapTargetSec = Math.min(
-        DEFAULT_DJ_HANDOFF_OVERLAP_SEC,
-        durationSec > 4 ? 4.5 : Math.max(1.0, durationSec * 0.4)
-      );
+      const handoffLeadSec = Math.min(DEFAULT_DJ_HANDOFF_LEAD_SEC, durationSec);
+      overlapTargetSec = handoffLeadSec;
 
       console.log(
-        `[DJ] Handoff: Break started playing: "${text.slice(0, 60)}" remaining=${remainingAtSpeechStart.toFixed(1)}s duration=${durationSec.toFixed(1)}s overlapTarget=${overlapTargetSec.toFixed(1)}s isEndOfSong=${isEndOfSongBreak}`
+        `[DJ] Handoff: Break started playing: "${text.slice(0, 60)}" remaining=${remainingAtSpeechStart.toFixed(1)}s duration=${durationSec.toFixed(1)}s handoffLead=${handoffLeadSec.toFixed(1)}s isEndOfSong=${isEndOfSongBreak}`
       );
 
       const scheduleNextSongHandoff = (actualSpeechStartTimeMs: number) => {
@@ -4086,8 +4098,8 @@ export default function App() {
           nextSongHandoffTimerRef.current = null;
         }
 
-        // Calculate lead-in time before next song should start playing
-        const nextSongLeadMs = Math.max(0, (durationSec - overlapTargetSec) * 1000);
+        // Next song begins ~handoffLeadSec before DJ finishes (or at speech start if break <= handoffLeadSec)
+        const nextSongLeadMs = Math.max(0, (durationSec - handoffLeadSec) * 1000);
 
         nextSongHandoffTimerRef.current = setTimeout(async () => {
           if (hasHandoffFiredForCurrentBreakRef.current) return;
@@ -4107,8 +4119,8 @@ export default function App() {
           const currentDur = getEffectiveSongDuration(currentSongPickRef.current, currentRawDur);
           const currentRemaining = currentDur > 0 ? (currentDur - currentCurTime) : 0;
 
-          // Only advance if the current song's real remaining time is at most overlap + 2 seconds
-          const maxAllowedRemaining = overlapTargetSec + 2.0;
+          // Only advance if the current song's real remaining time is at most lead time + 2 seconds
+          const maxAllowedRemaining = handoffLeadSec + 2.0;
           if (currentRemaining > maxAllowedRemaining) {
             console.log(
               `[DJ] Handoff: Timer fired but current song still has ${currentRemaining.toFixed(1)}s remaining (> ${maxAllowedRemaining.toFixed(1)}s limit). Suppressing advance.`
@@ -4124,15 +4136,9 @@ export default function App() {
           const nextPick = nextSongRef.current;
           const nextTitle = nextPick?.song?.title || "next song";
 
-          if (isNextSongPreloadedRef.current) {
-            console.log(
-              `[DJ] Handoff: Next song started during DJ speech: "${nextTitle}" remainingSpeech=${remainingSpeechSec.toFixed(1)}s musicDucked=true (preloaded=true)`
-            );
-          } else {
-            console.log(
-              `[DJ] Handoff: Next song started during DJ speech: "${nextTitle}" remainingSpeech=${remainingSpeechSec.toFixed(1)}s musicDucked=true (preloaded=false, starting directly)`
-            );
-          }
+          console.log(
+            `[DJ] Handoff: Next song started during DJ speech: "${nextTitle}" remainingSpeech=${remainingSpeechSec.toFixed(1)}s musicDucked=true (lead=${handoffLeadSec.toFixed(1)}s)`
+          );
 
           try {
             await advanceToNextSongRef.current(false);
@@ -4679,8 +4685,6 @@ export default function App() {
     isPreparingBreakRef.current = false;
     preparedForSongIdRef.current = null;
     breakDuckingStartedRef.current = false;
-    isNextSongPreloadedRef.current = false;
-    preloadedVideoIdRef.current = null;
     if (nextSongHandoffTimerRef.current) {
       clearTimeout(nextSongHandoffTimerRef.current);
       nextSongHandoffTimerRef.current = null;
@@ -5045,34 +5049,6 @@ export default function App() {
       console.log(`[DJ] break ready relative to song change: +${readyRelSongChangeSec}s | prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
       logMessage(`[DJ] Break ready relative to song change: +${readyRelSongChangeSec}s | Prepared break: "${res.text}" remaining=${curRemaining > 0 ? curRemaining.toFixed(1) : 'unknown'}s (visibility: ${vis})`);
       console.log(`[DJ] Break scheduled: id=${currentSongId} duration=${curDur}s elapsed=${curCurTime.toFixed(1)}s remaining=${curRemaining.toFixed(1)}s triggerAtRemaining=${triggerTimeRemaining.toFixed(1)}s duckAtRemaining=${duckTriggerTimeRemaining.toFixed(1)}s (visibility: ${vis})`);
-
-      // Preload the upcoming track in the background YouTube tab for seamless DJ handoff
-      const targetNextSongForPreload = nextSongObj || nextSongRef.current?.song || null;
-      if (targetNextSongForPreload?.streaming?.youtube?.id) {
-        const nextVid = targetNextSongForPreload.streaming.youtube.id;
-        const nextTitle = targetNextSongForPreload.title;
-        if (preloadedVideoIdRef.current !== nextVid) {
-          prepareSong(nextVid, nextTitle)
-            .then((ok) => {
-              if (ok) {
-                isNextSongPreloadedRef.current = true;
-                preloadedVideoIdRef.current = nextVid;
-                logMessage(`[DJ Handoff Preload] Successfully cued next song: "${nextTitle}" (${nextVid})`);
-              } else {
-                isNextSongPreloadedRef.current = false;
-                logMessage(`[DJ Handoff Preload] Failed to cue next song: "${nextTitle}"`);
-              }
-            })
-            .catch((err) => {
-              isNextSongPreloadedRef.current = false;
-              console.warn("[DJ Handoff Preload Error]", err);
-            });
-        }
-      } else {
-        isNextSongPreloadedRef.current = false;
-        preloadedVideoIdRef.current = null;
-        logMessage(`[DJ Handoff Preload] No eligible upcoming song available to preload in advance.`);
-      }
     } catch (e: any) {
       console.warn('[DJ] Error preparing ahead break:', e);
     } finally {

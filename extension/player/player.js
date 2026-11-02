@@ -1824,6 +1824,8 @@ function goLive(){
   };
 
   // Requirement 1: When the green display is active, Artist Name and Song Title must be the default display
+  song = null;
+  clearSongTimers();
   songDisplayMode = 'song_info';
   renderSong();
 
