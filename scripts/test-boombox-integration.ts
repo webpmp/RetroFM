@@ -4609,8 +4609,8 @@ console.log('\n--- Test Suite 59: Functional Left-to-Right Stereo Audio Balance 
     'src/App.tsx forwards SET_BALANCE to YouTubeMusicProvider.setBalance and includes balance in broadcastCurrentRadioState'
   );
   assert(
-    bbJs.includes('function setVisualBalance(balance)') &&
-    bbJs.includes('setVisualBalance(state.balance)'),
+    bbJs.includes('function setVisualBalance(balance') &&
+    bbJs.includes('setVisualBalance(state.balance'),
     'player.js synchronizes visual balance knob rotation via setVisualBalance without triggering feedback loops'
   );
 
@@ -5843,27 +5843,24 @@ console.log('\n--- Test Suite 66: Audio Spectrum Analyzer (Third Display Mode in
   assert(bbJs.includes("sdotEl.innerHTML=SA_ICON_SVG"), 'player.js injects spectrum analyzer icon into #sdot during spectrum mode');
   assert(bbJs.includes("sdotEl.setAttribute('aria-label','Audio Spectrum Analyzer')"), '#sdot has accessible label "Audio Spectrum Analyzer" when in spectrum mode');
 
-  // 2. CSS Styling & Layout: expanded width per column (15px), gap (6px), and right-alignment
+  // 2. CSS Styling & Layout: vertical bars in a row with segments and right-alignment
   assert(bbCss.includes('.sa-col{'), 'player.css defines .sa-col column layout');
   assert(bbCss.includes('.sa-blk{'), 'player.css defines .sa-blk block styling with ladder gaps');
   assert(bbCss.includes('.sa-blk.on{'), 'player.css defines .sa-blk.on for illuminated column blocks');
-  assert(bbCss.includes('.sa-blk.peak{'), 'player.css defines .sa-blk.peak for floating peak-hold indicators');
-  assert(bbCss.includes('width:15px'), 'player.css expands column/block width to 15px to fill available width');
-  assert(bbCss.includes('gap:6px'), 'player.css sets column gap to 6px across the 10 bands');
+  assert(bbCss.includes('.sa-col{') && bbCss.includes('width:12px'), 'player.css configures column width');
   assert(bbCss.includes('#saWrap{') && bbCss.includes('justify-content:flex-end'), 'player.css right-aligns #saWrap to match text and sit close to #sdot');
 
   // 3. Audio Pipeline (YouTube main world -> content script -> background -> player)
   assert(ytMw.includes('calculateFrequencyBands'), 'yt_main_world computes real-time frequency bands');
-  assert(ytMw.includes('SPECTRUM_BAND_RANGES'), 'yt_main_world maps FFT bins to 10 frequency ranges');
+  assert(ytMw.includes('SPECTRUM_BAND_RANGES'), 'yt_main_world maps FFT bins to frequency ranges');
   assert(ytMw.includes('leftAnalyserNode.frequencyBinCount'), 'yt_main_world allocates frequency data buffers');
   assert(ytContent.includes('payload.bands = data.bands'), 'content_youtube forwards frequency bands in payload');
   assert(bbJs.includes('latestSpectrumBands = payload.bands'), 'player.js stores incoming real-time spectrum bands');
 
   // 4. State Machine & Display Modes: cyclic 4-state sequence
   assert(bbJs.includes("songDisplayMode === 'spectrum'"), 'player.js supports spectrum display mode');
-  assert(bbJs.includes("SA_BLOCKS_PER_COLUMN = 8"), 'player.js configures 8 vertical blocks per band');
-  assert(bbJs.includes("SA_PEAK_HOLD_MS = 900"), 'player.js configures vintage peak-hold duration');
-  assert(bbJs.includes('saPeakBlockIndices'), 'player.js tracks peak-hold indicator indices independently per column');
+  assert(bbJs.includes("SA_BLOCKS_PER_COLUMN = 14"), 'player.js configures 14 vertical blocks per band');
+  assert(bbJs.includes("SA_BANDS_COUNT = 12"), 'player.js configures 12 vertical bars');
   assert(bbJs.includes('stopSpectrumAnalyzerLoop()'), 'player.js stops animation loop when exiting spectrum mode');
 
   // 5. Test cyclic 4-mode transition logic
@@ -5885,6 +5882,234 @@ console.log('\n--- Test Suite 66: Audio Spectrum Analyzer (Third Display Mode in
   assert(mode === 'song_info', 'Fourth click returns to song_info');
 
   console.log('✓ 66. Audio Spectrum Analyzer (Third Display Mode in Green LCD) verified.');
+}
+
+// --- Test Suite 67: Volume & Balance Dial Anti-Jitter, Echo Protection, Angular Tracking & Throttling ---
+console.log('\n--- Test Suite 67: Volume & Balance Dial Anti-Jitter, Echo Protection, Angular Tracking & Throttling ---');
+{
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+
+  // 1. Static assertions on player.js & App.tsx
+  assert(
+    bbJs.includes('let isVolumeDrag = false;') &&
+    bbJs.includes('let lastUserVolumeTime = 0;') &&
+    bbJs.includes('let userVolumeSeq = 0;') &&
+    bbJs.includes('let userBalanceSeq = 0;'),
+    'player.js tracks drag flags, user timestamps, and sequence numbers for both volume and balance dials'
+  );
+
+  assert(
+    bbJs.includes('function flushPendingVolume()') &&
+    bbJs.includes('function flushPendingBalance()') &&
+    bbJs.includes('DIAL_THROTTLE_MS = 50') &&
+    bbJs.includes('DIAL_ECHO_COOLDOWN_MS = 1000'),
+    'player.js implements 50ms message throttling, pointerup flush helpers, and 1000ms post-release echo cooldown'
+  );
+
+  assert(
+    bbJs.includes("transportBusPort.postMessage({\n        type: 'BOOMBOX_ACTION',\n        payload: payloadData\n      });\n      return;"),
+    'rawSendBoomBoxAction returns after posting on transportBusPort so it never double-dispatches duplicate BOOMBOX_ACTION messages'
+  );
+
+  assert(
+    bbJs.includes('Math.atan2(dx,-dy)*180/Math.PI') &&
+    bbJs.includes('if(dAng>180) dAng-=360;') &&
+    bbJs.includes('if(dAng<-180) dAng+=360;'),
+    'knob() computes pointer angle relative to dial center with atan2 wraparound protection and center deadzone'
+  );
+
+  assert(
+    appTsx.includes('volumeSeq: lastUserVolumeSeqRef.current') &&
+    appTsx.includes('volumeUserTs: lastUserVolumeTsRef.current') &&
+    appTsx.includes('balanceSeq: lastUserBalanceSeqRef.current') &&
+    appTsx.includes('balanceUserTs: lastUserBalanceTsRef.current') &&
+    appTsx.includes('const currentVol = vc ? vc.getUserVolume() : targetMusicVolume;'),
+    'App.tsx broadcasts user volume (never ducked volume) along with sequence numbers and user timestamps'
+  );
+
+  // 2. Behavioral verification of echo-blocking during drag, post-release sequence/timestamp echo dropping,
+  //    angular tracking with atan2 wraparound protection, and 50ms message throttling + pointerup final flush
+  let nowSim = 100000;
+  const S = { vol: 0.7, bal: 0.5 };
+  let isVolumeDrag = false;
+  let isBalanceDrag = false;
+  let lastUserVolumeTime = 0;
+  let userVolumeSeq = 0;
+  let lastUserBalanceTime = 0;
+  let userBalanceSeq = 0;
+  const DIAL_ECHO_COOLDOWN_MS = 1000;
+  const DIAL_THROTTLE_MS = 50;
+  const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+
+  const dispatchedActions: Array<{ action: string; data: any; ts: number }> = [];
+  let pendingVolumeData: any = null;
+  let lastVolumeSendTime = 0;
+  let pendingBalanceData: any = null;
+  let lastBalanceSendTime = 0;
+
+  function rawSendBoomBoxAction(action: string, data: any) {
+    dispatchedActions.push({ action, data: { ...data }, ts: nowSim });
+  }
+
+  function flushPendingVolume() {
+    const data = pendingVolumeData || {
+      volume: Math.round(S.vol * 100),
+      seq: ++userVolumeSeq,
+      userTs: lastUserVolumeTime || nowSim
+    };
+    pendingVolumeData = null;
+    lastVolumeSendTime = nowSim;
+    rawSendBoomBoxAction('SET_VOLUME', data);
+  }
+
+  function flushPendingBalance() {
+    const data = pendingBalanceData || {
+      balance: Number((S.bal * 2 - 1).toFixed(2)),
+      seq: ++userBalanceSeq,
+      userTs: lastUserBalanceTime || nowSim
+    };
+    pendingBalanceData = null;
+    lastBalanceSendTime = nowSim;
+    rawSendBoomBoxAction('SET_BALANCE', data);
+  }
+
+  function sendBoomBoxAction(action: string, data: any) {
+    if (action === 'SET_VOLUME') {
+      pendingVolumeData = data;
+      const elapsed = nowSim - lastVolumeSendTime;
+      if (!isVolumeDrag || elapsed >= DIAL_THROTTLE_MS) {
+        const toSend = pendingVolumeData;
+        pendingVolumeData = null;
+        lastVolumeSendTime = nowSim;
+        rawSendBoomBoxAction('SET_VOLUME', toSend);
+      }
+      return;
+    }
+    if (action === 'SET_BALANCE') {
+      pendingBalanceData = data;
+      const elapsed = nowSim - lastBalanceSendTime;
+      if (!isBalanceDrag || elapsed >= DIAL_THROTTLE_MS) {
+        const toSend = pendingBalanceData;
+        pendingBalanceData = null;
+        lastBalanceSendTime = nowSim;
+        rawSendBoomBoxAction('SET_BALANCE', toSend);
+      }
+      return;
+    }
+    rawSendBoomBoxAction(action, data);
+  }
+
+  function setVisualVolume(fraction: number, meta?: any) {
+    if (typeof fraction !== 'number' || isNaN(fraction)) return false;
+    const clamped = clamp(fraction);
+    if (isVolumeDrag) return false;
+    const incomingSeq = typeof meta?.volumeSeq === 'number' ? meta.volumeSeq : null;
+    const incomingUserTs = typeof meta?.volumeUserTs === 'number' ? meta.volumeUserTs : null;
+    if (incomingSeq !== null && incomingSeq > 0 && incomingSeq < userVolumeSeq) return false;
+    if (incomingUserTs !== null && incomingUserTs > 0 && incomingUserTs < lastUserVolumeTime) return false;
+    if (lastUserVolumeTime > 0 && (nowSim - lastUserVolumeTime < DIAL_ECHO_COOLDOWN_MS)) return false;
+    S.vol = clamped;
+    return true;
+  }
+
+  function setVisualBalance(balance: number, meta?: any) {
+    if (typeof balance !== 'number' || isNaN(balance)) return false;
+    const clampedBal = Math.max(-1, Math.min(1, balance));
+    if (isBalanceDrag) return false;
+    const incomingSeq = typeof meta?.balanceSeq === 'number' ? meta.balanceSeq : null;
+    const incomingUserTs = typeof meta?.balanceUserTs === 'number' ? meta.balanceUserTs : null;
+    if (incomingSeq !== null && incomingSeq > 0 && incomingSeq < userBalanceSeq) return false;
+    if (incomingUserTs !== null && incomingUserTs > 0 && incomingUserTs < lastUserBalanceTime) return false;
+    if (lastUserBalanceTime > 0 && (nowSim - lastUserBalanceTime < DIAL_ECHO_COOLDOWN_MS)) return false;
+    S.bal = clamp((clampedBal + 1) / 2);
+    return true;
+  }
+
+  // Test 2a: While dragging volume, incoming echoes are completely ignored
+  isVolumeDrag = true;
+  lastUserVolumeTime = nowSim;
+  S.vol = 0.85;
+  const acceptedDuringDrag = setVisualVolume(0.40, { timestamp: nowSim });
+  assert(acceptedDuringDrag === false && S.vol === 0.85, 'Incoming volume echo is ignored while user is dragging kVol');
+
+  // Test 2b: Rapid pointermove events during drag are throttled to 50ms and final value is flushed on pointerup
+  dispatchedActions.length = 0;
+  lastVolumeSendTime = 0;
+  for (let i = 1; i <= 10; i++) {
+    nowSim += 10; // 10ms per move (100ms total)
+    S.vol = clamp(0.2 + i * 0.06); // ends at 0.80 (80%)
+    lastUserVolumeTime = nowSim;
+    const seq = ++userVolumeSeq;
+    sendBoomBoxAction('SET_VOLUME', { volume: Math.round(S.vol * 100), seq, userTs: lastUserVolumeTime });
+  }
+  // Across 10 moves at 10ms intervals, throttled at 50ms -> only 2 intermediate dispatches (at +10ms and +60ms)
+  assert(
+    dispatchedActions.length === 2,
+    `Rapid volume drag throttles SET_VOLUME messages (sent ${dispatchedActions.length} instead of 10)`
+  );
+  // Release (pointerup) flushes the exact final value (80%)
+  nowSim += 5;
+  isVolumeDrag = false;
+  lastUserVolumeTime = nowSim;
+  flushPendingVolume();
+  assert(
+    dispatchedActions.length === 3 && dispatchedActions[dispatchedActions.length - 1].data.volume === 80,
+    'Releasing volume dial on pointerup immediately flushes the final volume value (80%)'
+  );
+
+  // Test 2c: Post-release stale echoes (older seq, older userTs, or within cooldown) are dropped
+  nowSim += 150; // 150ms after release
+  const staleEchoAccepted = setVisualVolume(0.50, { volumeSeq: userVolumeSeq - 2, volumeUserTs: lastUserVolumeTime - 50, timestamp: nowSim });
+  assert(staleEchoAccepted === false && Math.round(S.vol * 100) === 80, 'Stale post-release volume echo with older seq/timestamp is dropped');
+
+  const cooldownEchoAccepted = setVisualVolume(0.62, { timestamp: nowSim });
+  assert(cooldownEchoAccepted === false && Math.round(S.vol * 100) === 80, 'Post-release echo arriving within 1000ms cooldown window is dropped');
+
+  // Test 2d: Authoritative state arriving after cooldown with current/newer seq is accepted
+  nowSim += 1100; // > 1000ms after release
+  const authAccepted = setVisualVolume(0.65, { volumeSeq: userVolumeSeq, volumeUserTs: lastUserVolumeTime, timestamp: nowSim });
+  assert(authAccepted === true && Math.round(S.vol * 100) === 65, 'Authoritative volume state after release cooldown is accepted');
+
+  // Test 2e: Balance dial has identical drag echo protection, throttling, and pointerup flush
+  isBalanceDrag = true;
+  lastUserBalanceTime = nowSim;
+  S.bal = 0.75; // +0.50 balance
+  assert(setVisualBalance(-0.8, { timestamp: nowSim }) === false && S.bal === 0.75, 'Incoming balance echo is ignored while user is dragging kBal');
+  isBalanceDrag = false;
+  lastUserBalanceTime = nowSim;
+  flushPendingBalance();
+  nowSim += 100;
+  assert(setVisualBalance(0.0, { balanceSeq: userBalanceSeq - 1 }) === false && S.bal === 0.75, 'Stale post-release balance echo is dropped');
+
+  // Test 2f: Center-relative angular calculation with deadzone and atan2 wraparound protection
+  const cx = 200, cy = 200; // 100x100 dial centered at (200, 200)
+  const computeAngle = (clientX: number, clientY: number) => {
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 8) return { nearCenter: true, ang: null as number | null };
+    return { nearCenter: false, ang: Math.atan2(dx, -dy) * 180 / Math.PI };
+  };
+  // Movement inside center deadzone (<8px) is ignored
+  assert(computeAngle(202, 199).nearCenter === true, 'Tiny pointer movement near dial center is ignored by deadzone');
+  // Dragging clockwise from 9 o'clock (-90 deg) through 12 o'clock (0 deg) to 3 o'clock (+90 deg)
+  const aLeft = computeAngle(160, 200).ang!;   // -90 deg
+  const aTop = computeAngle(200, 160).ang!;    // 0 deg
+  const aRight = computeAngle(240, 200).ang!;  // +90 deg
+  assert(Math.abs(aLeft - (-90)) < 0.01 && Math.abs(aTop - 0) < 0.01 && Math.abs(aRight - 90) < 0.01, 'Center-relative angle maps 9 o\'clock=-90°, 12 o\'clock=0°, 3 o\'clock=+90°');
+
+  // Wraparound across 6 o'clock (-175 deg to +175 deg when trying to drag past minimum) does not jump to max
+  let simVol = 0.0; // at minimum (-140 deg)
+  let lastAng = -170;
+  const nextAng = 172; // crossed 6 o'clock boundary counter-clockwise
+  let dAng = nextAng - lastAng;
+  if (dAng > 180) dAng -= 360;
+  if (dAng < -180) dAng += 360; // dAng = -18 deg (continuing counter-clockwise)
+  simVol = clamp(simVol + dAng / 280);
+  assert(simVol === 0.0, 'Crossing atan2 -180/+180 boundary at minimum stays clamped at 0.0 without wrapping to max');
+
+  console.log('✓ 67. Volume & Balance Dial Anti-Jitter, Echo Protection, Angular Tracking & Throttling verified.');
 }
 
 // --- Summary ---

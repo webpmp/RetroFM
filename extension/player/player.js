@@ -923,6 +923,9 @@ function setState(s,quiet){
    }
  }
  if (!vuRunning) { vuRunning = true; requestAnimationFrame(vu); }
+ if (songDisplayMode === 'spectrum' && !saRunning) {
+   startSpectrumAnalyzerLoop();
+ }
  if (!quiet && normalized !== 'blank') emit('transport', { state: normalized });
 }
 let lastUserTransportAction = null; // { state, time }
@@ -1000,13 +1003,33 @@ act($('bStop'),()=>{
 
 // knobs
 let isTuningDrag = false;
+let isVolumeDrag = false;
 let isBalanceDrag = false;
+let lastUserVolumeTime = 0;
+let userVolumeSeq = 0;
 let lastUserBalanceTime = 0;
+let userBalanceSeq = 0;
 function knob(el,key,base,min,max,onSet,step,sens){
  const rot=()=>el.style.transform='rotate('+(min+S[key]*(max-min)-base)+'deg)';
  const set=v=>{S[key]=clamp(v);onSet&&onSet();rot();};
- let lx=0,ly=0,drag=false,activePointerId=null,hadPrimaryButtonDown=false,lastMoveEvent=null;
+ let lx=0,ly=0,lastAng=null,drag=false,activePointerId=null,hadPrimaryButtonDown=false,lastMoveEvent=null;
  const divisor = typeof sens === 'number' ? sens : 220;
+ const getCenterAndAngle=e=>{
+   if(!el||typeof el.getBoundingClientRect!=='function') return null;
+   const rect=el.getBoundingClientRect();
+   if(!rect||rect.width<=0||rect.height<=0) return null;
+   const cx=rect.left+rect.width/2;
+   const cy=rect.top+rect.height/2;
+   const dx=e.clientX-cx;
+   const dy=e.clientY-cy;
+   const dist=Math.hypot(dx,dy);
+   const minDeadzone=Math.max(4,Math.min(rect.width,rect.height)*0.08);
+   // Ignore tiny movements too close to the center where atan2 is unstable
+   if(dist<minDeadzone) return { nearCenter:true, ang:null };
+   // 0 deg at 12 o'clock (top), -180..+180 deg clockwise
+   const ang=Math.atan2(dx,-dy)*180/Math.PI;
+   return { nearCenter:false, ang };
+ };
  const stopDrag=e=>{
    if(!drag)return;
    if(e && typeof e.pointerId==='number' && activePointerId!==null && e.pointerId!==activePointerId && e.type!=='blur' && e.type!=='visibilitychange' && e.type!=='lostpointercapture')return;
@@ -1015,6 +1038,7 @@ function knob(el,key,base,min,max,onSet,step,sens){
    activePointerId=null;
    hadPrimaryButtonDown=false;
    lastMoveEvent=null;
+   lastAng=null;
    el.style.cursor='grab';
    window.removeEventListener('pointermove',onMove,true);
    window.removeEventListener('pointerup',stopDrag,true);
@@ -1030,7 +1054,16 @@ function knob(el,key,base,min,max,onSet,step,sens){
      if(typeof flushPendingTune==='function') flushPendingTune();
      syncStereoIndicator();
    }
-   if(key==='bal') isBalanceDrag=false;
+   if(key==='vol'){
+     isVolumeDrag=false;
+     lastUserVolumeTime=Date.now();
+     if(typeof flushPendingVolume==='function') flushPendingVolume();
+   }
+   if(key==='bal'){
+     isBalanceDrag=false;
+     lastUserBalanceTime=Date.now();
+     if(typeof flushPendingBalance==='function') flushPendingBalance();
+   }
  };
  const onVisChange=()=>{if(document.hidden)stopDrag({type:'visibilitychange'});};
  const onMove=e=>{
@@ -1042,6 +1075,31 @@ function knob(el,key,base,min,max,onSet,step,sens){
    }
    lastMoveEvent=e;
    if(e.clientX===lx && e.clientY===ly)return;
+   const info=(key==='vol'||key==='bal')?getCenterAndAngle(e):null;
+   if(info){
+     lx=e.clientX;
+     ly=e.clientY;
+     if(info.nearCenter||info.ang===null)return;
+     // Clamp pointer angle to the dial's [min, max] sweep and prevent atan2 wraparound jumps across the 6 o'clock boundary
+     if(lastAng===null){
+       lastAng=info.ang;
+       return;
+     }
+     let dAng=info.ang-lastAng;
+     if(dAng>180) dAng-=360;
+     if(dAng<-180) dAng+=360;
+     // If pointer crosses the bottom dead-zone (-180/+180 wraparound boundary), ignore the boundary jump and keep dial clamped
+     if(Math.abs(dAng)>95 || (Math.abs(info.ang)>Math.max(Math.abs(min),Math.abs(max))+10 && ((S[key]<=0.02&&dAng>0)||(S[key]>=0.98&&dAng<0)))){
+       lastAng=info.ang;
+       return;
+     }
+     lastAng=info.ang;
+     const sweep=max-min;
+     if(sweep>0){
+       set(S[key]+dAng/sweep);
+     }
+     return;
+   }
    set(S[key]+((e.clientX-lx)-(e.clientY-ly))/divisor);
    lx=e.clientX;
    ly=e.clientY;
@@ -1055,10 +1113,13 @@ function knob(el,key,base,min,max,onSet,step,sens){
    hadPrimaryButtonDown=Boolean(e.isTrusted||(typeof e.buttons==='number'&&(e.buttons&1)===1));
    lx=e.clientX;
    ly=e.clientY;
+   const info=(key==='vol'||key==='bal')?getCenterAndAngle(e):null;
+   lastAng=(info&&!info.nearCenter)?info.ang:null;
    try{if(activePointerId!==null&&el.setPointerCapture)el.setPointerCapture(activePointerId);}catch(_){}
    el.style.cursor='grabbing';
    if(key==='tun') isTuningDrag=true;
-   if(key==='bal') isBalanceDrag=true;
+   if(key==='vol'){isVolumeDrag=true;lastUserVolumeTime=Date.now();}
+   if(key==='bal'){isBalanceDrag=true;lastUserBalanceTime=Date.now();}
    staticController.ensureContext();
    window.addEventListener('pointermove',onMove,true);
    window.addEventListener('pointerup',stopDrag,true);
@@ -1069,18 +1130,18 @@ function knob(el,key,base,min,max,onSet,step,sens){
  };
  el.onpointermove=onMove;
  el.onpointerup=el.onpointercancel=el.onlostpointercapture=stopDrag;
- el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step)};
- el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step)}};
+ el.onwheel=e=>{e.preventDefault();staticController.ensureContext();set(S[key]-Math.sign(e.deltaY)*step);if(key==='vol'&&typeof flushPendingVolume==='function')flushPendingVolume();if(key==='bal'&&typeof flushPendingBalance==='function')flushPendingBalance();};
+ el.onkeydown=e=>{const d={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1}[e.key];if(d){e.preventDefault();staticController.ensureContext();set(S[key]+d*step);if(key==='vol'&&typeof flushPendingVolume==='function')flushPendingVolume();if(key==='bal'&&typeof flushPendingBalance==='function')flushPendingBalance();}};
  rot();
  set.isDragging=()=>drag;
  set.stopDrag=stopDrag;
  return set;
 }
-const setVolKnob=knob($('kVol'),'vol',-163,-140,140,()=>{staticController.setVolume(S.vol);emit('volume',{value:S.vol});sendBoomBoxAction('SET_VOLUME',{volume:Math.round(S.vol*100)})},.03);
+const setVolKnob=knob($('kVol'),'vol',-163,-140,140,()=>{lastUserVolumeTime=Date.now();const vPct=Math.round(S.vol*100);const seq=++userVolumeSeq;staticController.setVolume(S.vol);if(songDisplayMode==='spectrum'&&!saRunning){startSpectrumAnalyzerLoop();}emit('volume',{value:S.vol});console.debug(`[BoomBox Dial] User volume set: ${vPct}% (seq=${seq}, ts=${lastUserVolumeTime})`);sendBoomBoxAction('SET_VOLUME',{volume:vPct,seq,userTs:lastUserVolumeTime})},.03);
 if($('kBal')){$('kBal').setAttribute('aria-valuemin','-1');$('kBal').setAttribute('aria-valuemax','1');$('kBal').setAttribute('aria-valuenow','0');}
-const setBalKnob=knob($('kBal'),'bal',10,-135,135,()=>{lastUserBalanceTime=Date.now();const bVal=Number((S.bal*2-1).toFixed(2));if($('kBal'))$('kBal').setAttribute('aria-valuenow',String(bVal));emit('balance',{value:bVal});sendBoomBoxAction('SET_BALANCE',{balance:bVal})},.04);
+const setBalKnob=knob($('kBal'),'bal',10,-135,135,()=>{lastUserBalanceTime=Date.now();const bVal=Number((S.bal*2-1).toFixed(2));const seq=++userBalanceSeq;if(songDisplayMode==='spectrum'&&!saRunning){startSpectrumAnalyzerLoop();}if($('kBal'))$('kBal').setAttribute('aria-valuenow',String(bVal));emit('balance',{value:bVal});console.debug(`[BoomBox Dial] User balance set: ${bVal} (seq=${seq}, ts=${lastUserBalanceTime})`);sendBoomBoxAction('SET_BALANCE',{balance:bVal,seq,userTs:lastUserBalanceTime})},.04);
 const setTunKnob=knob($('kTun'),'tun',40,-135,135,tune,.2/20.5,450);
-$('kBal').ondblclick=()=>{lastUserBalanceTime=Date.now();S.bal=.5;$('kBal').style.transform='rotate(-10deg)';$('kBal').setAttribute('aria-valuenow','0');emit('balance',{value:0});sendBoomBoxAction('SET_BALANCE',{balance:0})};
+$('kBal').ondblclick=()=>{lastUserBalanceTime=Date.now();const seq=++userBalanceSeq;S.bal=.5;$('kBal').style.transform='rotate(-10deg)';$('kBal').setAttribute('aria-valuenow','0');if(songDisplayMode==='spectrum'&&!saRunning){startSpectrumAnalyzerLoop();}emit('balance',{value:0});console.debug(`[BoomBox Dial] User balance reset: 0 (seq=${seq}, ts=${lastUserBalanceTime})`);sendBoomBoxAction('SET_BALANCE',{balance:0,seq,userTs:lastUserBalanceTime});if(typeof flushPendingBalance==='function')flushPendingBalance();};
 
 // optional deck buttons: rewind / fast forward flash when clicked, record latches on/off.
 // Set any of these to false to disable that button completely (no click area, no event).
@@ -1131,7 +1192,7 @@ function setSongYear(y){}
 const flip=()=>{if(!logoDec)return;dark=!dark;paintLogo();emit('theme',{dark})};
 $('logoBar').onclick=flip;$('logoBar').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 document.addEventListener('retrofm:song',e=>{const d=e.detail||{};if(d.title)setSong(d);if(d.year)setSongYear(d.year)});
-window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isTuningDrag,isBalanceDrag}),animateTuningToFrequency,cancelTuningAnimation,getTuningAnimationState:()=>tuningAnimState,getCurrentLevel:()=>getCurrentLevel()};
+window.RetroFM={setSongYear,setSong,setTransport:s=>setState(s,true),getStereoState:()=>stereoState,getTuningProximity,syncStereoIndicator,resetStereoIndicator,getKnobDragState:()=>({vol:setVolKnob.isDragging(),bal:setBalKnob.isDragging(),tun:setTunKnob.isDragging(),isVolumeDrag,isTuningDrag,isBalanceDrag}),animateTuningToFrequency,cancelTuningAnimation,getTuningAnimationState:()=>tuningAnimState,getCurrentLevel:()=>getCurrentLevel()};
 
 // tuning: dial = FM frequency, locks onto the selected decade's genre stations
 const MIN=87.5,SPAN=20.5;let lastKey='';
@@ -1388,10 +1449,46 @@ try {
 } catch (e) {}
 
 // Audio Spectrum Analyzer State & Calibration
-const SA_BANDS_COUNT = 10;
-const SA_BLOCKS_PER_COLUMN = 8;
+// 12 vertical bars with 14 rounded-rectangle segments per bar
+const SA_BANDS_COUNT = 12;
+const SA_BLOCKS_PER_COLUMN = 14;
 const SA_PEAK_HOLD_MS = 900;
 const SA_PEAK_DROP_INTERVAL_MS = 90;
+
+// Pre-computed vertical gradient hex colors and box shadows for segments 0..(SA_BLOCKS_PER_COLUMN-1)
+// Lit color runs: deep dark teal-green at base (#0b4d3a) -> medium green (#2fbf71) -> luminous lime at peak (#b6ff6a)
+const SA_SEG_COLORS = (function() {
+  const c0 = [11, 77, 58];    // #0b4d3a
+  const c1 = [47, 191, 113];  // #2fbf71
+  const c2 = [182, 255, 106]; // #b6ff6a
+  const colors = [];
+  for (let i = 0; i < SA_BLOCKS_PER_COLUMN; i++) {
+    const t = i / (SA_BLOCKS_PER_COLUMN - 1);
+    let r, g, b;
+    if (t <= 0.5) {
+      const u = t / 0.5;
+      r = Math.round(c0[0] + (c1[0] - c0[0]) * u);
+      g = Math.round(c0[1] + (c1[1] - c0[1]) * u);
+      b = Math.round(c0[2] + (c1[2] - c0[2]) * u);
+    } else {
+      const u = (t - 0.5) / 0.5;
+      r = Math.round(c1[0] + (c2[0] - c1[0]) * u);
+      g = Math.round(c1[1] + (c2[1] - c1[1]) * u);
+      b = Math.round(c1[2] + (c2[2] - c1[2]) * u);
+    }
+    const colorHex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+    // Glow/bloom: layered box-shadow soft glow in same green, stronger at higher segments
+    const glowRadius1 = Math.round(1.5 + t * 3.5);
+    const glowRadius2 = Math.round(3.5 + t * 6.5);
+    const glowAlpha1 = (0.45 + t * 0.45).toFixed(2);
+    const glowAlpha2 = (0.2 + t * 0.35).toFixed(2);
+    const boxShadow = `0 0 ${glowRadius1}px rgba(${r},${g},${b},${glowAlpha1}), 0 0 ${glowRadius2}px rgba(${r},${g},${b},${glowAlpha2})`;
+    // Unlit ghost color: very faint (about 8-12% opacity)
+    const ghostColor = `rgba(${r},${g},${b},0.10)`;
+    colors.push({ color: colorHex, boxShadow, ghostColor, r, g, b });
+  }
+  return colors;
+})();
 
 let saRafId = 0;
 let saRunning = false;
@@ -1404,6 +1501,8 @@ let saSmoothedLevels = new Array(SA_BANDS_COUNT).fill(0);
 let saActiveBlocks = new Array(SA_BANDS_COUNT).fill(0);
 let latestSpectrumBands = null;
 let lastSpectrumUpdateTime = 0;
+let saSimPhase = 0;
+let saLastAnimTime = 0;
 
 function ensureSpectrumAnalyzerDom() {
   const wrap = $('saWrap');
@@ -1418,6 +1517,8 @@ function ensureSpectrumAnalyzerDom() {
     for (let b = 0; b < SA_BLOCKS_PER_COLUMN; b++) {
       const blk = document.createElement('div');
       blk.className = 'sa-blk';
+      // Default initial state: unlit ghost segment
+      blk.style.background = SA_SEG_COLORS[b].ghostColor;
       colEl.appendChild(blk);
       colBlocks.push(blk);
     }
@@ -1427,7 +1528,7 @@ function ensureSpectrumAnalyzerDom() {
   saDomBuilt = true;
 }
 
-function updateSpectrumAnalyzerFrame() {
+function updateSpectrumAnalyzerFrame(timestamp) {
   if (songDisplayMode !== 'spectrum') {
     saRunning = false;
     saRafId = 0;
@@ -1437,42 +1538,112 @@ function updateSpectrumAnalyzerFrame() {
   ensureSpectrumAnalyzerDom();
   const now = Date.now();
   const isPlaying = S.state === 'playing' && isYtPlaybackActive;
-  const isDataFresh = (now - lastSpectrumUpdateTime) < 400;
-  const isSilentOrStopped = !isPlaying || !isDataFresh;
+  const isPaused = S.state === 'paused';
+  const isStopped = S.state === 'stopped';
+
+  const reducedMotion = typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Real-time audio data freshness check: if data is stale (>300ms) or stopped, show low flat idle
+  const isDataFresh = (now - lastSpectrumUpdateTime) <= 300 && latestSpectrumBands !== null;
+
+  if (isPlaying && !isDataFresh && !saStaleWarnLogged) {
+    saStaleWarnLogged = true;
+    console.warn(`[SpectrumAnalyzer] Real audio data stale or missing (${now - lastSpectrumUpdateTime}ms since last update). Settling to idle.`);
+  }
+
+  // Periodic diagnostic reporting every 3 seconds (console only)
+  if (now - saLastDiagnosticLogTime >= 3000) {
+    const elapsedSec = (now - saLastDiagnosticLogTime) / 1000;
+    saMessageRateHz = Math.round(saMessageCountWindow / (elapsedSec || 1));
+    saMessageCountWindow = 0;
+    saLastDiagnosticLogTime = now;
+
+    const myVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    const latencyMs = (latestSpectrumMetadata.t_read && latestSpectrumMetadata.t_recv)
+      ? Math.max(0, Math.round(performance.now() - latestSpectrumMetadata.t_read))
+      : (now - (latestSpectrumMetadata.ts || now));
+
+    const sampleBandsStr = latestSpectrumBands
+      ? latestSpectrumBands.map(v => Number(v.toFixed(2))).join(', ')
+      : 'none';
+
+    console.debug(
+      `[Spectrum Diagnostic] source: ${isDataFresh ? 'real_webaudio' : 'stale/idle'} | ` +
+      `ctxState: ${latestSpectrumMetadata.ctxState} | videoAttached: ${latestSpectrumMetadata.videoAttached} | ` +
+      `rate: ${saMessageRateHz} Hz | latency: ${latencyMs}ms | ` +
+      `vis(player): ${myVis} | vis(yt): ${latestSpectrumMetadata.visibility} | ` +
+      `gain: ${saAdaptiveGain.toFixed(2)}x | bands[0..11]: [${sampleBandsStr}]`
+    );
+  }
+
+  // Volume scale: overall height scales with volume slider
+  const volScale = Math.max(0, Math.min(1, typeof S.vol === 'number' ? S.vol : 0.7));
+
+  // Stereo balance shift: balance shifts left bars vs right bars like VU meters
+  const bal = typeof S.bal === 'number' ? S.bal : 0.5;
+  const leftGain = bal <= 0.5 ? 1 : Math.max(0.1, 1 - (bal - 0.5) * 1.8);
+  const rightGain = bal >= 0.5 ? 1 : Math.max(0.1, 1 - (0.5 - bal) * 1.8);
+
+  // Slowly adaptive normalization gain calculation:
+  // Tracks peak across bars and smoothly scales so quiet and loud songs both use full height
+  if (isDataFresh && latestSpectrumBands) {
+    let currentFramePeak = 0;
+    for (let c = 0; c < SA_BANDS_COUNT; c++) {
+      const val = typeof latestSpectrumBands[c] === 'number' ? latestSpectrumBands[c] : 0;
+      if (val > currentFramePeak) currentFramePeak = val;
+    }
+    if (currentFramePeak > 0.05) {
+      const targetGain = Math.min(2.5, Math.max(0.7, 0.92 / currentFramePeak));
+      saAdaptiveGain += (targetGain - saAdaptiveGain) * 0.03; // Smooth adaptation over ~1-2 seconds
+    }
+  }
 
   let hasVisibleActivity = false;
 
   for (let c = 0; c < SA_BANDS_COUNT; c++) {
+    const barNorm = c / (SA_BANDS_COUNT - 1);
+    const barBalGain = leftGain * (1 - barNorm) + rightGain * barNorm;
+
     let target = 0;
-    if (!isSilentOrStopped && latestSpectrumBands && typeof latestSpectrumBands[c] === 'number') {
-      target = Math.max(0, Math.min(1, latestSpectrumBands[c]));
+    if (isPlaying && isDataFresh && latestSpectrumBands) {
+      // Pure real-audio data: NO simulated motion fallback
+      const rawBandVal = typeof latestSpectrumBands[c] === 'number' ? latestSpectrumBands[c] : 0;
+      target = rawBandVal * saAdaptiveGain * volScale * barBalGain;
+      target = Math.max(0, Math.min(1, target));
+    } else if (isPaused || (isPlaying && !isDataFresh)) {
+      // On Pause or stale data: bars fall smoothly to a low flat idle level (1 block)
+      target = 0.07 * volScale;
+    } else {
+      // On Stop: fall to minimum (0)
+      target = 0;
     }
 
-    // Vintage hardware ballistics: fast attack (0.5), slightly damped release (0.16)
+    // Fast attack, slower decay ballistics: eases smoothly, never snaps
+    const attackRate = reducedMotion ? 0.32 : 0.54;
+    const decayRate = reducedMotion ? 0.09 : 0.16;
     if (target > saSmoothedLevels[c]) {
-      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * 0.52;
+      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * attackRate;
     } else {
-      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * 0.16;
+      saSmoothedLevels[c] += (target - saSmoothedLevels[c]) * decayRate;
     }
-    if (saSmoothedLevels[c] < 0.015) {
+    if (saSmoothedLevels[c] < 0.005) {
       saSmoothedLevels[c] = 0;
     }
 
-    // Discrete block count (0 to SA_BLOCKS_PER_COLUMN)
+    // Discrete lit segments count (0 to SA_BLOCKS_PER_COLUMN)
     let litBlocks = Math.round(saSmoothedLevels[c] * SA_BLOCKS_PER_COLUMN);
     litBlocks = Math.max(0, Math.min(SA_BLOCKS_PER_COLUMN, litBlocks));
     saActiveBlocks[c] = litBlocks;
 
-    // Peak-hold indicator behavior:
-    // 1. When column rises above peak, peak immediately jumps to column height
+    // Peak tracking
     if (litBlocks > saPeakBlockIndices[c]) {
       saPeakBlockIndices[c] = litBlocks;
       saPeakTimes[c] = now;
       saPeakLastDropTimes[c] = now;
     } else if (saPeakBlockIndices[c] > 0) {
-      // 2. Hold at peak for SA_PEAK_HOLD_MS (900ms)
       if (now - saPeakTimes[c] > SA_PEAK_HOLD_MS) {
-        // 3. Step down gradually toward column height every SA_PEAK_DROP_INTERVAL_MS
         if (now - saPeakLastDropTimes[c] >= SA_PEAK_DROP_INTERVAL_MS) {
           saPeakBlockIndices[c] = Math.max(litBlocks, saPeakBlockIndices[c] - 1);
           saPeakLastDropTimes[c] = now;
@@ -1480,32 +1651,43 @@ function updateSpectrumAnalyzerFrame() {
       }
     }
 
-    const currentPeak = saPeakBlockIndices[c];
-    if (litBlocks > 0 || currentPeak > 0) {
+    if (litBlocks > 0 || saSmoothedLevels[c] > 0.01) {
       hasVisibleActivity = true;
     }
 
-    // Render 8 discrete blocks in column
+    // Render segments in column:
+    // Lit segments from base up to bar's current height.
+    // Unlit segments above stay visible as very faint ghost segments (about 8-12% opacity).
+    // Lit color: deep dark teal-green at base -> medium green -> bright luminous lime at peak.
+    // Soft glow/bloom around lit segments, strongest at the peaks. Top lit segment is brightest.
     const blocks = saBlockElements[c];
     if (blocks && blocks.length === SA_BLOCKS_PER_COLUMN) {
       for (let b = 0; b < SA_BLOCKS_PER_COLUMN; b++) {
         const blk = blocks[b];
-        const isColumnLit = b < litBlocks;
-        const isPeakLit = (b + 1 === currentPeak) && (currentPeak > litBlocks);
-
-        if (isPeakLit) {
-          blk.className = 'sa-blk peak';
-        } else if (isColumnLit) {
+        const segData = SA_SEG_COLORS[b];
+        if (b < litBlocks) {
           blk.className = 'sa-blk on';
+          blk.style.background = segData.color;
+          // Peak lit segment is the brightest with extra luminous bloom
+          if (b === litBlocks - 1 && b > 0) {
+            blk.style.boxShadow = segData.boxShadow + `, 0 0 8px rgba(182,255,106,0.55)`;
+            blk.style.filter = 'brightness(1.15)';
+          } else {
+            blk.style.boxShadow = segData.boxShadow;
+            blk.style.filter = 'none';
+          }
         } else {
           blk.className = 'sa-blk';
+          blk.style.background = segData.ghostColor;
+          blk.style.boxShadow = 'none';
+          blk.style.filter = 'none';
         }
       }
     }
   }
 
-  // Continue RAF loop while playing or until all columns and peaks settle to 0
-  if (isPlaying || hasVisibleActivity) {
+  // Continue RAF loop while playing, paused (settling to idle), or until bars settle to 0
+  if (isPlaying || isPaused || hasVisibleActivity) {
     saRunning = true;
     saRafId = requestAnimationFrame(updateSpectrumAnalyzerFrame);
   } else {
@@ -2055,6 +2237,22 @@ function checkSilenceDetector() {
 // Independent detector loop (~100ms timer): keeps running even when panel collapsed or tab in background
 setInterval(checkSilenceDetector, 100);
 
+let latestSpectrumMetadata = {
+  ts: 0,
+  t_read: null,
+  t_recv: 0,
+  visibility: 'unknown',
+  ctxState: 'unknown',
+  videoAttached: false
+};
+let saMessageCountWindow = 0;
+let saLastDiagnosticLogTime = 0;
+let saMessageRateHz = 0;
+let saStaleWarnLogged = false;
+
+// Adaptive normalization gain: smoothly tracks average peak magnitude to utilize full vertical display
+let saAdaptiveGain = 1.0;
+
 function onVuAudioLevelsReceived(payload) {
   if (!payload) return;
   const rawL = typeof payload.l === 'number' && isFinite(payload.l) ? payload.l : 0;
@@ -2065,6 +2263,16 @@ function onVuAudioLevelsReceived(payload) {
   if (Array.isArray(payload.bands) && payload.bands.length > 0) {
     latestSpectrumBands = payload.bands;
     lastSpectrumUpdateTime = Date.now();
+    latestSpectrumMetadata.ts = payload.ts || lastSpectrumUpdateTime;
+    latestSpectrumMetadata.t_read = typeof payload.t_read === 'number' ? payload.t_read : null;
+    latestSpectrumMetadata.t_recv = Math.round(performance.now());
+    latestSpectrumMetadata.visibility = payload.visibility || 'unknown';
+    latestSpectrumMetadata.ctxState = payload.ctxState || 'unknown';
+    latestSpectrumMetadata.videoAttached = Boolean(payload.videoAttached);
+
+    saMessageCountWindow++;
+    saStaleWarnLogged = false;
+
     if (songDisplayMode === 'spectrum' && !saRunning) {
       startSpectrumAnalyzerLoop();
     }
@@ -2135,18 +2343,78 @@ requestAnimationFrame(vu);
 $('copy').onclick=e=>e.stopPropagation();
 
 // --- Chrome Extension Integration Bridge ---
-function setVisualVolume(fraction) {
+const DIAL_ECHO_COOLDOWN_MS = 1000;
+const DIAL_THROTTLE_MS = 50;
+
+function setVisualVolume(fraction, meta) {
   if (typeof fraction !== 'number' || isNaN(fraction)) return;
-  S.vol = clamp(fraction);
+  const now = Date.now();
+  const clamped = clamp(fraction);
+  if (isVolumeDrag || (typeof setVolKnob === 'function' && setVolKnob.isDragging && setVolKnob.isDragging())) {
+    console.debug(`[BoomBox Dial] Ignored incoming volume echo during active drag: incoming=${Math.round(clamped * 100)}% vs user=${Math.round(S.vol * 100)}% (ts=${now})`);
+    return;
+  }
+  const incomingSeq = typeof meta?.volumeSeq === 'number' ? meta.volumeSeq : null;
+  const incomingUserTs = typeof meta?.volumeUserTs === 'number' ? meta.volumeUserTs : null;
+  const incomingStateTs = typeof meta?.timestamp === 'number' ? meta.timestamp : null;
+  if (incomingSeq !== null && incomingSeq > 0 && incomingSeq < userVolumeSeq) {
+    console.debug(`[BoomBox Dial] Dropped stale volume echo by seq: incoming=${Math.round(clamped * 100)}% (seq=${incomingSeq} < userSeq=${userVolumeSeq}, ts=${now})`);
+    return;
+  }
+  if (incomingUserTs !== null && incomingUserTs > 0 && incomingUserTs < lastUserVolumeTime) {
+    console.debug(`[BoomBox Dial] Dropped stale volume echo by userTs: incoming=${Math.round(clamped * 100)}% (userTs=${incomingUserTs} < lastUserTs=${lastUserVolumeTime}, ts=${now})`);
+    return;
+  }
+  if (lastUserVolumeTime > 0 && (now - lastUserVolumeTime < DIAL_ECHO_COOLDOWN_MS)) {
+    if (Math.abs(clamped - S.vol) > 0.005) {
+      console.debug(`[BoomBox Dial] Dropped post-release volume echo within cooldown (${now - lastUserVolumeTime}ms): incoming=${Math.round(clamped * 100)}% vs user=${Math.round(S.vol * 100)}% (stateTs=${incomingStateTs}, lastUserTs=${lastUserVolumeTime})`);
+    }
+    return;
+  }
+  if (Math.abs(clamped - S.vol) > 0.005) {
+    console.debug(`[BoomBox Dial] Accepted authoritative volume update: ${Math.round(S.vol * 100)}% -> ${Math.round(clamped * 100)}% (isDucking=${Boolean(meta?.isDucking)}, stateTs=${incomingStateTs}, ts=${now})`);
+  }
+  S.vol = clamped;
   staticController.setVolume(S.vol);
+  if (songDisplayMode === 'spectrum' && !saRunning) {
+    startSpectrumAnalyzerLoop();
+  }
   $('kVol').style.transform = 'rotate(' + (-140 + S.vol * 280 - (-163)) + 'deg)';
 }
 
-function setVisualBalance(balance) {
+function setVisualBalance(balance, meta) {
   if (typeof balance !== 'number' || isNaN(balance)) return;
-  if (isBalanceDrag || (Date.now() - lastUserBalanceTime < 400)) return;
+  const now = Date.now();
   const clampedBal = Math.max(-1, Math.min(1, balance));
+  const curBal = Number((S.bal * 2 - 1).toFixed(2));
+  if (isBalanceDrag || (typeof setBalKnob === 'function' && setBalKnob.isDragging && setBalKnob.isDragging())) {
+    console.debug(`[BoomBox Dial] Ignored incoming balance echo during active drag: incoming=${clampedBal.toFixed(2)} vs user=${curBal.toFixed(2)} (ts=${now})`);
+    return;
+  }
+  const incomingSeq = typeof meta?.balanceSeq === 'number' ? meta.balanceSeq : null;
+  const incomingUserTs = typeof meta?.balanceUserTs === 'number' ? meta.balanceUserTs : null;
+  const incomingStateTs = typeof meta?.timestamp === 'number' ? meta.timestamp : null;
+  if (incomingSeq !== null && incomingSeq > 0 && incomingSeq < userBalanceSeq) {
+    console.debug(`[BoomBox Dial] Dropped stale balance echo by seq: incoming=${clampedBal.toFixed(2)} (seq=${incomingSeq} < userSeq=${userBalanceSeq}, ts=${now})`);
+    return;
+  }
+  if (incomingUserTs !== null && incomingUserTs > 0 && incomingUserTs < lastUserBalanceTime) {
+    console.debug(`[BoomBox Dial] Dropped stale balance echo by userTs: incoming=${clampedBal.toFixed(2)} (userTs=${incomingUserTs} < lastUserTs=${lastUserBalanceTime}, ts=${now})`);
+    return;
+  }
+  if (lastUserBalanceTime > 0 && (now - lastUserBalanceTime < DIAL_ECHO_COOLDOWN_MS)) {
+    if (Math.abs(clampedBal - curBal) > 0.01) {
+      console.debug(`[BoomBox Dial] Dropped post-release balance echo within cooldown (${now - lastUserBalanceTime}ms): incoming=${clampedBal.toFixed(2)} vs user=${curBal.toFixed(2)} (stateTs=${incomingStateTs}, lastUserTs=${lastUserBalanceTime})`);
+    }
+    return;
+  }
+  if (Math.abs(clampedBal - curBal) > 0.01) {
+    console.debug(`[BoomBox Dial] Accepted authoritative balance update: ${curBal.toFixed(2)} -> ${clampedBal.toFixed(2)} (stateTs=${incomingStateTs}, ts=${now})`);
+  }
   S.bal = clamp((clampedBal + 1) / 2);
+  if (songDisplayMode === 'spectrum' && !saRunning) {
+    startSpectrumAnalyzerLoop();
+  }
   const el = $('kBal');
   if (el) {
     el.style.transform = 'rotate(' + (-135 + S.bal * 270 - 10) + 'deg)';
@@ -2213,6 +2481,44 @@ function flushPendingTune() {
   }
 }
 
+let pendingVolumeData = null;
+let volumeActionTimer = null;
+let lastVolumeSendTime = 0;
+
+function flushPendingVolume() {
+  if (volumeActionTimer) {
+    clearTimeout(volumeActionTimer);
+    volumeActionTimer = null;
+  }
+  const data = pendingVolumeData || {
+    volume: Math.round(S.vol * 100),
+    seq: ++userVolumeSeq,
+    userTs: lastUserVolumeTime || Date.now()
+  };
+  pendingVolumeData = null;
+  lastVolumeSendTime = Date.now();
+  rawSendBoomBoxAction('SET_VOLUME', data);
+}
+
+let pendingBalanceData = null;
+let balanceActionTimer = null;
+let lastBalanceSendTime = 0;
+
+function flushPendingBalance() {
+  if (balanceActionTimer) {
+    clearTimeout(balanceActionTimer);
+    balanceActionTimer = null;
+  }
+  const data = pendingBalanceData || {
+    balance: Number((S.bal * 2 - 1).toFixed(2)),
+    seq: ++userBalanceSeq,
+    userTs: lastUserBalanceTime || Date.now()
+  };
+  pendingBalanceData = null;
+  lastBalanceSendTime = Date.now();
+  rawSendBoomBoxAction('SET_BALANCE', data);
+}
+
 function rawSendBoomBoxAction(action, data) {
   const tCtx = getTimingContext();
   console.log(`[Transport Timing] [BoomBox] Action dispatched: ${action} (visibility=${tCtx.visibility}, ts=${tCtx.ts}, perf=${tCtx.perf})`);
@@ -2224,13 +2530,14 @@ function rawSendBoomBoxAction(action, data) {
     boombox_visibility: tCtx.visibility
   };
 
-  // Try direct port if connected for lowest possible latency
+  // Try direct port if connected for lowest possible latency (do not also send via sendMessage to avoid duplicate messages)
   if (transportBusPort) {
     try {
       transportBusPort.postMessage({
         type: 'BOOMBOX_ACTION',
         payload: payloadData
       });
+      return;
     } catch (e) {
       transportBusPort = null;
     }
@@ -2268,6 +2575,58 @@ function sendBoomBoxAction(action, data) {
       tuneActionTimer = null;
     }
     pendingTuneData = null;
+  }
+  if (action === 'SET_VOLUME') {
+    pendingVolumeData = data;
+    const now = Date.now();
+    const elapsed = now - lastVolumeSendTime;
+    if (!isVolumeDrag || elapsed >= DIAL_THROTTLE_MS) {
+      if (volumeActionTimer) {
+        clearTimeout(volumeActionTimer);
+        volumeActionTimer = null;
+      }
+      const toSend = pendingVolumeData;
+      pendingVolumeData = null;
+      lastVolumeSendTime = now;
+      rawSendBoomBoxAction('SET_VOLUME', toSend);
+    } else if (!volumeActionTimer) {
+      volumeActionTimer = setTimeout(() => {
+        volumeActionTimer = null;
+        if (pendingVolumeData) {
+          const toSend = pendingVolumeData;
+          pendingVolumeData = null;
+          lastVolumeSendTime = Date.now();
+          rawSendBoomBoxAction('SET_VOLUME', toSend);
+        }
+      }, Math.max(10, DIAL_THROTTLE_MS - elapsed));
+    }
+    return;
+  }
+  if (action === 'SET_BALANCE') {
+    pendingBalanceData = data;
+    const now = Date.now();
+    const elapsed = now - lastBalanceSendTime;
+    if (!isBalanceDrag || elapsed >= DIAL_THROTTLE_MS) {
+      if (balanceActionTimer) {
+        clearTimeout(balanceActionTimer);
+        balanceActionTimer = null;
+      }
+      const toSend = pendingBalanceData;
+      pendingBalanceData = null;
+      lastBalanceSendTime = now;
+      rawSendBoomBoxAction('SET_BALANCE', toSend);
+    } else if (!balanceActionTimer) {
+      balanceActionTimer = setTimeout(() => {
+        balanceActionTimer = null;
+        if (pendingBalanceData) {
+          const toSend = pendingBalanceData;
+          pendingBalanceData = null;
+          lastBalanceSendTime = Date.now();
+          rawSendBoomBoxAction('SET_BALANCE', toSend);
+        }
+      }, Math.max(10, DIAL_THROTTLE_MS - elapsed));
+    }
+    return;
   }
   rawSendBoomBoxAction(action, data);
 }
@@ -2423,10 +2782,10 @@ function applyRadioState(state) {
           setVisualTransport('paused');
         }
         if (typeof state.masterVolume === 'number') {
-          setVisualVolume(state.masterVolume / 100);
+          setVisualVolume(state.masterVolume / 100, state);
         }
         if (typeof state.balance === 'number') {
-          setVisualBalance(state.balance);
+          setVisualBalance(state.balance, state);
         }
         return;
       }
@@ -2437,10 +2796,10 @@ function applyRadioState(state) {
 
   // 2. Volume & Balance (visual only, no command feedback loop)
   if (typeof state.masterVolume === 'number') {
-    setVisualVolume(state.masterVolume / 100);
+    setVisualVolume(state.masterVolume / 100, state);
   }
   if (typeof state.balance === 'number') {
-    setVisualBalance(state.balance);
+    setVisualBalance(state.balance, state);
   }
 
   // 3. Current Song

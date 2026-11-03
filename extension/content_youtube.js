@@ -176,6 +176,24 @@ if (!window.__retroFmContentLoaded) {
   // Message listener relays RETROFM_YT_STATE_CHANGED_MSG and RETROFM_VU_LEVELS_MSG from yt_main_world.js.
   // Note: custom event EVENT_STATE_CHANGE is omitted here to prevent duplicate dispatch of state ticks.
 
+  let vuPort = null;
+  let isSendingVuFrame = false;
+
+  function ensureVuPort() {
+    if (vuPort) return vuPort;
+    try {
+      if (chrome.runtime?.connect) {
+        vuPort = chrome.runtime.connect({ name: 'retrofm-vu-stream' });
+        vuPort.onDisconnect.addListener(() => {
+          vuPort = null;
+        });
+      }
+    } catch (e) {
+      vuPort = null;
+    }
+    return vuPort;
+  }
+
   function handleVuLevelsFromMainWorld(data) {
     if (!data || typeof data.l !== 'number' || typeof data.r !== 'number') return;
     if (!isContextValid()) {
@@ -187,18 +205,39 @@ if (!window.__retroFmContentLoaded) {
         l: Math.max(0, Math.min(2, data.l)),
         r: Math.max(0, Math.min(2, data.r)),
         active: Boolean(data.active),
-        ts: typeof data.ts === 'number' ? data.ts : Date.now()
+        ts: typeof data.ts === 'number' ? data.ts : Date.now(),
+        t_read: typeof data.t_read === 'number' ? data.t_read : null,
+        visibility: data.visibility || 'unknown',
+        ctxState: data.ctxState || 'unknown',
+        videoAttached: Boolean(data.videoAttached)
       };
       if (Array.isArray(data.bands)) {
         payload.bands = data.bands;
       }
+
+      // Fast streaming via long-lived port or direct runtime message with drop-on-busy
+      const port = ensureVuPort();
+      if (port) {
+        try {
+          port.postMessage({ type: 'VU_AUDIO_LEVELS', payload });
+          return;
+        } catch (e) {
+          vuPort = null;
+        }
+      }
+
+      // Fallback message passing with drop-if-busy to eliminate queue backlog
+      if (isSendingVuFrame) return;
+      isSendingVuFrame = true;
       chrome.runtime.sendMessage({
         type: 'VU_AUDIO_LEVELS',
         payload
       }, () => {
+        isSendingVuFrame = false;
         if (chrome.runtime?.lastError) {}
       });
     } catch (e) {
+      isSendingVuFrame = false;
       cleanupInvalidatedContext();
       reportError(e, 'handleVuLevelsFromMainWorld');
     }

@@ -155,17 +155,17 @@
       leftGainNode.gain.value = gains.leftGain;
       rightGainNode.gain.value = gains.rightGain;
 
-      // Real-time Audio Analysers for VU metering (placed post-balance gain)
+      // Real-time Audio Analysers for VU metering and Spectrum Analyzer (post-balance gain)
       try {
         leftAnalyserNode = stereoAudioCtx.createAnalyser();
-        leftAnalyserNode.fftSize = 512;
-        leftAnalyserNode.smoothingTimeConstant = 0.2;
+        leftAnalyserNode.fftSize = 1024;
+        leftAnalyserNode.smoothingTimeConstant = 0.55;
         leftTimeData = new Float32Array(leftAnalyserNode.fftSize);
         leftFreqData = new Uint8Array(leftAnalyserNode.frequencyBinCount);
 
         rightAnalyserNode = stereoAudioCtx.createAnalyser();
-        rightAnalyserNode.fftSize = 512;
-        rightAnalyserNode.smoothingTimeConstant = 0.2;
+        rightAnalyserNode.fftSize = 1024;
+        rightAnalyserNode.smoothingTimeConstant = 0.55;
         rightTimeData = new Float32Array(rightAnalyserNode.fftSize);
         rightFreqData = new Uint8Array(rightAnalyserNode.frequencyBinCount);
       } catch (e) {
@@ -226,20 +226,37 @@
     }
   }
 
-  // 10 log-spaced frequency bands across 256 FFT bins (at 44.1/48kHz, bin ~86-93Hz)
-  // Covers ~30Hz to ~16kHz: sub-bass, bass, low-mid, mid, upper-mid, presence, brilliance
+  // 12 log-spaced frequency bands across 512 FFT bins (at 44.1/48kHz, bin ~43-47Hz)
+  // Covers ~30Hz to ~18kHz:
+  // [0]  sub-bass (30-90Hz)
+  // [1]  bass fundamental (90-180Hz)
+  // [2]  upper bass (180-300Hz)
+  // [3]  low-mid / warmth (300-500Hz)
+  // [4]  midrange (500-850Hz)
+  // [5]  upper-mid / body (850-1.4kHz)
+  // [6]  presence body (1.4-2.2kHz)
+  // [7]  presence attack (2.2-3.6kHz)
+  // [8]  treble crispness (3.6-5.8kHz)
+  // [9]  high treble (5.8-9.0kHz)
+  // [10] brilliance / cymbals (9.0-13.5kHz)
+  // [11] top shimmer / air (13.5-18kHz)
   const SPECTRUM_BAND_RANGES = [
-    [0, 1],     // ~0 - 180 Hz (deep sub & bass)
-    [2, 3],     // ~180 - 360 Hz (punch & bass)
-    [4, 7],     // ~360 - 720 Hz (low midrange)
-    [8, 12],    // ~720 - 1.2 kHz (midrange / vocal body)
-    [13, 20],   // ~1.2 - 2.0 kHz (midrange / presence)
-    [21, 32],   // ~2.0 - 3.2 kHz (upper midrange / attack)
-    [33, 50],   // ~3.2 - 5.0 kHz (presence / percussion snap)
-    [51, 80],   // ~5.0 - 8.0 kHz (high-mid / brightness)
-    [81, 130],  // ~8.0 - 13 kHz (treble / cymbals)
-    [131, 210]  // ~13 - 20 kHz (air / top end shimmer)
+    [1, 2],     // ~43 - 130 Hz
+    [3, 4],     // ~130 - 215 Hz
+    [5, 7],     // ~215 - 345 Hz
+    [8, 12],    // ~345 - 560 Hz
+    [13, 19],   // ~560 - 860 Hz
+    [20, 32],   // ~860 - 1.4 kHz
+    [33, 50],   // ~1.4 - 2.2 kHz
+    [51, 80],   // ~2.2 - 3.6 kHz
+    [81, 130],  // ~3.6 - 5.8 kHz
+    [131, 200], // ~5.8 - 9.0 kHz
+    [201, 305], // ~9.0 - 13.5 kHz
+    [306, 420]  // ~13.5 - 18.5 kHz
   ];
+
+  // High-frequency pre-emphasis boost per band: compensates for natural 1/f music roll-off
+  const SPECTRUM_HF_BOOST = [1.0, 1.0, 1.05, 1.1, 1.15, 1.25, 1.35, 1.5, 1.7, 1.95, 2.25, 2.6];
 
   function calculateFrequencyBands(leftAnalyser, rightAnalyser) {
     if (!leftAnalyser || !rightAnalyser || !leftFreqData || !rightFreqData) {
@@ -266,10 +283,12 @@
         }
         // Balanced weighting: combine average and peak in bin range, normalized to 0..1
         const avg = count > 0 ? (sum / count) : 0;
-        const energy = (avg * 0.6 + maxVal * 0.4) / 255;
-        // Mild noise gate per band (< 0.02 is noise floor)
-        const clean = energy > 0.02 ? (energy - 0.02) / 0.98 : 0;
-        bands.push(Number(Math.min(1, Math.max(0, clean)).toFixed(3)));
+        const rawEnergy = (avg * 0.65 + maxVal * 0.35) / 255;
+        // Mild noise gate per band (< 0.015 is noise floor)
+        const gated = rawEnergy > 0.015 ? (rawEnergy - 0.015) / 0.985 : 0;
+        // Apply gentle high-frequency boost curve
+        const boosted = gated * (SPECTRUM_HF_BOOST[b] || 1.0);
+        bands.push(Number(Math.min(1.5, Math.max(0, boosted)).toFixed(3)));
       }
       return bands;
     } catch (e) {
@@ -279,12 +298,40 @@
 
   function startVuSamplingLoop() {
     if (vuSamplingInterval) return;
-    // Sample audio levels approximately 30 times per second (~33ms)
-    vuSamplingInterval = setInterval(() => {
-      try {
-        sampleAndBroadcastVuLevels();
-      } catch (e) {}
-    }, 33);
+    // Unthrottled Web Worker / Timer ticker: background tabs throttle main thread setInterval to 1000ms.
+    // An inline Blob Web Worker provides unthrottled ~33ms ticks even when tab is in background.
+    let workerTicker = null;
+    try {
+      const blob = new Blob([
+        `let timer = null;
+        onmessage = function(e) {
+          if (e.data === 'start') {
+            if (!timer) timer = setInterval(function() { postMessage('tick'); }, 33);
+          } else if (e.data === 'stop') {
+            if (timer) { clearInterval(timer); timer = null; }
+          }
+        };`
+      ], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      workerTicker = new Worker(workerUrl);
+      workerTicker.onmessage = () => {
+        try { sampleAndBroadcastVuLevels(); } catch (e) {}
+      };
+      workerTicker.postMessage('start');
+      vuSamplingInterval = {
+        stop: () => {
+          try { workerTicker.postMessage('stop'); workerTicker.terminate(); } catch (e) {}
+          URL.revokeObjectURL(workerUrl);
+        }
+      };
+    } catch (workerErr) {
+      // Fallback to standard setInterval if Worker creation blocked
+      vuSamplingInterval = setInterval(() => {
+        try {
+          sampleAndBroadcastVuLevels();
+        } catch (e) {}
+      }, 33);
+    }
   }
 
   function sampleAndBroadcastVuLevels() {
@@ -329,12 +376,18 @@
 
   function postVuLevels(leftLevel, rightLevel, isActive, bands) {
     try {
+      const player = getPlayer();
+      const video = player ? (player.querySelector('video') || document.querySelector('video')) : document.querySelector('video');
       const msg = {
         type: 'RETROFM_VU_LEVELS_MSG',
         l: Number(leftLevel.toFixed(4)),
         r: Number(rightLevel.toFixed(4)),
         active: Boolean(isActive),
-        ts: Date.now()
+        ts: Date.now(),
+        t_read: Math.round(performance.now()),
+        visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+        ctxState: stereoAudioCtx ? stereoAudioCtx.state : 'uninitialized',
+        videoAttached: isVideoAttachedToStereoGraph(video)
       };
       if (Array.isArray(bands) && bands.length > 0) {
         msg.bands = bands;
@@ -357,12 +410,6 @@
       return true;
     }
 
-    // If video is paused, AudioContext is still suspended, and balance is at center (0),
-    // wait until AudioContext is running, playback starts, or balance is adjusted
-    if (!forceAttach && video.paused && stereoAudioCtx.state === 'suspended' && queuedBalance === 0) {
-      return false;
-    }
-
     try {
       const sourceNode = stereoAudioCtx.createMediaElementSource(video);
       sourceNode.connect(stereoInputNode);
@@ -378,6 +425,14 @@
       });
       return true;
     } catch (err) {
+      // If element is already connected to another AudioNode or graph, mark it attached
+      if (String(err?.message || '').includes('already been connected') || err?.name === 'InvalidStateError') {
+        if (attachedMediaElements) {
+          attachedMediaElements.set(video, true);
+        }
+        video.__retroFmMediaSourceNode = true;
+        return true;
+      }
       reportError(err, 'attachVideoToStereoGraph');
       return false;
     }

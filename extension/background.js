@@ -627,10 +627,11 @@ function handleIncomingRequest(request, sender, sendResponse) {
 
       // Feature: VU_AUDIO_LEVELS - Real-time audio signal levels from YouTube tab to Boom Box
       if (type === 'VU_AUDIO_LEVELS') {
-        const bbTabId = await resolveBoomBoxTab();
+        const bbTabId = fastBoomBoxTabId || activeBoomBoxTabId || await resolveBoomBoxTab();
         if (bbTabId) {
+          fastBoomBoxTabId = bbTabId;
           try {
-            await chrome.tabs.sendMessage(bbTabId, {
+            chrome.tabs.sendMessage(bbTabId, {
               type: 'VU_AUDIO_LEVELS',
               payload
             });
@@ -1539,15 +1540,33 @@ function broadcastToPorts(msg) {
   }
 }
 
+// Cached Boom Box tab ID for synchronous zero-latency fast-path dispatch
+let fastBoomBoxTabId = null;
+
 if (chrome.runtime.onConnect) {
   chrome.runtime.onConnect.addListener((port) => {
     activePorts.add(port);
+    if (port.sender?.tab?.url?.includes('player/index.html')) {
+      fastBoomBoxTabId = port.sender.tab.id;
+    }
     port.onDisconnect.addListener(() => {
       activePorts.delete(port);
     });
     port.onMessage.addListener(async (msg) => {
       if (msg && msg.type === 'BOOMBOX_ACTION') {
         await handleIncomingRequest(msg, { tab: port.sender?.tab }, () => {});
+      } else if (msg && msg.type === 'VU_AUDIO_LEVELS' && msg.payload) {
+        // Direct fast-path streaming from YouTube content script to Boom Box
+        const targetTabId = fastBoomBoxTabId || activeBoomBoxTabId || await resolveBoomBoxTab();
+        if (targetTabId) {
+          fastBoomBoxTabId = targetTabId;
+          try {
+            chrome.tabs.sendMessage(targetTabId, {
+              type: 'VU_AUDIO_LEVELS',
+              payload: msg.payload
+            });
+          } catch (e) {}
+        }
       }
     });
   });

@@ -1255,6 +1255,10 @@ export default function App() {
   const activeDecadeRef = useRef<number | null>(null);
   const stereoBalanceRef = useRef<number>(0);
   const [, setStereoBalance] = useState<number>(0);
+  const lastUserVolumeSeqRef = useRef<number>(0);
+  const lastUserVolumeTsRef = useRef<number>(0);
+  const lastUserBalanceSeqRef = useRef<number>(0);
+  const lastUserBalanceTsRef = useRef<number>(0);
   const lastBroadcastStateKeyRef = useRef<string>('');
   const playbackStatusRef = useRef<MusicPlaybackStatus>(playbackStatus);
   playbackStatusRef.current = playbackStatus;
@@ -1433,6 +1437,10 @@ export default function App() {
       stations: allStations, // stations: STATIONS_BY_DECADE[decade] || []
       masterVolume: currentVol,
       balance: stereoBalanceRef.current,
+      volumeSeq: lastUserVolumeSeqRef.current,
+      volumeUserTs: lastUserVolumeTsRef.current,
+      balanceSeq: lastUserBalanceSeqRef.current,
+      balanceUserTs: lastUserBalanceTsRef.current,
       duckLevel: vc ? vc.getDuckLevel() : duckVolumePercent,
       isDucking: isDuck,
       appConnected: true,
@@ -1501,6 +1509,18 @@ export default function App() {
             break;
           case 'SET_VOLUME':
             if (typeof action.volume === 'number' && volumeControllerRef.current) {
+              if (typeof action.seq === 'number' && action.seq > 0) {
+                if (action.seq < lastUserVolumeSeqRef.current) {
+                  break;
+                }
+                lastUserVolumeSeqRef.current = action.seq;
+              }
+              if (typeof action.userTs === 'number' && action.userTs > 0) {
+                if (action.userTs < lastUserVolumeTsRef.current) {
+                  break;
+                }
+                lastUserVolumeTsRef.current = action.userTs;
+              }
               await volumeControllerRef.current.setUserVolume(action.volume, 'Boom Box Knob');
               setLastBoomBoxCommand({ action: `SET_VOLUME (${action.volume}%)`, result: 'SUCCESS', time: timeStr });
               broadcastCurrentRadioState(true);
@@ -1508,6 +1528,18 @@ export default function App() {
             break;
           case 'SET_BALANCE':
             if (typeof action.balance === 'number' && !isNaN(action.balance)) {
+              if (typeof action.seq === 'number' && action.seq > 0) {
+                if (action.seq < lastUserBalanceSeqRef.current) {
+                  break;
+                }
+                lastUserBalanceSeqRef.current = action.seq;
+              }
+              if (typeof action.userTs === 'number' && action.userTs > 0) {
+                if (action.userTs < lastUserBalanceTsRef.current) {
+                  break;
+                }
+                lastUserBalanceTsRef.current = action.userTs;
+              }
               const clampedBal = Number(Math.max(-1, Math.min(1, action.balance)).toFixed(2));
               stereoBalanceRef.current = clampedBal;
               setStereoBalance(clampedBal);
