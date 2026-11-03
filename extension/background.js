@@ -7,6 +7,8 @@ let activeBoomBoxTabId = null;
 let lastKnownRadioState = null;
 let latestYouTubeState = null;
 let lastKnownBalance = 0;
+let latestRequestedVolume = null; // fraction 0..1 or percent 0..100
+let latestVolumeCommandTs = 0;
 
 // Unified Transport Trace Log (max 300 entries, stored in memory and persisted to chrome.storage.session)
 const MAX_TRANSPORT_TRACE_ENTRIES = 300;
@@ -694,6 +696,17 @@ function handleIncomingRequest(request, sender, sendResponse) {
         const entry = payload || request.entry;
         if (entry && typeof entry === 'object') {
           recordTrace(entry.source, entry.event, entry.data);
+          // Relay YouTube volume ramp completion events to RetroFM app tab for console timing logs
+          if (entry.event === 'YT_VOLUME_REACHED_DUCK' || entry.event === 'YT_VOLUME_REACHED_NORMAL') {
+            resolveRetroFmTab().then((retroTabId) => {
+              if (retroTabId) {
+                chrome.tabs.sendMessage(retroTabId, {
+                  type: 'YT_VOLUME_RAMP_REACHED',
+                  payload: { event: entry.event, ...(entry.data || {}) }
+                }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
         }
         sendResponse({ success: true });
         return;
@@ -844,6 +857,10 @@ function handleIncomingRequest(request, sender, sendResponse) {
               }
             }).catch(() => {});
           } else if (actionName === 'SET_VOLUME' && typeof payload?.volume === 'number') {
+            latestRequestedVolume = payload.volume <= 1.0 && payload.volume >= 0.0 && !Number.isInteger(payload.volume)
+              ? payload.volume
+              : Number((Math.max(0, Math.min(100, payload.volume)) / 100).toFixed(2));
+            latestVolumeCommandTs = Date.now();
             resolveYouTubeTab().then((ytTabId) => {
               if (ytTabId) {
                 chrome.tabs.sendMessage(ytTabId, { action: 'SET_VOLUME', volume: payload.volume }).catch(() => {});
@@ -910,6 +927,23 @@ function handleIncomingRequest(request, sender, sendResponse) {
             recordTrace('background', 'PLAY_BOOMBOX_DJ_SPEECH_FORWARDED_ERROR', { error: err.message });
             sendResponse({ success: false, error: err.message });
           }
+        })();
+        return true;
+      }
+
+      // Feature: STOP_BOOMBOX_DJ_SPEECH - immediately cancels active DJ speech on Boom Box tab
+      if (type === 'STOP_BOOMBOX_DJ_SPEECH') {
+        (async () => {
+          const bbTabId = await resolveBoomBoxTab();
+          if (bbTabId) {
+            try {
+              await chrome.tabs.sendMessage(bbTabId, {
+                type: 'STOP_DJ_SPEECH',
+                payload
+              });
+            } catch (e) {}
+          }
+          sendResponse({ success: true });
         })();
         return true;
       }
@@ -1285,6 +1319,16 @@ function handleIncomingRequest(request, sender, sendResponse) {
         const actionName = (payload?.command?.action || '').toUpperCase();
         if (actionName === 'STOP' || actionName === 'PAUSE') {
           clearPendingPlayIntent(`command_${actionName.toLowerCase()}`);
+        } else if (actionName === 'SET_VOLUME' && typeof payload?.command?.volume === 'number') {
+          latestRequestedVolume = payload.command.volume <= 1.0 && payload.command.volume >= 0.0 && !Number.isInteger(payload.command.volume)
+            ? payload.command.volume
+            : Number((Math.max(0, Math.min(100, payload.command.volume)) / 100).toFixed(2));
+          latestVolumeCommandTs = Date.now();
+        } else if (actionName === 'RAMP_VOLUME' && typeof payload?.command?.targetVolume === 'number') {
+          latestRequestedVolume = payload.command.targetVolume <= 1.0 && payload.command.targetVolume >= 0.0 && !Number.isInteger(payload.command.targetVolume)
+            ? payload.command.targetVolume
+            : Number((Math.max(0, Math.min(100, payload.command.targetVolume)) / 100).toFixed(2));
+          latestVolumeCommandTs = Date.now();
         } else if (actionName === 'SET_BALANCE' && typeof payload?.command?.balance === 'number' && !isNaN(payload.command.balance)) {
           lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.command.balance)).toFixed(4));
         } else if (actionName === 'PLAY') {
@@ -1339,6 +1383,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
         }
 
         const isPrepareOnly = !!payload?.prepareOnly;
+        const navStartTs = Date.now();
         activeConnectedTabId = tabId;
         recordTrace('background', isPrepareOnly ? 'PREPARE_YOUTUBE_START' : 'NAVIGATE_YOUTUBE_START', {
           tabId,
@@ -1372,11 +1417,21 @@ function handleIncomingRequest(request, sender, sendResponse) {
           // Ensure content script is injected into the newly loaded page
           await ensureYouTubeScriptInjected(tabId);
 
-          // 2.5 Apply requested targetVolume and targetBalance BEFORE telling video to play
-          const targetVol = typeof payload?.targetVolume === 'number' ? payload.targetVolume : null;
-          if (targetVol !== null) {
+          // 2.5 Apply requested targetVolume and targetBalance BEFORE telling video to play.
+          // CRITICAL: If a newer SET_VOLUME or RAMP_VOLUME (such as DJ speech release!) arrived
+          // while the YouTube tab was loading (navStartTs < latestVolumeCommandTs), apply the NEWER
+          // volume instead of the stale pre-navigation targetVolume!
+          const initialTargetVol = typeof payload?.targetVolume === 'number' ? payload.targetVolume : null;
+          const supersededByNewerVol = latestRequestedVolume !== null && latestVolumeCommandTs >= navStartTs;
+          const effectiveTargetVol = supersededByNewerVol ? latestRequestedVolume : initialTargetVol;
+          if (supersededByNewerVol && initialTargetVol !== effectiveTargetVol) {
+            console.log(
+              `[DJ Ducking Timing] [Background] NAVIGATE_YOUTUBE volume superseded while loading: initial=${initialTargetVol} -> latest=${effectiveTargetVol} (navLoadMs=${Date.now() - navStartTs}ms)`
+            );
+          }
+          if (effectiveTargetVol !== null) {
             try {
-              await chrome.tabs.sendMessage(tabId, { action: 'SET_VOLUME', volume: targetVol, rampId: Date.now() });
+              await chrome.tabs.sendMessage(tabId, { action: 'SET_VOLUME', volume: effectiveTargetVol, rampId: Date.now() });
             } catch (volErr) {
               console.warn('[Retro FM] Pre-play setVolume notice:', volErr);
             }

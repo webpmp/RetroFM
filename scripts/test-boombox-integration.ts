@@ -8,6 +8,7 @@ import { HARDCODED_PRESETS, RETROFM_JINGLE_CONFIG, DEFAULT_SONG_QUEUE, STATIONS_
 import { VolumeController } from '../src/services/audio/VolumeController.js';
 import { YouTubeMusicProvider, computeStereoBalanceGains } from '../src/services/music/YouTubeMusicProvider.js';
 import { buildBreak, newDjState, TALK_PRESETS } from '../src/services/djBreak/djBreakObservations.js';
+import { trimWavTrailingSilenceBase64 } from '../src/services/ttsClient.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6110,6 +6111,231 @@ console.log('\n--- Test Suite 67: Volume & Balance Dial Anti-Jitter, Echo Protec
   assert(simVol === 0.0, 'Crossing atan2 -180/+180 boundary at minimum stays clamped at 0.0 without wrapping to max');
 
   console.log('✓ 67. Volume & Balance Dial Anti-Jitter, Echo Protection, Angular Tracking & Throttling verified.');
+}
+
+// --- Test Suite 68: DJ Speech Ducking & Post-Speech Volume Release Latency Fix ---
+console.log('\n--- Test Suite 68: DJ Speech Ducking & Post-Speech Volume Release Latency Fix ---');
+{
+  const appTsx = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf-8');
+  const bbJs = fs.readFileSync(path.join(__dirname, '../extension/player/player.js'), 'utf-8');
+  const bgJs = fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf-8');
+  const contentYtJs = fs.readFileSync(path.join(__dirname, '../extension/content_youtube.js'), 'utf-8');
+  const mainWorldJs = fs.readFileSync(path.join(__dirname, '../extension/player/yt_main_world.js'), 'utf-8');
+  const vcTs = fs.readFileSync(path.join(__dirname, '../src/services/audio/VolumeController.ts'), 'utf-8');
+  const ttsClientTs = fs.readFileSync(path.join(__dirname, '../src/services/ttsClient.ts'), 'utf-8');
+
+  // 1. Verify WAV trailing silence trimming removes trailing silence while preserving speech + 80ms natural tail
+  const sampleRate = 24000;
+  const speechSamples = sampleRate * 2; // 2.0s of active speech
+  const silenceSamples = sampleRate * 4; // 4.0s of trailing silence (simulating padded TTS output)
+  const totalSamples = speechSamples + silenceSamples; // 6.0s total
+  const dataByteLen = totalSamples * 2;
+  const wavBuf = Buffer.alloc(44 + dataByteLen);
+  wavBuf.write('RIFF', 0, 'ascii');
+  wavBuf.writeUInt32LE(36 + dataByteLen, 4);
+  wavBuf.write('WAVE', 8, 'ascii');
+  wavBuf.write('fmt ', 12, 'ascii');
+  wavBuf.writeUInt32LE(16, 16);
+  wavBuf.writeUInt16LE(1, 20); // PCM
+  wavBuf.writeUInt16LE(1, 22); // Mono
+  wavBuf.writeUInt32LE(sampleRate, 24);
+  wavBuf.writeUInt32LE(sampleRate * 2, 28);
+  wavBuf.writeUInt16LE(2, 32);
+  wavBuf.writeUInt16LE(16, 34);
+  wavBuf.write('data', 36, 'ascii');
+  wavBuf.writeUInt32LE(dataByteLen, 40);
+  for (let i = 0; i < speechSamples; i++) {
+    wavBuf.writeInt16LE(i % 2 === 0 ? 6000 : -6000, 44 + i * 2);
+  }
+  // Remaining 4.0s stays 0 (silence)
+  const untrimmedB64 = wavBuf.toString('base64');
+  const trimRes = trimWavTrailingSilenceBase64(untrimmedB64, 6.0);
+  assert(
+    trimRes.trimmedMs >= 3800 && trimRes.trimmedMs <= 4000 && trimRes.durationSeconds >= 2.0 && trimRes.durationSeconds <= 2.15,
+    `trimWavTrailingSilenceBase64 trims ~3.92s of trailing silence (6.0s -> ${trimRes.durationSeconds}s, trimmed ${trimRes.trimmedMs}ms)`
+  );
+  assert(
+    ttsClientTs.includes('trimWavTrailingSilenceBase64'),
+    'ttsClient.ts trims trailing WAV silence on TTS responses before returning audio'
+  );
+
+  // 2. Verify unthrottled volume ramp in YouTube main world (driven by Blob Web Worker, separating userMasterVolume from ducking)
+  assert(
+    mainWorldJs.includes('const EVENT_RAMP_VOLUME = \'RETROFM_RAMP_YT_VOLUME\';') &&
+    mainWorldJs.includes('function startMainWorldVolumeRamp(') &&
+    mainWorldJs.includes('function tickMainWorldVolumeRamp()') &&
+    mainWorldJs.includes('const isRampReason = typeof reason === \'string\' && (reason.startsWith(\'ramp\') || reason.startsWith(\'duck\'));'),
+    'yt_main_world.js executes volume ramps on the unthrottled Web Worker ticker and keeps userMasterVolume separate from ducked ramp steps'
+  );
+  assert(
+    mainWorldJs.includes('RETROFM_RAMP_VOLUME_MSG') &&
+    contentYtJs.includes('EVENT_RAMP_VOLUME'),
+    'content_youtube.js delegates RAMP_VOLUME directly to yt_main_world.js without throttled content-script setInterval steps'
+  );
+
+  // 3. Verify NAVIGATE_YOUTUBE in background.js never overwrites a newer volume restore command with stale pre-navigation ducked volume
+  assert(
+    bgJs.includes('let latestRequestedVolume = null;') &&
+    bgJs.includes('let latestVolumeCommandTs = 0;') &&
+    bgJs.includes('latestRequestedVolume !== null && latestVolumeCommandTs >= navStartTs'),
+    'background.js tracks latestVolumeCommandTs and prevents NAVIGATE_YOUTUBE page-load completion from overwriting a newer volume restore with stale ducked volume'
+  );
+
+  // 4. Verify immediate start/end resolution in player.js and duration + 2s failsafe timeout in both player.js and App.tsx
+  assert(
+    bbJs.includes('audio.onended = () => {') &&
+    bbJs.includes("notifyFinished(true, undefined, 'ended');") &&
+    bbJs.includes('audio.onpause = () => {') &&
+    bbJs.includes('Math.max(2500, Math.round((durationSec + 2.0) * 1000))'),
+    'player.js resolves DJ speech immediately on ended/pause/error with 0ms tail delay and a duration + 2s failsafe timeout'
+  );
+  assert(
+    appTsx.includes('const waitMs = Math.max(2500, Math.round((durationSec + 2.0) * 1000));') &&
+    appTsx.includes('const dynamicSafetyTimeoutMs = Math.max(2500, Math.round((durationSec + 2.0) * 1000));') &&
+    !appTsx.includes('Math.max(30000, (durationSec + 6) * 1000)'),
+    'App.tsx uses duration + 2s failsafe timeout (never 30s) for both Boom Box and local speech playback'
+  );
+
+  // 5. Verify ramp defaults (~400ms duck, ~900ms release) and release on every exit path
+  assert(
+    appTsx.includes('return 400; // 400 ms default') &&
+    appTsx.includes('return 900; // 900 ms default (800-1000ms release window)'),
+    'App.tsx configures 400ms duck ramp and 900ms release ramp defaults'
+  );
+  assert(
+    appTsx.includes('const stopActiveDjSpeechAndRelease = (reason: string) => {') &&
+    appTsx.includes("stopActiveDjSpeechAndRelease('DJ mode turned off');") &&
+    appTsx.includes("stopActiveDjSpeechAndRelease('PAUSE transport action');") &&
+    appTsx.includes("stopActiveDjSpeechAndRelease('STOP transport action');") &&
+    appTsx.includes("stopActiveDjSpeechAndRelease('REWIND transport action');") &&
+    appTsx.includes("stopActiveDjSpeechAndRelease('SKIP transport action');"),
+    'App.tsx releases ducking and stops active DJ speech on Pause, Stop, Rewind, Skip, and DJ mode Off'
+  );
+
+  // 6. Verify console-only timestamped diagnostic logs for all 4 steps
+  assert(
+    bbJs.includes('[DJ Ducking Timing] 1. DJ_AUDIO_START') &&
+    vcTs.includes('[DJ Ducking Timing] 2a. DUCK_CMD_ISSUED') &&
+    mainWorldJs.includes('2b. YT_VOLUME_REACHED_DUCK') &&
+    bbJs.includes('[DJ Ducking Timing] 3. DJ_AUDIO_ENDED') &&
+    vcTs.includes('[DJ Ducking Timing] 4a. RELEASE_CMD_ISSUED') &&
+    mainWorldJs.includes('4b. YT_VOLUME_REACHED_NORMAL'),
+    'Console-only timestamped logs cover 1. DJ_AUDIO_START, 2a/2b. DUCK, 3. DJ_AUDIO_ENDED, and 4a/4b. RELEASE with visibilityState'
+  );
+
+  console.log('✓ 68. DJ Speech Ducking & Post-Speech Volume Release Latency Fix verified.');
+}
+
+// ================================================================================
+// 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Main-World Ramp Ticker,
+//     and Fast Active Watchdog Repair
+// ================================================================================
+console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Main-World Ramp Ticker, and Fast Active Watchdog Repair ---');
+{
+  const mainWorldJs = fs.readFileSync(path.join(process.cwd(), 'extension/player/yt_main_world.js'), 'utf-8');
+  const contentYtJs = fs.readFileSync(path.join(process.cwd(), 'extension/content_youtube.js'), 'utf-8');
+  const vcTs = fs.readFileSync(path.join(process.cwd(), 'src/services/audio/VolumeController.ts'), 'utf-8');
+
+  // 1. Verify yt_main_world.js runs a continuous CSP-safe fallbackTimer (setInterval 33ms) alongside workerTicker
+  assert(
+    mainWorldJs.includes('function runMainWorldTick()') &&
+    mainWorldJs.includes('const fallbackTimer = setInterval(runMainWorldTick, 33);') &&
+    mainWorldJs.includes('workerTicker.onerror = (err) =>'),
+    'yt_main_world.js runs a CSP-safe 33ms fallbackTimer and cleans up workerTicker.onerror so YouTube CSP blocking blob: workers never stalls volume ramps'
+  );
+  assert(
+    mainWorldJs.includes('function schedulePostRampVerify(targetPercent, rampId)') &&
+    mainWorldJs.includes('applyVolume(targetPercent, `rampVerifyEnforce:${rampId}`);'),
+    'yt_main_world.js schedules a post-ramp verification 150ms after ramp completion to enforce target volume'
+  );
+
+  // 2. Verify content_youtube.js waits for EVENT_VOLUME_STATUS confirmation on SET_VOLUME and RAMP_VOLUME
+  assert(
+    contentYtJs.includes('const isConfirmed = superseded || Math.abs(latestPlayerVolume - clampedTargetPercent) <= 2;') &&
+    contentYtJs.includes('applyVolumeToPlayer(clampedTargetPercent, `RAMP_FINAL_ENFORCE:${rampCmdId}`);') &&
+    contentYtJs.includes('confirmed: isConfirmed,'),
+    'content_youtube.js verifies actual player volume before resolving RAMP_VOLUME and enforces final target if unconfirmed'
+  );
+
+  // 3. Behavioural test: VolumeController.duck() and restore() retry up to 3 times if YouTube volume hasn't reached target
+  {
+    let simulatedYtVolume = 63;
+    const setVolumeCalls: number[] = [];
+
+    const mockProvider: any = {
+      setVolume: async (volFraction: number) => {
+        const pct = Math.round(volFraction * 100);
+        setVolumeCalls.push(pct);
+        // Simulate first retry dropped, second retry succeeds!
+        if (setVolumeCalls.length >= 2) {
+          simulatedYtVolume = pct;
+          return true;
+        }
+        return false;
+      },
+      rampVolume: async (_targetFraction: number, _durationMs: number) => {
+        // Simulate rampVolume returning false (unconfirmed after initial ramp)
+        return false;
+      },
+      getStatus: async () => {
+        return {
+          available: true,
+          playing: true,
+          volume: simulatedYtVolume / 100,
+        };
+      },
+    };
+
+    const vc = new VolumeController({
+      musicProvider: mockProvider,
+      onLog: () => {},
+      initialUserVolume: 63,
+      initialDuckLevel: 13,
+    });
+
+    // Test duck() retry loop
+    const duckVerified = await vc.duck(10, 'Test DJ break duck');
+    assert(
+      duckVerified === true && simulatedYtVolume === 13 && setVolumeCalls.length === 2,
+      `VolumeController.duck() retries setVolume when initial ramp is unconfirmed and succeeds on retry #2 (actual=${simulatedYtVolume}%, retries=${setVolumeCalls.length})`
+    );
+
+    // Reset for restore() retry loop
+    setVolumeCalls.length = 0;
+    const restoreVerified = await vc.restore(10, 'Test DJ break restore');
+    assert(
+      restoreVerified === true && simulatedYtVolume === 63 && setVolumeCalls.length === 2,
+      `VolumeController.restore() retries setVolume when initial ramp is unconfirmed and reaches 63% on retry #2 (actual=${simulatedYtVolume}%, retries=${setVolumeCalls.length})`
+    );
+    vc.cancel('Test cleanup');
+
+    // Test active watchdog immediate repair in 1 check when expected 63%, actual 15%
+    simulatedYtVolume = 15;
+    setVolumeCalls.length = 0;
+    const vcWatchdog = new VolumeController({
+      musicProvider: mockProvider,
+      onLog: () => {},
+      initialUserVolume: 63,
+      initialDuckLevel: 13,
+    });
+    vcWatchdog.handlePolledVolume(0.15);
+    await new Promise((r) => setTimeout(r, 30));
+    assert(
+      setVolumeCalls.length >= 1 && setVolumeCalls[0] === 63,
+      `VolumeController watchdog immediately repairs mismatch (expected 63%, actual 15%) in one check by sending setVolume(63%)`
+    );
+    vcWatchdog.cancel('Test cleanup');
+  }
+
+  assert(
+    vcTs.includes('private async verifyTargetVolumeWithRetries(') &&
+    vcTs.includes('for (let attempt = 1; attempt <= 3; attempt++)') &&
+    vcTs.includes('RESTORE_UNVERIFIED after 3 retries') &&
+    vcTs.includes('DUCK_UNVERIFIED after 3 retries'),
+    'VolumeController.ts implements verifyTargetVolumeWithRetries with up to 3 retries and only logs COMPLETED when verified'
+  );
+
+  console.log('✓ 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Main-World Ramp Ticker, and Fast Active Watchdog Repair verified.');
 }
 
 // --- Summary ---

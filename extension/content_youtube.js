@@ -6,6 +6,7 @@ if (!window.__retroFmContentLoaded) {
   window.__retroFmContentLoaded = true;
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
+  const EVENT_RAMP_VOLUME = 'RETROFM_RAMP_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
   const EVENT_SET_BALANCE = 'RETROFM_SET_YT_BALANCE';
   const EVENT_BALANCE_STATUS = 'RETROFM_YT_BALANCE_STATUS';
@@ -476,7 +477,8 @@ if (!window.__retroFmContentLoaded) {
       `[RetroFM Volume] [${new Date().toISOString()}] Sending volume to main-world: ${clampedPercent}% (reason=${reason})`
     );
 
-    // 1. Dispatch CustomEvent to player/yt_main_world.js
+    // Dispatch CustomEvent to player/yt_main_world.js (single channel to avoid duplicate execution)
+    // Note: Do NOT optimistically overwrite latestPlayerVolume before EVENT_VOLUME_STATUS confirms it!
     try {
       window.dispatchEvent(
         new CustomEvent(EVENT_SET_VOLUME, {
@@ -484,14 +486,6 @@ if (!window.__retroFmContentLoaded) {
         })
       );
     } catch (e) {}
-
-    // 2. Also dispatch window.postMessage for redundancy
-    try {
-      window.postMessage({ type: 'RETROFM_SET_VOLUME_MSG', volume: clampedPercent, reason }, '*');
-    } catch (e) {}
-
-    // Optimistically update latestPlayerVolume
-    latestPlayerVolume = clampedPercent;
   }
 
   function sendPlayerCommandToMainWorld(command, payload = {}) {
@@ -505,7 +499,7 @@ if (!window.__retroFmContentLoaded) {
   }
 
   function smoothRampVolume(targetVolume, durationMs, rampId) {
-    // Cancel any existing ramp interval
+    // Cancel any legacy interval if present
     if (rampInterval) {
       clearInterval(rampInterval);
       rampInterval = null;
@@ -518,44 +512,25 @@ if (!window.__retroFmContentLoaded) {
     const rawTarget = typeof targetVolume === 'number' ? targetVolume : 1;
     const targetPercent = rawTarget <= 1.0 && rawTarget >= 0.0 ? Math.round(rawTarget * 100) : Math.round(Math.max(0, Math.min(100, rawTarget)));
     const clampedTargetPercent = Math.max(0, Math.min(100, targetPercent));
-
-    const startTime = performance.now();
-    const stepMs = 25;
+    const dur = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 400;
+    const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
 
     console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] smoothRampVolume START: ${startPercent}% -> ${clampedTargetPercent}% | duration: ${durationMs}ms | rampId: ${assignedRampId}`
+      `[RetroFM Volume] [${new Date().toISOString()}] smoothRampVolume START (delegated to main-world): ${startPercent}% -> ${clampedTargetPercent}% | duration: ${dur}ms | rampId: ${assignedRampId} | ytVisibility: ${vis}`
     );
 
-    rampInterval = setInterval(() => {
-      // Stale ramp check: if another ramp was started, cancel immediately
-      if (activeRampId !== assignedRampId) {
-        console.warn(
-          `[RetroFM Volume] [${new Date().toISOString()}] smoothRampVolume CANCELLED stale rampId: ${assignedRampId} (active: ${activeRampId})`
-        );
-        clearInterval(rampInterval);
-        rampInterval = null;
-        return;
-      }
-
-      const elapsed = performance.now() - startTime;
-      const progress = Math.min(1, elapsed / durationMs);
-      // sinusoidal ease in-out
-      const eased = 0.5 * (1 - Math.cos(Math.PI * progress));
-      const currentPercent = Math.round(startPercent + (clampedTargetPercent - startPercent) * eased);
-      const stepTarget = Math.max(0, Math.min(100, currentPercent));
-
-      // Call player.setVolume via main-world bridge at each step
-      applyVolumeToPlayer(stepTarget, `rampStep:${assignedRampId}`);
-
-      if (progress >= 1) {
-        clearInterval(rampInterval);
-        rampInterval = null;
-        applyVolumeToPlayer(clampedTargetPercent, `rampCompleted:${assignedRampId}`);
-        console.log(
-          `[RetroFM Volume] [${new Date().toISOString()}] smoothRampVolume COMPLETED: final ${clampedTargetPercent}% | rampId: ${assignedRampId}`
-        );
-      }
-    }, stepMs);
+    // Dispatch single EVENT_RAMP_VOLUME CustomEvent to yt_main_world.js
+    try {
+      window.dispatchEvent(
+        new CustomEvent(EVENT_RAMP_VOLUME, {
+          detail: JSON.stringify({
+            targetVolume: clampedTargetPercent,
+            durationMs: dur,
+            rampId: assignedRampId
+          })
+        })
+      );
+    } catch (e) {}
   }
 
   function ensureVolumeListener() {
@@ -774,57 +749,67 @@ if (!window.__retroFmContentLoaded) {
             rampInterval = null;
           }
           activeRampId = (message.rampId !== undefined && message.rampId !== null) ? message.rampId : Date.now();
+          const currentCmdRampId = activeRampId;
           const prevVol = latestPlayerVolume;
-          applyVolumeToPlayer(message.volume, `SET_VOLUME:${activeRampId}`);
+          applyVolumeToPlayer(message.volume, `SET_VOLUME:${currentCmdRampId}`);
 
           const rawVal = message.volume;
           const targetPercent = rawVal <= 1.0 && rawVal >= 0.0 ? Math.round(rawVal * 100) : Math.round(Math.max(0, Math.min(100, rawVal)));
           const clampedPercent = Math.max(0, Math.min(100, targetPercent));
 
-          // Wait until player reports getVolume() matching target or timeout (1500ms)
+          // Wait until player reports getVolume() matching target via EVENT_VOLUME_STATUS or timeout (400ms)
           const startTime = performance.now();
           let replied = false;
+          let waitInterval = null;
+          let timeoutId = null;
+
+          const finishSetVolume = () => {
+            if (replied) return;
+            replied = true;
+            if (waitInterval) { clearInterval(waitInterval); waitInterval = null; }
+            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+            window.removeEventListener(EVENT_VOLUME_STATUS, onStatus);
+            const isConfirmed = Math.abs(latestPlayerVolume - clampedPercent) <= 2;
+            console.log(
+              `[RetroFM Volume] [${new Date().toISOString()}] content_youtube SET_VOLUME ${isConfirmed ? 'confirmed' : 'UNCONFIRMED'}: prev=${prevVol}% -> actualPlayerVol=${latestPlayerVolume}% (target=${clampedPercent}%) | elapsed=${Math.round(performance.now() - startTime)}ms | rampId: ${currentCmdRampId}`
+            );
+            sendResponse({
+              success: isConfirmed,
+              volume: Number((latestPlayerVolume / 100).toFixed(2)),
+              playerVolume: latestPlayerVolume,
+              confirmed: isConfirmed,
+              rampId: currentCmdRampId
+            });
+          };
 
           const checkConfirmed = () => {
             if (replied) return;
-            // Allow exact match or if target is 0/100 or within 1%
-            if (Math.abs(latestPlayerVolume - clampedPercent) <= 1 || performance.now() - startTime >= 1500) {
-              replied = true;
-              window.removeEventListener(EVENT_VOLUME_STATUS, onStatus);
-              console.log(
-                `[RetroFM Volume] [${new Date().toISOString()}] content_youtube SET_VOLUME confirmed: prev=${prevVol}% -> confirmedPlayerVol=${latestPlayerVolume}% (target=${clampedPercent}%) | elapsed=${Math.round(performance.now() - startTime)}ms | rampId: ${activeRampId}`
-              );
-              sendResponse({
-                success: true,
-                volume: Number((latestPlayerVolume / 100).toFixed(2)),
-                playerVolume: latestPlayerVolume,
-                confirmed: Math.abs(latestPlayerVolume - clampedPercent) <= 1,
-                rampId: activeRampId
-              });
+            if (Math.abs(latestPlayerVolume - clampedPercent) <= 2 || performance.now() - startTime >= 400) {
+              finishSetVolume();
             }
           };
 
           const onStatus = () => checkConfirmed();
           window.addEventListener(EVENT_VOLUME_STATUS, onStatus);
 
-          // Fast path check immediately
-          if (Math.abs(latestPlayerVolume - clampedPercent) <= 1) {
-            checkConfirmed();
-          } else {
-            // Check via interval up to 1500ms
-            const waitInterval = setInterval(() => {
-              if (replied) {
-                clearInterval(waitInterval);
-                return;
-              }
-              checkConfirmed();
-            }, 50);
-
-            setTimeout(() => {
+          waitInterval = setInterval(() => {
+            if (replied) {
               clearInterval(waitInterval);
-              checkConfirmed();
-            }, 1500);
-          }
+              return;
+            }
+            // Actively query main-world status if still not matching after 100ms
+            if (Math.abs(latestPlayerVolume - clampedPercent) > 2 && performance.now() - startTime >= 100) {
+              try {
+                window.postMessage({ type: 'RETROFM_QUERY_VOLUME_MSG' }, '*');
+              } catch (e) {}
+            }
+            checkConfirmed();
+          }, 40);
+
+          timeoutId = setTimeout(() => {
+            finishSetVolume();
+          }, 400);
+
           return true; // Keep sendResponse open for async confirmation
         } else {
           console.warn(`[RetroFM Volume] content_youtube SET_VOLUME failed: invalid volume parameter`);
@@ -834,12 +819,91 @@ if (!window.__retroFmContentLoaded) {
       }
       case 'RAMP_VOLUME': {
         if (typeof message.targetVolume === 'number') {
-          const duration = message.durationMs || 500;
+          const duration = typeof message.durationMs === 'number' && message.durationMs > 0 ? message.durationMs : 400;
+          const rawTarget = message.targetVolume;
+          const targetPercent = rawTarget <= 1.0 && rawTarget >= 0.0 ? Math.round(rawTarget * 100) : Math.round(Math.max(0, Math.min(100, rawTarget)));
+          const clampedTargetPercent = Math.max(0, Math.min(100, targetPercent));
+          const prevVol = latestPlayerVolume;
+
           console.log(
-            `[RetroFM Volume] [${new Date().toISOString()}] content_youtube RAMP_VOLUME received: target ${message.targetVolume} (current: ${latestPlayerVolume}%) | duration: ${duration}ms | rampId: ${message.rampId}`
+            `[RetroFM Volume] [${new Date().toISOString()}] content_youtube RAMP_VOLUME received: target ${clampedTargetPercent}% (current: ${prevVol}%) | duration: ${duration}ms | rampId: ${message.rampId}`
           );
           smoothRampVolume(message.targetVolume, duration, message.rampId);
-          sendResponse({ success: true, targetVolume: message.targetVolume, rampId: message.rampId });
+          const rampCmdId = activeRampId;
+
+          const startTime = performance.now();
+          const minRampWaitMs = Math.max(0, duration - 60);
+          const maxWaitMs = duration + 350;
+          let replied = false;
+          let waitInterval = null;
+          let timeoutId = null;
+          let enforcedAtEnd = false;
+
+          const finishRampVolume = (superseded = false) => {
+            if (replied) return;
+            replied = true;
+            if (waitInterval) { clearInterval(waitInterval); waitInterval = null; }
+            if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+            window.removeEventListener(EVENT_VOLUME_STATUS, onStatus);
+            const elapsedMs = Math.round(performance.now() - startTime);
+            const isConfirmed = superseded || Math.abs(latestPlayerVolume - clampedTargetPercent) <= 2;
+            console.log(
+              `[RetroFM Volume] [${new Date().toISOString()}] content_youtube RAMP_VOLUME ${isConfirmed ? 'confirmed' : 'UNCONFIRMED'}: start=${prevVol}% -> actualPlayerVol=${latestPlayerVolume}% (target=${clampedTargetPercent}%) | elapsed=${elapsedMs}ms (duration=${duration}ms) | rampId: ${rampCmdId}`
+            );
+            sendResponse({
+              success: isConfirmed,
+              confirmed: isConfirmed,
+              superseded,
+              volume: Number((latestPlayerVolume / 100).toFixed(2)),
+              playerVolume: latestPlayerVolume,
+              targetVolume: message.targetVolume,
+              rampId: rampCmdId
+            });
+          };
+
+          const checkRampConfirmed = () => {
+            if (replied) return;
+            // If a newer ramp or volume command arrived, resolve immediately as superseded
+            if (activeRampId !== rampCmdId) {
+              finishRampVolume(true);
+              return;
+            }
+            const elapsed = performance.now() - startTime;
+            if (elapsed >= minRampWaitMs && Math.abs(latestPlayerVolume - clampedTargetPercent) <= 2) {
+              finishRampVolume(false);
+              return;
+            }
+            // If the ramp duration has elapsed (+80ms) and volume still hasn't reached target,
+            // enforce the final target directly on the main-world player once so it never stays stuck
+            if (!enforcedAtEnd && elapsed >= duration + 80 && Math.abs(latestPlayerVolume - clampedTargetPercent) > 2) {
+              enforcedAtEnd = true;
+              console.warn(
+                `[RetroFM Volume] [${new Date().toISOString()}] RAMP_VOLUME post-duration check at ${Math.round(elapsed)}ms: actual=${latestPlayerVolume}% != target=${clampedTargetPercent}% — enforcing final target on player (rampId=${rampCmdId})`
+              );
+              applyVolumeToPlayer(clampedTargetPercent, `RAMP_FINAL_ENFORCE:${rampCmdId}`);
+            }
+            if (elapsed >= maxWaitMs) {
+              finishRampVolume(false);
+            }
+          };
+
+          const onStatus = () => checkRampConfirmed();
+          window.addEventListener(EVENT_VOLUME_STATUS, onStatus);
+
+          waitInterval = setInterval(() => {
+            if (replied) {
+              clearInterval(waitInterval);
+              return;
+            }
+            checkRampConfirmed();
+          }, 40);
+
+          timeoutId = setTimeout(() => {
+            checkRampConfirmed();
+            if (!replied) finishRampVolume(false);
+          }, maxWaitMs + 20);
+
+          return true; // Keep sendResponse open until ramp completes and actual volume is verified
         } else {
           console.warn(`[RetroFM Volume] content_youtube RAMP_VOLUME failed: invalid targetVolume`);
           sendResponse({ success: false, error: 'Cannot ramp volume' });

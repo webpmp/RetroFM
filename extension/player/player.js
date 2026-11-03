@@ -428,6 +428,31 @@ const staticController = new StaticNoiseController();
 let boomBoxDjAudio = null;
 let boomBoxDjEffects = null;
 let boomBoxDjSafetyTimer = null;
+let activeBoomBoxDjCancel = null;
+
+function stopBoomBoxDjSpeech(reason = 'stopped') {
+  if (boomBoxDjSafetyTimer) {
+    clearTimeout(boomBoxDjSafetyTimer);
+    boomBoxDjSafetyTimer = null;
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
+  if (boomBoxDjAudio) {
+    try {
+      boomBoxDjAudio.onended = null;
+      boomBoxDjAudio.onpause = null;
+      boomBoxDjAudio.onerror = null;
+      boomBoxDjAudio.pause();
+      boomBoxDjAudio.currentTime = 0;
+    } catch (e) {}
+  }
+  if (activeBoomBoxDjCancel) {
+    const cancelFn = activeBoomBoxDjCancel;
+    activeBoomBoxDjCancel = null;
+    try { cancelFn(reason); } catch (e) {}
+  }
+}
 
 function ensureBoomBoxDjAudio() {
   if (!boomBoxDjAudio) {
@@ -618,37 +643,48 @@ class BoomBoxDjVoiceEffects {
 }
 
 function playBoomBoxDjSpeech(payload) {
-  if (boomBoxDjSafetyTimer) {
-    clearTimeout(boomBoxDjSafetyTimer);
-    boomBoxDjSafetyTimer = null;
-  }
+  stopBoomBoxDjSpeech('new_speech_started');
 
   const durationSec = typeof payload?.durationSec === 'number' && payload.durationSec > 0 ? payload.durationSec : 4;
   const text = payload?.text || '';
   const isBrowser = Boolean(payload?.isBrowser);
+  const bbVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
 
   let finished = false;
-  const notifyFinished = (success, error) => {
+  const notifyFinished = (success, error, eventType = 'ended') => {
     if (finished) return;
     finished = true;
+    activeBoomBoxDjCancel = null;
     if (boomBoxDjSafetyTimer) {
       clearTimeout(boomBoxDjSafetyTimer);
       boomBoxDjSafetyTimer = null;
     }
-    trace('BOOMBOX_DJ_SPEECH_FINISHED', { success, error, text });
+    const endedTs = Date.now();
+    const curVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    console.log(
+      `[DJ Ducking Timing] 3. DJ_AUDIO_ENDED (BoomBox ${eventType}): success=${success} error=${error || 'none'} durationSec=${durationSec} bbVisibility=${curVis} ts=${endedTs}`
+    );
+    trace('BOOMBOX_DJ_SPEECH_FINISHED', { success, error, eventType, text, endedTs });
     if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
         type: 'BOOMBOX_DJ_SPEECH_FINISHED',
-        payload: { success, error, text, durationSec }
+        payload: { success, error, eventType, text, durationSec, endedTs }
       }, () => {
         if (chrome.runtime?.lastError) {}
       });
     }
   };
 
+  activeBoomBoxDjCancel = (reason) => {
+    notifyFinished(true, reason, 'cancelled');
+  };
+
+  // Failsafe timer: force release if no 'ended' arrives within expected audio duration + ~2 seconds
+  const failsafeWaitMs = Math.max(2500, Math.round((durationSec + 2.0) * 1000));
   boomBoxDjSafetyTimer = setTimeout(() => {
-    notifyFinished(true, 'safety_timeout');
-  }, Math.max(30000, (durationSec + 6) * 1000));
+    console.warn(`[DJ Ducking Timing] [BoomBox] Failsafe triggered after ${failsafeWaitMs}ms (expected ${durationSec}s + 2s). Forcing speech end.`);
+    notifyFinished(true, 'safety_timeout', 'failsafe_timeout');
+  }, failsafeWaitMs);
 
   if (isBrowser) {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -659,29 +695,35 @@ function playBoomBoxDjSpeech(payload) {
         if (typeof payload?.effectsSettings?.voiceVolume === 'number') {
           u.volume = Math.max(0, Math.min(1, payload.effectsSettings.voiceVolume));
         }
-        u.onend = () => notifyFinished(true);
-        u.onerror = (e) => notifyFinished(false, e?.error || 'speech_synthesis_error');
+        u.onstart = () => {
+          console.log(`[DJ Ducking Timing] 1. DJ_AUDIO_START (BoomBox Browser TTS): durationSec=${durationSec} bbVisibility=${bbVis} ts=${Date.now()}`);
+        };
+        u.onend = () => notifyFinished(true, undefined, 'ended');
+        u.onerror = (e) => notifyFinished(false, e?.error || 'speech_synthesis_error', 'error');
         window.speechSynthesis.speak(u);
         trace('BOOMBOX_DJ_SPEECH_PLAYING', { engine: 'browser', text });
-        return Promise.resolve({ success: true, started: true });
+        return Promise.resolve({ success: true, started: true, startedTs: Date.now() });
       } catch (err) {
-        notifyFinished(false, err?.message || 'browser_speech_failed');
+        notifyFinished(false, err?.message || 'browser_speech_failed', 'error');
         return Promise.resolve({ success: false, started: false, reason: err?.message || 'browser_speech_failed' });
       }
     } else {
-      notifyFinished(false, 'speech_synthesis_not_supported');
+      notifyFinished(false, 'speech_synthesis_not_supported', 'error');
       return Promise.resolve({ success: false, started: false, reason: 'speech_synthesis_not_supported' });
     }
   }
 
   const audioSrc = payload?.audioSrc;
   if (!audioSrc) {
-    notifyFinished(false, 'no_audio_src');
+    notifyFinished(false, 'no_audio_src', 'error');
     return Promise.resolve({ success: false, started: false, reason: 'no_audio_src' });
   }
 
   const audio = ensureBoomBoxDjAudio();
   try {
+    audio.onended = null;
+    audio.onpause = null;
+    audio.onerror = null;
     audio.pause();
     audio.currentTime = 0;
   } catch (e) {}
@@ -707,59 +749,71 @@ function playBoomBoxDjSpeech(payload) {
   }
 
   audio.onended = () => {
-    notifyFinished(true);
+    notifyFinished(true, undefined, 'ended');
+  };
+  audio.onpause = () => {
+    // If paused externally before natural end, release ducking immediately
+    if (!audio.ended && !finished && audio.currentTime > 0) {
+      notifyFinished(true, undefined, 'pause');
+    }
   };
   audio.onerror = (e) => {
-    notifyFinished(false, 'audio_element_error');
+    notifyFinished(false, 'audio_element_error', 'error');
   };
 
   audio.src = audioSrc;
 
   return new Promise((resolve) => {
-    let playPromiseResult = 'pending';
     let settled = false;
 
-    audio.play().then(() => {
-      playPromiseResult = 'resolved';
-      console.log(`[BoomBox DJ] audio.play() promise resolved. AudioContext state=${ctx?.state} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
-      trace('BOOMBOX_DJ_SPEECH_PLAYING', { durationSec, text });
+    const confirmStarted = () => {
+      if (settled) return;
+      const isContextRunning = !ctx || ctx.state === 'running';
+      if (isContextRunning && !audio.paused) {
+        settled = true;
+        const startedTs = Date.now();
+        console.log(
+          `[DJ Ducking Timing] 1. DJ_AUDIO_START (BoomBox Audio Element): durationSec=${durationSec} ctxState=${ctx?.state} currentTime=${audio.currentTime.toFixed(3)}s bbVisibility=${bbVis} ts=${startedTs}`
+        );
+        trace('BOOMBOX_DJ_SPEECH_PLAYING', { durationSec, text, startedTs });
+        resolve({ success: true, started: true, startedTs });
+      }
+    };
+
+    audio.addEventListener('playing', confirmStarted, { once: true });
+
+    audio.play().then(async () => {
+      if (ctx && ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      confirmStarted();
     }).catch((err) => {
-      playPromiseResult = 'rejected: ' + (err?.message || String(err));
       console.warn('[BoomBox DJ] Play error:', err);
       if (!settled) {
         settled = true;
-        notifyFinished(false, err?.message || 'play_rejected');
+        notifyFinished(false, err?.message || 'play_rejected', 'error');
         resolve({ success: false, started: false, reason: err?.message || 'play_rejected' });
       }
     });
 
-    // 500ms check
-    setTimeout(() => {
-      console.log(`[BoomBox DJ] Play check T=500ms: ctxState=${ctx?.state} playPromise=${playPromiseResult} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
-      if (ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-    }, 500);
-
-    // 1000ms check: must have running context and moving currentTime to confirm started
+    // Fallback check at 350ms if 'playing' or ctx.resume took a moment
     setTimeout(() => {
       if (settled) return;
-      console.log(`[BoomBox DJ] Play check T=1000ms: ctxState=${ctx?.state} playPromise=${playPromiseResult} readyState=${audio.readyState} currentTime=${audio.currentTime}`);
-
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().then(() => confirmStarted()).catch(() => {});
+      }
       const isContextRunning = !ctx || ctx.state === 'running';
-      const isAdvancing = audio.currentTime > 0;
-
+      const isAdvancing = !audio.paused || audio.currentTime > 0;
       if (isAdvancing && isContextRunning) {
-        settled = true;
-        resolve({ success: true, started: true });
+        confirmStarted();
       } else {
         settled = true;
         const reason = !isContextRunning ? `audio_context_suspended (${ctx?.state})` : 'audio_not_advancing';
-        console.warn(`[BoomBox DJ] Speech not advancing at 1s: ctxState=${ctx?.state} currentTime=${audio.currentTime} readyState=${audio.readyState}. Reporting failure.`);
-        notifyFinished(false, reason);
+        console.warn(`[BoomBox DJ] Speech not advancing at 350ms: ctxState=${ctx?.state} currentTime=${audio.currentTime} readyState=${audio.readyState}. Reporting failure.`);
+        notifyFinished(false, reason, 'error');
         resolve({ success: false, started: false, reason });
       }
-    }, 1000);
+    }, 350);
   });
 }
 
@@ -2540,8 +2594,11 @@ function rawSendBoomBoxAction(action, data) {
       return;
     } catch (e) {
       transportBusPort = null;
+      connectTransportBus();
     }
   }
+
+  connectTransportBus();
 
   try {
     if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
@@ -2967,6 +3024,9 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
         sendResponse({ success: false, started: false, reason: err?.message || 'unexpected_error' });
       });
       return true; // Keep message channel open for async response
+    } else if (message && message.type === 'STOP_DJ_SPEECH') {
+      stopBoomBoxDjSpeech(message.payload?.reason || 'stopped_by_app');
+      sendResponse({ success: true });
     }
   });
 }

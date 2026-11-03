@@ -6,6 +6,7 @@
   window.__retroFmMainWorldLoaded = true;
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
+  const EVENT_RAMP_VOLUME = 'RETROFM_RAMP_YT_VOLUME';
   const EVENT_VOLUME_STATUS = 'RETROFM_YT_VOLUME_STATUS';
   const EVENT_SET_BALANCE = 'RETROFM_SET_YT_BALANCE';
   const EVENT_BALANCE_STATUS = 'RETROFM_YT_BALANCE_STATUS';
@@ -64,12 +65,17 @@
 
   // Restore remembered master volume from localStorage if available
   let queuedVolume = null;
+  let userMasterVolume = 100;
+  let activeMainWorldRamp = null; // { rampId, startPercent, targetPercent, durationMs, startTime }
+  let lastAppliedRampId = null;
+  let rampPostVerifyTimer = null;
   try {
     const saved = localStorage.getItem(STORAGE_KEY_SAVED_VOLUME);
     if (saved !== null) {
       const parsed = parseInt(saved, 10);
       if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
         queuedVolume = parsed;
+        userMasterVolume = parsed;
       }
     }
   } catch (e) {}
@@ -296,11 +302,29 @@
     }
   }
 
+  let lastVuSampleTickTs = 0;
+
+  function runMainWorldTick() {
+    const now = performance.now();
+    // Deduplicate if both workerTicker and baseline setInterval fire within < 15ms
+    if (now - lastVuSampleTickTs < 15) {
+      try { tickMainWorldVolumeRamp(); } catch (e) {}
+      return;
+    }
+    lastVuSampleTickTs = now;
+    try { tickMainWorldVolumeRamp(); } catch (e) {}
+    try { sampleAndBroadcastVuLevels(); } catch (e) {}
+  }
+
   function startVuSamplingLoop() {
     if (vuSamplingInterval) return;
-    // Unthrottled Web Worker / Timer ticker: background tabs throttle main thread setInterval to 1000ms.
-    // An inline Blob Web Worker provides unthrottled ~33ms ticks even when tab is in background.
+    // Always run a baseline 33ms setInterval so that if YouTube's CSP (worker-src) blocks
+    // the inline Blob Worker asynchronously via worker.onerror, VU sampling and volume ramps
+    // still run reliably on the audible YouTube tab without stalling.
+    const fallbackTimer = setInterval(runMainWorldTick, 33);
+
     let workerTicker = null;
+    let workerUrl = null;
     try {
       const blob = new Blob([
         `let timer = null;
@@ -312,26 +336,44 @@
           }
         };`
       ], { type: 'application/javascript' });
-      const workerUrl = URL.createObjectURL(blob);
+      workerUrl = URL.createObjectURL(blob);
       workerTicker = new Worker(workerUrl);
       workerTicker.onmessage = () => {
-        try { sampleAndBroadcastVuLevels(); } catch (e) {}
+        runMainWorldTick();
+      };
+      workerTicker.onerror = (err) => {
+        try {
+          if ( err && typeof err.preventDefault === 'function' ) err.preventDefault();
+          workerTicker.terminate();
+        } catch (e) {}
+        if (workerUrl) {
+          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
+          workerUrl = null;
+        }
+        workerTicker = null;
       };
       workerTicker.postMessage('start');
-      vuSamplingInterval = {
-        stop: () => {
-          try { workerTicker.postMessage('stop'); workerTicker.terminate(); } catch (e) {}
-          URL.revokeObjectURL(workerUrl);
-        }
-      };
     } catch (workerErr) {
-      // Fallback to standard setInterval if Worker creation blocked
-      vuSamplingInterval = setInterval(() => {
-        try {
-          sampleAndBroadcastVuLevels();
-        } catch (e) {}
-      }, 33);
+      if (workerUrl) {
+        try { URL.revokeObjectURL(workerUrl); } catch (e) {}
+        workerUrl = null;
+      }
+      workerTicker = null;
     }
+
+    vuSamplingInterval = {
+      stop: () => {
+        clearInterval(fallbackTimer);
+        if (workerTicker) {
+          try { workerTicker.postMessage('stop'); workerTicker.terminate(); } catch (e) {}
+          workerTicker = null;
+        }
+        if (workerUrl) {
+          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
+          workerUrl = null;
+        }
+      }
+    };
   }
 
   function sampleAndBroadcastVuLevels() {
@@ -534,9 +576,17 @@
     const clampedVol = Math.max(0, Math.min(100, Math.round(vol)));
     queuedVolume = clampedVol;
 
-    try {
-      localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
-    } catch (e) {}
+    const isRampReason = typeof reason === 'string' && (reason.startsWith('ramp') || reason.startsWith('duck'));
+    // If this is a direct SET_VOLUME (not a ramp step), cancel any active ramp and persist user master volume
+    if (!isRampReason) {
+      activeMainWorldRamp = null;
+      if (!reason.startsWith('event:')) {
+        userMasterVolume = clampedVol;
+        try {
+          localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
+        } catch (e) {}
+      }
+    }
 
     const player = getPlayer();
     if (player && typeof player.setVolume === 'function') {
@@ -557,9 +607,11 @@
         }
 
         const resultingVol = typeof player.getVolume === 'function' ? player.getVolume() : clampedVol;
-        console.log(
-          `[RetroFM MainWorld] [${new Date().toISOString()}] setVolume called: requested=${clampedVol} (reason=${reason}, prev=${prevVol}) -> player.getVolume()=${resultingVol}`
-        );
+        if (!reason.startsWith('rampStep:')) {
+          console.log(
+            `[RetroFM MainWorld] [${new Date().toISOString()}] setVolume called: requested=${clampedVol} (reason=${reason}, prev=${prevVol}) -> player.getVolume()=${resultingVol}`
+          );
+        }
 
         broadcastStatus();
       } catch (err) {
@@ -569,6 +621,139 @@
       console.log(
         `[RetroFM MainWorld] [${new Date().toISOString()}] Player not yet ready. Queued volume: ${clampedVol} (reason=${reason})`
       );
+    }
+  }
+
+  function startMainWorldVolumeRamp(targetVol, durationMs, rampId) {
+    if (typeof targetVol !== 'number' || isNaN(targetVol)) return;
+    const rawTarget = targetVol <= 1.0 && targetVol >= 0.0 && !Number.isInteger(targetVol)
+      ? Math.round(targetVol * 100)
+      : Math.round(targetVol);
+    const clampedTarget = Math.max(0, Math.min(100, rawTarget));
+    const dur = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 400;
+
+    // Ensure the unthrottled Web Worker ticker is running
+    startVuSamplingLoop();
+
+    const player = getPlayer();
+    let startPercent = queuedVolume !== null ? queuedVolume : userMasterVolume;
+    if (player && typeof player.getVolume === 'function') {
+      const pv = player.getVolume();
+      if (typeof pv === 'number' && !isNaN(pv)) {
+        startPercent = pv;
+      }
+    }
+
+    const assignedId = rampId !== undefined && rampId !== null ? rampId : Date.now();
+    // Deduplicate if this exact rampId is already active or just completed
+    if (activeMainWorldRamp && activeMainWorldRamp.rampId === assignedId) {
+      return;
+    }
+    if (lastAppliedRampId === assignedId && queuedVolume === clampedTarget) {
+      broadcastStatus();
+      return;
+    }
+
+    if (rampPostVerifyTimer) {
+      clearTimeout(rampPostVerifyTimer);
+      rampPostVerifyTimer = null;
+    }
+
+    const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    const isDuckRamp = clampedTarget < startPercent;
+
+    console.log(
+      `[DJ Ducking Timing] [YouTube MW] ${isDuckRamp ? 'DUCK_RAMP_START' : 'RELEASE_RAMP_START'}: ${startPercent}% -> ${clampedTarget}% | duration=${dur}ms | rampId=${assignedId} | ytVisibility=${vis} | ts=${Date.now()}`
+    );
+
+    if (dur <= 20 || startPercent === clampedTarget) {
+      activeMainWorldRamp = null;
+      lastAppliedRampId = assignedId;
+      applyVolume(clampedTarget, `rampCompleted:${assignedId}`);
+      schedulePostRampVerify(clampedTarget, assignedId);
+      console.log(
+        `[DJ Ducking Timing] [YouTube MW] ${isDuckRamp ? '2b. YT_VOLUME_REACHED_DUCK' : '4b. YT_VOLUME_REACHED_NORMAL'}: ${clampedTarget}% | elapsed=0ms | rampId=${assignedId} | ytVisibility=${vis} | ts=${Date.now()}`
+      );
+      trace(isDuckRamp ? 'YT_VOLUME_REACHED_DUCK' : 'YT_VOLUME_REACHED_NORMAL', {
+        targetPercent: clampedTarget,
+        actualPlayerVol: queuedVolume,
+        rampElapsedMs: 0,
+        targetDurationMs: dur,
+        rampId: assignedId,
+        ytVisibility: vis,
+        ts: Date.now()
+      });
+      return;
+    }
+
+    activeMainWorldRamp = {
+      rampId: assignedId,
+      startPercent,
+      targetPercent: clampedTarget,
+      durationMs: dur,
+      startTime: performance.now(),
+      startWallTs: Date.now(),
+      isDuckRamp
+    };
+  }
+
+  function schedulePostRampVerify(targetPercent, rampId) {
+    if (rampPostVerifyTimer) {
+      clearTimeout(rampPostVerifyTimer);
+      rampPostVerifyTimer = null;
+    }
+    rampPostVerifyTimer = setTimeout(() => {
+      rampPostVerifyTimer = null;
+      if (activeMainWorldRamp) return;
+      if (lastAppliedRampId !== rampId && queuedVolume !== targetPercent) return;
+      const player = getPlayer();
+      if (player && typeof player.getVolume === 'function') {
+        const actual = player.getVolume();
+        if (typeof actual === 'number' && !isNaN(actual) && Math.abs(actual - targetPercent) >= 2) {
+          console.warn(
+            `[RetroFM MainWorld] Post-ramp verification mismatch: expected=${targetPercent}%, actual=${actual}% (rampId=${rampId}) — enforcing target immediately`
+          );
+          applyVolume(targetPercent, `rampVerifyEnforce:${rampId}`);
+        } else {
+          broadcastStatus();
+        }
+      }
+    }, 150);
+  }
+
+  function tickMainWorldVolumeRamp() {
+    if (!activeMainWorldRamp) return;
+    const r = activeMainWorldRamp;
+    const elapsed = performance.now() - r.startTime;
+    const progress = Math.min(1, Math.max(0, elapsed / r.durationMs));
+    const eased = 0.5 * (1 - Math.cos(Math.PI * progress));
+    const currentPercent = Math.round(r.startPercent + (r.targetPercent - r.startPercent) * eased);
+    const stepTarget = Math.max(0, Math.min(100, currentPercent));
+
+    if (progress >= 1) {
+      activeMainWorldRamp = null;
+      lastAppliedRampId = r.rampId;
+      applyVolume(r.targetPercent, `rampCompleted:${r.rampId}`);
+      schedulePostRampVerify(r.targetPercent, r.rampId);
+      const totalElapsedMs = Math.round(performance.now() - r.startTime);
+      const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+      const tsNow = Date.now();
+      const player = getPlayer();
+      const actualVol = (player && typeof player.getVolume === 'function') ? player.getVolume() : queuedVolume;
+      console.log(
+        `[DJ Ducking Timing] [YouTube MW] ${r.isDuckRamp ? '2b. YT_VOLUME_REACHED_DUCK' : '4b. YT_VOLUME_REACHED_NORMAL'}: target=${r.targetPercent}% | actualPlayerVol=${actualVol}% | rampElapsed=${totalElapsedMs}ms (target=${r.durationMs}ms) | rampId=${r.rampId} | ytVisibility=${vis} | ts=${tsNow}`
+      );
+      trace(r.isDuckRamp ? 'YT_VOLUME_REACHED_DUCK' : 'YT_VOLUME_REACHED_NORMAL', {
+        targetPercent: r.targetPercent,
+        actualPlayerVol: actualVol,
+        rampElapsedMs: totalElapsedMs,
+        targetDurationMs: r.durationMs,
+        rampId: r.rampId,
+        ytVisibility: vis,
+        ts: tsNow
+      });
+    } else {
+      applyVolume(stepTarget, `rampStep:${r.rampId}`);
     }
   }
 
@@ -600,7 +785,9 @@
             balance: queuedBalance,
             leftGain: appliedLeftGain,
             rightGain: appliedRightGain,
-            hasPlayer: !!player
+            hasPlayer: !!player,
+            rampId: lastAppliedRampId,
+            activeRampId: activeMainWorldRamp ? activeMainWorldRamp.rampId : null
           })
         })
       );
@@ -656,6 +843,26 @@
     } catch (err) {
       reportError(err, 'addEventListener:EVENT_SET_VOLUME');
       console.warn('[RetroFM MainWorld] Error processing volume event:', err);
+    }
+  });
+
+  // Listen for unthrottled volume ramp requests from isolated content script
+  window.addEventListener(EVENT_RAMP_VOLUME, (event) => {
+    try {
+      let data = event.detail;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          data = null;
+        }
+      }
+      if (data && typeof data.targetVolume === 'number') {
+        startMainWorldVolumeRamp(data.targetVolume, data.durationMs || 400, data.rampId);
+      }
+    } catch (err) {
+      reportError(err, 'addEventListener:EVENT_RAMP_VOLUME');
+      console.warn('[RetroFM MainWorld] Error processing ramp volume event:', err);
     }
   });
 
@@ -815,6 +1022,10 @@
         if (vol !== null) {
           applyVolume(vol, event.data.reason || 'postMessage');
         }
+      } else if (event.data.type === 'RETROFM_RAMP_VOLUME_MSG') {
+        if (typeof event.data.targetVolume === 'number') {
+          startMainWorldVolumeRamp(event.data.targetVolume, event.data.durationMs || 400, event.data.rampId);
+        }
       } else if (event.data.type === 'RETROFM_SET_BALANCE_MSG') {
         const bal = typeof event.data.balance === 'number' ? event.data.balance : null;
         if (bal !== null && !isNaN(bal)) {
@@ -847,7 +1058,10 @@
       try {
         attachVideoToStereoGraph(media, evtType === 'play' || evtType === 'playing' || !media.paused);
         applyBalance(queuedBalance, `event:${evtType}`);
-        if (queuedVolume !== null) {
+        if (activeMainWorldRamp) {
+          // Let the active unthrottled volume ramp continue without resetting
+          tickMainWorldVolumeRamp();
+        } else if (queuedVolume !== null) {
           applyVolume(queuedVolume, `event:${evtType}`);
         } else {
           broadcastStatus();
@@ -905,6 +1119,7 @@
 
     media.addEventListener('timeupdate', () => {
       // Event-driven progress update directly from video element
+      try { tickMainWorldVolumeRamp(); } catch (e) {}
       emitCurrentProgress();
     });
 

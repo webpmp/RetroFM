@@ -83,6 +83,14 @@ export class YouTubeMusicProvider implements MusicProvider {
               try { listener(event.data.payload); } catch (e) {}
             }
           }
+          if (event.data.type === 'YT_VOLUME_RAMP_REACHED' && event.data.payload) {
+            const p = event.data.payload;
+            const appVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+            const label = p.event === 'YT_VOLUME_REACHED_DUCK' ? '2b. YT_VOLUME_REACHED_DUCK' : '4b. YT_VOLUME_REACHED_NORMAL';
+            console.log(
+              `[DJ Ducking Timing] ${label}: target=${p.targetPercent}% | actualPlayerVol=${p.actualPlayerVol}% | rampElapsed=${p.rampElapsedMs}ms (target=${p.targetDurationMs}ms) | rampId=${p.rampId} | appVisibility=${appVis} | ytVisibility=${p.ytVisibility || 'unknown'} | ts=${p.ts || Date.now()}`
+            );
+          }
         }
       });
       // Send initial ping to check if extension is already active
@@ -305,6 +313,15 @@ export class YouTubeMusicProvider implements MusicProvider {
       return res || { success: false };
     } catch (err: any) {
       return { success: false, error: err.message };
+    }
+  }
+
+  public async stopBoomBoxDjSpeech(reason = 'stopped'): Promise<boolean> {
+    try {
+      await this.sendExtensionMessage('STOP_BOOMBOX_DJ_SPEECH', { reason }, 1500);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -571,6 +588,9 @@ export class YouTubeMusicProvider implements MusicProvider {
       tabId,
       command: { action: 'SET_VOLUME', volume, rampId },
     });
+    if (res && typeof res.confirmed === 'boolean') {
+      return res.confirmed;
+    }
     return !!res?.success;
   }
 
@@ -593,10 +613,14 @@ export class YouTubeMusicProvider implements MusicProvider {
   public async rampVolume(targetVolume: number, durationMs: number, rampId?: number): Promise<boolean> {
     const tabId = await this.ensureConnected();
     if (!tabId) return false;
+    const timeoutMs = Math.max(6000, (durationMs || 500) + 3000);
     const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
       tabId,
       command: { action: 'RAMP_VOLUME', targetVolume, durationMs, rampId },
-    });
+    }, timeoutMs);
+    if (res && typeof res.confirmed === 'boolean') {
+      return res.confirmed;
+    }
     return !!res?.success;
   }
 

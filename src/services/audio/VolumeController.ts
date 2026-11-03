@@ -54,6 +54,8 @@ export class VolumeController {
   private watchdogUntil: number = 0;
   private lastExpectedFraction: number = 1.0;
   private watchdogTimer: any = null;
+  private activeWatchdogPollInterval: any = null;
+  private isWatchdogRepairing: boolean = false;
   private sequenceSafetyTimer: any = null;
 
   // Active UI animation frame/timer
@@ -224,6 +226,9 @@ export class VolumeController {
     this.state = 'ducking';
 
     console.log(
+      `[DJ Ducking Timing] 2a. DUCK_CMD_ISSUED: normal=${normalVol}% -> duck=${targetDuck}% | rampMs=${fadeDownMs}ms | rampId=${rampId} | reason="${reason}" | appVisibility=${visState} | ts=${Date.now()}`
+    );
+    console.log(
       `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_START | Normal: ${normalVol}% -> Ducked: ${targetDuck}% | duration: ${fadeDownMs}ms | rampId: ${rampId} | reason: ${reason} | visibilityState: ${visState}`
     );
 
@@ -234,16 +239,17 @@ export class VolumeController {
     this.notify();
 
     // 1. Send single RAMP_VOLUME command to content script with explicit target
+    //    and animate local UI display concurrently
     const duckFraction = targetDuck / 100;
+    let rampConfirmed = false;
+    const uiAnimPromise = this.animateUiVolume(normalVol, targetDuck, fadeDownMs, rampId);
     try {
-      await this.musicProvider.rampVolume(duckFraction, fadeDownMs, rampId);
+      rampConfirmed = await this.musicProvider.rampVolume(duckFraction, fadeDownMs, rampId);
     } catch (e: any) {
       console.error(`[RetroFM Volume] Error sending duck ramp: ${e?.message}`);
       this.onLog(`[VolumeController] Error sending duck ramp: ${e?.message}`);
     }
-
-    // 2. Animate local UI display smoothly over fadeDownMs (purely visual, zero messages sent)
-    await this.animateUiVolume(normalVol, targetDuck, fadeDownMs, rampId);
+    await uiAnimPromise;
 
     // If ramp was cancelled during fade down, abort
     if (this.activeRampId !== rampId) {
@@ -258,21 +264,34 @@ export class VolumeController {
       return false;
     }
 
+    // 2. Verify actual YouTube volume reached targetDuck; if not, retry up to 3 times (~300ms per attempt)
+    const verified = await this.verifyTargetVolumeWithRetries(targetDuck, rampId, 'DUCK', rampConfirmed);
+    if (this.activeRampId !== rampId) {
+      return false;
+    }
+
     this.state = 'ducked';
     this.effectiveVolume = targetDuck;
     this.lastExpectedFraction = targetDuck / 100;
 
-    // Disarm the downward fade safety timer now that duck ramp completed cleanly.
+    // Disarm the downward fade safety timer now that duck sequence finished.
     // Arm an extended 45-second watchdog to catch edge cases where DJ speech is abandoned.
     this.clearSequenceSafetyTimer();
     this.armSequenceSafetyTimer(45000, `Ducked hold safety timeout (${reason})`);
 
-    console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
-    );
+    if (verified) {
+      console.log(
+        `[RetroFM Volume] [${new Date().toISOString()}] Action: DUCK_COMPLETED | effectiveVolume: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
+      );
+    } else {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] WARNING: DUCK_UNVERIFIED after 3 retries | target: ${targetDuck}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
+      );
+      this.onLog(`[VolumeController] WARNING: DUCK volume (${targetDuck}%) unconfirmed after 3 retries.`);
+    }
 
     this.notify();
-    return true;
+    return verified;
   }
 
   /**
@@ -291,6 +310,9 @@ export class VolumeController {
     const targetRestore = this.userVolume; // ALWAYS userVolume
 
     console.log(
+      `[DJ Ducking Timing] 4a. RELEASE_CMD_ISSUED: from=${startVol}% -> userVolume=${targetRestore}% | rampMs=${fadeUpMs}ms | rampId=${rampId} | reason="${reason}" | appVisibility=${visState} | ts=${Date.now()}`
+    );
+    console.log(
       `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_START | From: ${startVol}% -> userVolume: ${targetRestore}% | duration: ${fadeUpMs}ms | rampId: ${rampId} | reason: ${reason} | visibilityState: ${visState}`
     );
 
@@ -301,16 +323,17 @@ export class VolumeController {
     this.notify();
 
     // 1. Send single RAMP_VOLUME command to content script with explicit target
+    //    and animate local UI display concurrently
     const restoreFraction = targetRestore / 100;
+    let rampConfirmed = false;
+    const uiAnimPromise = this.animateUiVolume(startVol, targetRestore, fadeUpMs, rampId);
     try {
-      await this.musicProvider.rampVolume(restoreFraction, fadeUpMs, rampId);
+      rampConfirmed = await this.musicProvider.rampVolume(restoreFraction, fadeUpMs, rampId);
     } catch (e: any) {
       console.error(`[RetroFM Volume] Error sending restore ramp: ${e?.message}`);
       this.onLog(`[VolumeController] Error sending restore ramp: ${e?.message}`);
     }
-
-    // 2. Animate local UI display smoothly over fadeUpMs (purely visual, zero messages sent)
-    await this.animateUiVolume(startVol, targetRestore, fadeUpMs, rampId);
+    await uiAnimPromise;
 
     // If ramp was cancelled during fade up, abort
     if (this.activeRampId !== rampId) {
@@ -325,22 +348,115 @@ export class VolumeController {
       return false;
     }
 
+    // 2. Verify actual YouTube volume reached targetRestore; if not, retry up to 3 times (~300ms per attempt)
+    const verified = await this.verifyTargetVolumeWithRetries(targetRestore, rampId, 'RESTORE', rampConfirmed);
+    if (this.activeRampId !== rampId) {
+      return false;
+    }
+
     this.clearSequenceSafetyTimer();
     this.state = 'idle';
     this.isSequenceRunning = false;
     this.effectiveVolume = targetRestore;
     this.lastExpectedFraction = targetRestore / 100;
 
-    console.log(
-      `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_COMPLETED | effectiveVolume: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
-    );
+    if (verified) {
+      console.log(
+        `[RetroFM Volume] [${new Date().toISOString()}] Action: RESTORE_COMPLETED | effectiveVolume: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
+      );
+    } else {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] WARNING: RESTORE_UNVERIFIED after 3 retries | target: ${targetRestore}% | userVolume: ${this.userVolume}% | rampId: ${rampId} | visibilityState: ${visState}`
+      );
+      this.onLog(`[VolumeController] WARNING: RESTORE volume (${targetRestore}%) unconfirmed after 3 retries.`);
+    }
 
     this.notify();
 
-    // 3. Start 10-second watchdog monitoring
+    // 3. Start fast active watchdog monitoring (repairs any mismatch in a single check)
     this.startWatchdog(this.lastExpectedFraction);
 
-    return true;
+    return verified;
+  }
+
+  /**
+   * Confirms that YouTube's actual volume matches targetPercent (within ±2%).
+   * If not confirmed within ~300ms, resends setVolume immediately up to 3 retries.
+   */
+  private async verifyTargetVolumeWithRetries(
+    targetPercent: number,
+    rampId: number,
+    label: 'DUCK' | 'RESTORE',
+    initialRampConfirmed: boolean
+  ): Promise<boolean> {
+    const targetFraction = targetPercent / 100;
+
+    const checkStatusMatch = async (): Promise<{ matched: boolean; actualPercent: number | null }> => {
+      if (typeof this.musicProvider.getStatus !== 'function') {
+        return { matched: initialRampConfirmed, actualPercent: initialRampConfirmed ? targetPercent : null };
+      }
+      try {
+        const s = await this.musicProvider.getStatus();
+        if (s && s.available && typeof s.volume === 'number' && !isNaN(s.volume)) {
+          const actualPercent = Math.round(s.volume * 100);
+          return { matched: Math.abs(actualPercent - targetPercent) <= 2, actualPercent };
+        }
+      } catch {
+        // Ignore transient status error and rely on setVolume ack
+      }
+      return { matched: initialRampConfirmed, actualPercent: initialRampConfirmed ? targetPercent : null };
+    };
+
+    if (initialRampConfirmed) {
+      const statusCheck = await checkStatusMatch();
+      if (statusCheck.matched) {
+        return true;
+      }
+    }
+
+    // Wait up to ~300ms for any in-flight ramp or status update before first retry
+    if (!initialRampConfirmed) {
+      await new Promise((r) => setTimeout(r, 300));
+      if (this.activeRampId !== rampId) return false;
+      const postWaitCheck = await checkStatusMatch();
+      if (postWaitCheck.matched && postWaitCheck.actualPercent !== null) {
+        return true;
+      }
+    }
+
+    // Retry up to 3 times immediately
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (this.activeRampId !== rampId) return false;
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] ${label} verification retry ${attempt}/3: resending setVolume(${targetPercent}%) | rampId=${rampId}`
+      );
+      this.onLog(`[VolumeController] ${label} retry ${attempt}/3 -> ${targetPercent}%`);
+      let setOk = false;
+      try {
+        setOk = await this.musicProvider.setVolume(targetFraction, rampId);
+      } catch (err: any) {
+        console.warn(`[RetroFM Volume] ${label} retry ${attempt}/3 setVolume error: ${err?.message}`);
+      }
+
+      if (this.activeRampId !== rampId) return false;
+      const verifyAfterSet = await checkStatusMatch();
+      if (verifyAfterSet.matched && (setOk || verifyAfterSet.actualPercent !== null)) {
+        console.log(
+          `[RetroFM Volume] [${new Date().toISOString()}] ${label} verified on retry ${attempt}/3: target=${targetPercent}%, actual=${verifyAfterSet.actualPercent ?? targetPercent}% | rampId=${rampId}`
+        );
+        return true;
+      }
+
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+
+    const finalCheck = await checkStatusMatch();
+    console.warn(
+      `[RetroFM Volume] [${new Date().toISOString()}] WARNING: ${label} volume verification failed after 3 retries (expected ${targetPercent}%, actual ${finalCheck.actualPercent ?? 'unknown'}%) | rampId=${rampId}`
+    );
+    return false;
   }
 
   /**
@@ -358,6 +474,10 @@ export class VolumeController {
     this.effectiveVolume = this.userVolume;
     this.lastExpectedFraction = this.userVolume / 100;
 
+    const visState = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    console.log(
+      `[DJ Ducking Timing] 4a. RELEASE_CMD_ISSUED (immediate cancel): restoring to userVolume=${this.userVolume}% | rampId=${rampId} | reason="${reason}" | appVisibility=${visState} | ts=${Date.now()}`
+    );
     console.log(
       `[RetroFM Volume] [${new Date().toISOString()}] Action: CANCEL | Restoring to userVolume: ${this.userVolume}% | rampId: ${rampId} | reason: ${reason}`
     );
@@ -381,7 +501,7 @@ export class VolumeController {
   /**
    * Process volume reported by YouTube tab polling (e.g. from getStatus()).
    * Baseline rule: NEVER treats a mid-ramp value as baseline.
-   * Watchdog rule: For 10 seconds after restore, logs any volume change not initiated by controller.
+   * Watchdog rule: Detects any mismatch and immediately repairs it to userVolume in one check.
    */
   public handlePolledVolume(volumeFraction: number): void {
     if (typeof volumeFraction !== 'number' || isNaN(volumeFraction)) return;
@@ -392,33 +512,56 @@ export class VolumeController {
     }
 
     const polledPercent = Math.round(volumeFraction * 100);
-    const expectedPercent = Math.round(this.lastExpectedFraction * 100);
+    const expectedPercent = this.userVolume;
+    const expectedFraction = expectedPercent / 100;
 
-    // 2. Watchdog active (within 10 seconds of restore)
+    // 2. Watchdog active (within 10 seconds of restore): immediately repair any mismatch in one check
     if (Date.now() < this.watchdogUntil) {
       if (Math.abs(polledPercent - expectedPercent) >= 3) {
         console.warn(
-          `[RetroFM Volume] [${new Date().toISOString()}] External volume change detected (watchdog): expected ${expectedPercent}%, actual ${polledPercent}% | fraction: ${volumeFraction}`
+          `[RetroFM Volume] [${new Date().toISOString()}] External volume change detected (watchdog): expected ${expectedPercent}%, actual ${polledPercent}% | fraction: ${volumeFraction} — repairing to ${expectedPercent}% in one check`
         );
-        this.onLog(`External volume change detected: ${expectedPercent}% to ${polledPercent}%`);
-        this.lastExpectedFraction = volumeFraction;
+        this.onLog(`External volume change detected: ${expectedPercent}% to ${polledPercent}% (repairing to ${expectedPercent}%)`);
+        this.repairVolumeMismatch(expectedFraction, expectedPercent, polledPercent);
+      } else {
+        this.lastExpectedFraction = expectedFraction;
       }
       return;
     }
 
-    // 3. Normal idle: log unexpected discrepancy between YouTube player and RetroFM authoritative master volume
-    const userPercent = this.userVolume;
-    if (Math.abs(polledPercent - userPercent) >= 3) {
-      if (Math.abs(polledPercent - expectedPercent) >= 3) {
-        console.warn(
-          `[RetroFM Volume] [${new Date().toISOString()}] YouTube reported volume ${polledPercent}%, RetroFM master is ${userPercent}% (no auto-sync to avoid command loops)`
-        );
-      }
-      this.lastExpectedFraction = volumeFraction;
+    // 3. Normal idle: if YouTube player volume drifted from RetroFM authoritative master volume, repair in one check
+    if (Math.abs(polledPercent - expectedPercent) >= 3) {
+      console.warn(
+        `[RetroFM Volume] [${new Date().toISOString()}] Idle volume mismatch detected: expected ${expectedPercent}%, actual ${polledPercent}% — repairing to ${expectedPercent}% in one check`
+      );
+      this.onLog(`Volume mismatch detected: expected ${expectedPercent}%, actual ${polledPercent}% (repairing to ${expectedPercent}%)`);
+      this.repairVolumeMismatch(expectedFraction, expectedPercent, polledPercent);
       return;
     }
 
-    this.lastExpectedFraction = volumeFraction;
+    this.lastExpectedFraction = expectedFraction;
+  }
+
+  private repairVolumeMismatch(targetFraction: number, targetPercent: number, actualPercent: number): void {
+    this.lastExpectedFraction = targetFraction;
+    if (this.isWatchdogRepairing || this.state !== 'idle') return;
+    this.isWatchdogRepairing = true;
+    const repairRampId = ++this.rampIdCounter;
+    this.activeRampId = repairRampId;
+
+    this.musicProvider
+      .setVolume(targetFraction, repairRampId)
+      .then((ok) => {
+        console.log(
+          `[RetroFM Volume] [${new Date().toISOString()}] Watchdog repair completed (ok=${ok}): corrected ${actualPercent}% -> ${targetPercent}% | rampId=${repairRampId}`
+        );
+      })
+      .catch((err) => {
+        console.warn(`[RetroFM Volume] Watchdog repair error:`, err);
+      })
+      .finally(() => {
+        this.isWatchdogRepairing = false;
+      });
   }
 
   private startWatchdog(expectedFraction: number): void {
@@ -426,7 +569,33 @@ export class VolumeController {
     this.lastExpectedFraction = expectedFraction;
     this.watchdogUntil = Date.now() + 10000; // 10 seconds watchdog
 
+    // Active fast watchdog check every 500ms so mismatches are detected and repaired within <= 500ms
+    if (typeof this.musicProvider.getStatus === 'function') {
+      this.activeWatchdogPollInterval = setInterval(async () => {
+        if (Date.now() >= this.watchdogUntil || this.state !== 'idle') {
+          if (this.activeWatchdogPollInterval) {
+            clearInterval(this.activeWatchdogPollInterval);
+            this.activeWatchdogPollInterval = null;
+          }
+          return;
+        }
+        try {
+          const s = await this.musicProvider.getStatus();
+          if (s && s.available && typeof s.volume === 'number' && !isNaN(s.volume)) {
+            this.handlePolledVolume(s.volume);
+          }
+        } catch {
+          // ignore transient status poll error
+        }
+      }, 500);
+      this.activeWatchdogPollInterval?.unref?.();
+    }
+
     this.watchdogTimer = setTimeout(() => {
+      if (this.activeWatchdogPollInterval) {
+        clearInterval(this.activeWatchdogPollInterval);
+        this.activeWatchdogPollInterval = null;
+      }
       this.watchdogUntil = 0;
       this.watchdogTimer = null;
     }, 10000);
@@ -455,6 +624,10 @@ export class VolumeController {
   }
 
   private cancelWatchdog(): void {
+    if (this.activeWatchdogPollInterval) {
+      clearInterval(this.activeWatchdogPollInterval);
+      this.activeWatchdogPollInterval = null;
+    }
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
