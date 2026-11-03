@@ -568,6 +568,8 @@ if (!window.__retroFmContentLoaded) {
       case 'PLAY': {
         const t_cs_play_recv = Date.now();
         const t_boombox_play_click = message?.t_boombox_play_click || null;
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+        console.log(`[Transport Timing] [YouTube CS] RECV_PLAY_COMMAND (visibility=${vis}, hasVideo=${!!video}, paused=${video?.paused})`);
         trace('RECV_PLAY_COMMAND', {
           hasVideo: !!video,
           isPaused: video ? video.paused : null,
@@ -670,6 +672,8 @@ if (!window.__retroFmContentLoaded) {
         return true; // Keep channel open for async response
       }
       case 'PAUSE': {
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+        console.log(`[Transport Timing] [YouTube CS] RECV_PAUSE_COMMAND (visibility=${vis}, hasVideo=${!!video}, paused=${video?.paused})`);
         trace('RECV_PAUSE_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
@@ -690,6 +694,8 @@ if (!window.__retroFmContentLoaded) {
         break;
       }
       case 'STOP': {
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+        console.log(`[Transport Timing] [YouTube CS] RECV_STOP_COMMAND (visibility=${vis}, hasVideo=${!!video}, paused=${video?.paused})`);
         trace('RECV_STOP_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });

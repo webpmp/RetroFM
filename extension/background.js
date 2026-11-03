@@ -615,6 +615,12 @@ function handleIncomingRequest(request, sender, sendResponse) {
           } catch (e) {}
         }
 
+        // Broadcast to all active transport bus ports (instant wakeup)
+        broadcastToPorts({
+          type: 'YT_STATE_CHANGED',
+          payload: statePayload
+        });
+
         sendResponse({ success: true });
         return;
       }
@@ -798,9 +804,30 @@ function handleIncomingRequest(request, sender, sendResponse) {
         try {
           if (sender?.tab?.id) activeBoomBoxTabId = sender.tab.id;
           const actionName = (payload?.action || '').toUpperCase();
+          const tNow = Date.now();
+          const boomBoxClick = payload?.t_boombox_click || null;
+          const bbVis = payload?.boombox_visibility || 'unknown';
+          const delaySoFar = boomBoxClick ? (tNow - boomBoxClick) : 0;
+          console.log(`[Transport Timing] [Background] BOOMBOX_ACTION: ${actionName} (bbVis=${bbVis}, delay=${delaySoFar}ms, ts=${tNow})`);
+
           if (actionName === 'STOP' || actionName === 'PAUSE') {
             clearPendingPlayIntent(`boombox_${actionName.toLowerCase()}`);
           }
+
+          // Direct Fast-Path: Immediately dispatch transport commands directly to the connected YouTube tab
+          // without waiting for the backgrounded/throttled RetroFM app tab!
+          if (actionName === 'PAUSE' || actionName === 'STOP' || actionName === 'PLAY') {
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                console.log(`[Transport Timing] [Background] Fast-dispatching ${actionName} directly to YouTube tab ${ytTabId}`);
+                chrome.tabs.sendMessage(ytTabId, {
+                  action: actionName,
+                  t_boombox_play_click: boomBoxClick || null
+                }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+
           if (actionName === 'SET_BALANCE' && typeof payload?.balance === 'number' && !isNaN(payload.balance)) {
             lastKnownBalance = Number(Math.max(-1, Math.min(1, payload.balance)).toFixed(4));
             resolveYouTubeTab().then((ytTabId) => {
@@ -815,7 +842,14 @@ function handleIncomingRequest(request, sender, sendResponse) {
                 chrome.tabs.sendMessage(ytTabId, { action: 'SET_BALANCE', balance: 0 }).catch(() => {});
               }
             }).catch(() => {});
+          } else if (actionName === 'SET_VOLUME' && typeof payload?.volume === 'number') {
+            resolveYouTubeTab().then((ytTabId) => {
+              if (ytTabId) {
+                chrome.tabs.sendMessage(ytTabId, { action: 'SET_VOLUME', volume: payload.volume }).catch(() => {});
+              }
+            }).catch(() => {});
           }
+
           const retroTabId = await resolveRetroFmTab();
           recordTrace('background', 'BOOMBOX_ACTION_ARRIVED', {
             action: payload?.action,
@@ -1490,6 +1524,33 @@ function handleIncomingRequest(request, sender, sendResponse) {
   })();
 
   return true; // Keep channel open for async response
+}
+
+// Long-lived connections map to keep MV3 service worker active and allow instant bidirectional event dispatch
+const activePorts = new Set();
+
+function broadcastToPorts(msg) {
+  for (const port of activePorts) {
+    try {
+      port.postMessage(msg);
+    } catch (e) {
+      activePorts.delete(port);
+    }
+  }
+}
+
+if (chrome.runtime.onConnect) {
+  chrome.runtime.onConnect.addListener((port) => {
+    activePorts.add(port);
+    port.onDisconnect.addListener(() => {
+      activePorts.delete(port);
+    });
+    port.onMessage.addListener(async (msg) => {
+      if (msg && msg.type === 'BOOMBOX_ACTION') {
+        await handleIncomingRequest(msg, { tab: port.sender?.tab }, () => {});
+      }
+    });
+  });
 }
 
 // 1. Listen for external messages directly from web pages (via externally_connectable)

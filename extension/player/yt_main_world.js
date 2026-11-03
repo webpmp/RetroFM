@@ -637,6 +637,8 @@
     }
 
     const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+    const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    console.log(`[Transport Timing] [YouTube MW] Executing direct player command: ${cmd} (visibility=${vis}, stateBefore=${stateBefore})`);
 
     if (cmd === 'PLAY') {
       const t_mw_play_call = Date.now();
@@ -804,13 +806,19 @@
     media.addEventListener('loadstart', () => onMediaLifecycle('loadstart'));
     media.addEventListener('loadedmetadata', () => onMediaLifecycle('loadedmetadata'));
     media.addEventListener('canplay', () => onMediaLifecycle('canplay'));
-    media.addEventListener('play', () => onMediaLifecycle('play'));
+    media.addEventListener('play', () => {
+      const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+      console.log(`[Transport Timing] [YouTube MW] video 'play' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime})`);
+      onMediaLifecycle('play');
+      emitCurrentProgress();
+    });
     media.addEventListener('playing', () => {
       try {
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
         const player = getPlayer();
         const currentVol = (player && typeof player.getVolume === 'function') ? player.getVolume() : 'unknown';
         console.log(
-          `[RetroFM MainWorld] [${new Date().toISOString()}] Volume at moment playback started: player.getVolume()=${currentVol}, queuedVolume=${queuedVolume}, queuedBalance=${queuedBalance}`
+          `[Transport Timing] [YouTube MW] video 'playing' event: player.getVolume()=${currentVol}, visibility=${vis}, currentTime=${media.currentTime}`
         );
         onMediaLifecycle('playing');
         syncPlaybackProgress(true);
@@ -821,6 +829,8 @@
 
     media.addEventListener('pause', () => {
       try {
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+        console.log(`[Transport Timing] [YouTube MW] video 'pause' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime})`);
         const now = Date.now();
         const unmutedRecently = (now - lastUnmuteTime) <= 3000;
         recordError('videoPause', {
@@ -838,8 +848,19 @@
       }
     });
 
+    media.addEventListener('timeupdate', () => {
+      // Event-driven progress update directly from video element
+      emitCurrentProgress();
+    });
+
+    media.addEventListener('volumechange', () => {
+      broadcastStatus();
+    });
+
     media.addEventListener('ended', () => {
       try {
+        const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+        console.log(`[Transport Timing] [YouTube MW] video 'ended' event (visibility=${vis})`);
         syncPlaybackProgress(false);
       } catch (err) {}
     });

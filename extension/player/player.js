@@ -1,3 +1,43 @@
+function getTimingContext() {
+  return {
+    ts: Date.now(),
+    perf: Math.round(performance.now()),
+    visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown'
+  };
+}
+
+let transportBusPort = null;
+let transportBusReconnectTimer = null;
+
+function connectTransportBus() {
+  if (typeof chrome === 'undefined' || !chrome?.runtime?.connect) return;
+  try {
+    if (transportBusPort) {
+      try { transportBusPort.disconnect(); } catch (e) {}
+      transportBusPort = null;
+    }
+    transportBusPort = chrome.runtime.connect({ name: 'retrofm-boombox-bus' });
+    transportBusPort.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'YT_STATE_CHANGED' && msg.payload) {
+        const tCtx = getTimingContext();
+        console.log(`[Transport Timing] [BoomBox] YT_STATE_CHANGED received (state=${msg.payload.state}, visibility=${tCtx.visibility}, ts=${tCtx.ts})`);
+      }
+    });
+    transportBusPort.onDisconnect.addListener(() => {
+      transportBusPort = null;
+      if (!transportBusReconnectTimer) {
+        transportBusReconnectTimer = setTimeout(() => {
+          transportBusReconnectTimer = null;
+          connectTransportBus();
+        }, 1500);
+      }
+    });
+  } catch (err) {
+    console.warn('[BoomBox] Failed to connect transport bus:', err);
+  }
+}
+connectTransportBus();
+
 const $=id=>document.getElementById(id);
 if (document.title !== 'RetroFM') document.title = 'RetroFM';
 const emit=(n,d)=>document.dispatchEvent(new CustomEvent('retrofm:'+n,{detail:d}));
@@ -926,6 +966,7 @@ act($('bPlay'),()=>{
   if (transportReconcileTimer) { clearTimeout(transportReconcileTimer); transportReconcileTimer = null; }
   const t_boombox_play_click = Date.now();
   lastUserTransportAction = { state: 'playing', time: t_boombox_play_click };
+  setState('playing', true); // Immediate visual feedback (lit state)
   trace('CLICK_PLAY', { t_boombox_play_click });
   sendBoomBoxAction('PLAY', { t_boombox_play_click });
 });
@@ -2173,11 +2214,33 @@ function flushPendingTune() {
 }
 
 function rawSendBoomBoxAction(action, data) {
+  const tCtx = getTimingContext();
+  console.log(`[Transport Timing] [BoomBox] Action dispatched: ${action} (visibility=${tCtx.visibility}, ts=${tCtx.ts}, perf=${tCtx.perf})`);
+  const payloadData = {
+    action,
+    ...(data || {}),
+    t_boombox_click: tCtx.ts,
+    t_boombox_perf: tCtx.perf,
+    boombox_visibility: tCtx.visibility
+  };
+
+  // Try direct port if connected for lowest possible latency
+  if (transportBusPort) {
+    try {
+      transportBusPort.postMessage({
+        type: 'BOOMBOX_ACTION',
+        payload: payloadData
+      });
+    } catch (e) {
+      transportBusPort = null;
+    }
+  }
+
   try {
     if (typeof chrome !== 'undefined' && chrome?.runtime?.sendMessage) {
       chrome.runtime.sendMessage({
         type: 'BOOMBOX_ACTION',
-        payload: { action, ...(data || {}) }
+        payload: payloadData
       }, () => {
         if (chrome.runtime?.lastError) {
           // Extension service worker might be waking up or app disconnected

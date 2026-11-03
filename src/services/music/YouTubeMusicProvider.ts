@@ -42,6 +42,8 @@ export class YouTubeMusicProvider implements MusicProvider {
             this.reportedExtensionVersion = event.data.version;
           }
           if (event.data.type === 'BOOMBOX_ACTION' && event.data.payload) {
+            const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+            console.log(`[Transport Timing] [RetroFM App] BOOMBOX_ACTION received in app tab: ${event.data.payload.action} (visibility=${vis})`);
             for (const listener of this.boomBoxActionListeners) {
               try { listener(event.data.payload); } catch (e) {}
             }
@@ -510,6 +512,8 @@ export class YouTubeMusicProvider implements MusicProvider {
   }
 
   public async pauseDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+    const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    console.log(`[Transport Timing] [RetroFM App] pauseDetailed invoked (visibility=${vis})`);
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
