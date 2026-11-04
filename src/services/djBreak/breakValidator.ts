@@ -25,6 +25,34 @@ export function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Minimum verified material (words) for a news item to be worth a break. Thinner items are skipped, never padded. */
+export const NEWS_MIN_MATERIAL_WORDS = 20;
+const NEWS_WORD_FLOOR = 40;
+const NEWS_WORD_CEILING = 75;
+
+/**
+ * 4d: Word budget for a news break, set from the amount of verified material
+ * (headline + deduplicated fact sentences). Floor ~40, ceiling ~75 words.
+ */
+export function computeNewsWordBudget(packet: {
+  headline?: string;
+  topicTitle?: string;
+  facts?: Array<{ text: string }>;
+}): { materialWords: number; maxWords: number; tooThin: boolean } {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const t of [packet.headline || packet.topicTitle || '', ...(packet.facts || []).map((f) => f.text || '')]) {
+    const key = t.trim().toLowerCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      parts.push(t.trim());
+    }
+  }
+  const materialWords = parts.join(' ').split(/\s+/).filter(Boolean).length;
+  const maxWords = Math.min(NEWS_WORD_CEILING, Math.max(NEWS_WORD_FLOOR, materialWords + 15));
+  return { materialWords, maxWords, tooThin: materialWords < NEWS_MIN_MATERIAL_WORDS };
+}
+
 export interface FactPacketData {
   factText: string;
   source: string;
@@ -74,18 +102,34 @@ export function validateSegmentBreakOutput(
 
   const trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
 
-  // 1. Length check: Scaled to fact packet size (~20-25 words per fact, max +35% padding)
+  // 1. Length check.
+  // News breaks (4d): cap is set from the amount of verified NYT material (headline + abstract/lead/snippet),
+  // floor 40, ceiling 75 words, and applies to the model draft (code-added station ID and hand-off are excluded).
+  // Other breaks: scaled to fact packet size (~20-25 words per fact, max +35% padding).
   const factCount = Math.max(1, (context.factPacket.facts || []).length);
-  const minExpectedWords = Math.max(25, factCount * 18);
-  const maxExpectedWords = Math.round(factCount * 25 * 1.35) + 15;
+  const isNewsTopic = context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news';
   const words = trimmed.split(/\s+/).filter(Boolean);
 
-  if (words.length > maxExpectedWords) {
-    return {
-      valid: false,
-      rejectedReason: `Segment padded / too long: ${words.length} words (packet with ${factCount} facts supports at most ~${maxExpectedWords} words)`,
-      sanitizedText: '',
-    };
+  if (isNewsTopic) {
+    if (context.isModelDraft) {
+      const budget = computeNewsWordBudget(context.factPacket);
+      if (words.length > budget.maxWords) {
+        return {
+          valid: false,
+          rejectedReason: `Segment padded / too long: ${words.length} words (news material of ${budget.materialWords} words supports at most ~${budget.maxWords} words)`,
+          sanitizedText: '',
+        };
+      }
+    }
+  } else {
+    const maxExpectedWords = Math.round(factCount * 25 * 1.35) + 15;
+    if (words.length > maxExpectedWords) {
+      return {
+        valid: false,
+        rejectedReason: `Segment padded / too long: ${words.length} words (packet with ${factCount} facts supports at most ~${maxExpectedWords} words)`,
+        sanitizedText: '',
+      };
+    }
   }
 
   // 3a. Check repeated sentences in segment

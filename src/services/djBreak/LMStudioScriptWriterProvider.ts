@@ -907,6 +907,8 @@ Respond strictly with JSON schema:
     }
 
     const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
+    // 4d: news breaks also get the NYT section as context (headline is Fact [1]).
+    const newsSectionLine = (input.topic === 'major_news' || input.topic === 'music_news') && input.section ? `\nSECTION: ${input.section}` : '';
 
     // Code-chosen hook matched strictly to content type (at least 50% have NO opener)
     // Requirement 3: 15+ natural variants, many of them none at all. Deleted invented framing phrases like "music ledger".
@@ -983,7 +985,7 @@ STRICT STYLE RULES:
       : '';
 
     const userPromptStep1 = `FACT SHEET:
-${factLines}
+${factLines}${newsSectionLine}
 OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
 
 TASK:

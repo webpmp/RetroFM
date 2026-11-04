@@ -39,7 +39,7 @@ import {
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs } from './src/services/news/almanacService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
-import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
+import { validateSegmentBreakOutput, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
 import { getEffectiveAppUrl, logStartupEnvironmentStatus, resolveLmStudioEndpoint } from './src/services/envUtil.js';
@@ -1110,7 +1110,7 @@ async function startServer() {
           return allowMusicNewsPast;
         })
         .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 3);
+        .slice(0, 12);
 
       // Helper to strip evaluative/figurative language from review sentences
       const cleanFigurativeSentences = (facts: Array<{ text: string; source: string; printDate?: string; date: string }>) => {
@@ -1124,11 +1124,28 @@ async function startServer() {
         return facts.filter((f) => !FIGURATIVE_PATTERNS.some((pat) => pat.test(f.text)));
       };
 
+      // 4d: News fact material = NYT headline + abstract/lead/snippet sentences (all verified).
+      // Items with too little material are skipped (never padded) so the next-best item is tried.
+      const buildNewsFacts = (entry: any, baseFacts: any[]) => {
+        const headlineFact = entry.headline
+          ? [{ text: entry.headline, source: entry.source, printDate: entry.printDate, date: entry.eventDate }]
+          : [];
+        const facts = [...headlineFact, ...baseFacts.filter((f: any) => f.text.trim() !== (entry.headline || '').trim())];
+        const budget = computeNewsWordBudget({ headline: entry.headline, facts });
+        return { facts, budget };
+      };
+
       for (const entry of musicAlmanacEntries) {
         const itemKey = `almanac:${entry.id}`;
         let subFacts = splitEntryIntoFacts(entry);
         subFacts = cleanFigurativeSentences(subFacts);
         if (subFacts.length === 0) continue;
+        const musicMaterial = buildNewsFacts(entry, subFacts);
+        if (musicMaterial.budget.tooThin) {
+          console.log(`[News Candidate Skipped] type=music_news key=${itemKey} reason="too little verified material (${musicMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
+          continue;
+        }
+        subFacts = musicMaterial.facts;
         musicNewsCandidates.push({
           type: 'music_news',
           category: 'music_news',
@@ -1158,11 +1175,16 @@ async function startServer() {
       const majorNewsEntries = (almanac.entries || [])
         .filter((e) => e.category === 'major_news' && !isKeyBlocked(`almanac:${e.id}`))
         .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 3);
+        .slice(0, 12);
 
       for (const entry of majorNewsEntries) {
         const itemKey = `almanac:${entry.id}`;
-        const subFacts = splitEntryIntoFacts(entry);
+        const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
+        if (majorMaterial.budget.tooThin) {
+          console.log(`[News Candidate Skipped] type=major_news key=${itemKey} reason="too little verified material (${majorMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
+          continue;
+        }
+        const subFacts = majorMaterial.facts;
         majorNewsCandidates.push({
           type: 'major_news',
           category: 'major_news',
