@@ -743,6 +743,24 @@ async function startServer() {
   const chartFactRepo = new ChartFactRepository();
   const songCreditRepo = new SongCreditRepository(undefined, chartFactRepo);
 
+  // Per-session rotation tracking on the server (Fix 2):
+  // Guarantees news at least every 3rd break, never chooses the same category twice in a row,
+  // and alternates major_news and music_news as the primary news slot.
+  interface ServerRotationState {
+    selectedDate: string;
+    breaksSinceLastNews: number;
+    lastCategory: string | null;
+    nextNewsSlot: 'major_news' | 'music_news';
+    totalBreaksCount: number;
+  }
+  let serverRotationState: ServerRotationState = {
+    selectedDate: '',
+    breaksSinceLastNews: 2, // Start due so news is tried early in the session (within first 2-3 breaks)
+    lastCategory: null,
+    nextNewsSlot: 'major_news',
+    totalBreaksCount: 0,
+  };
+
   // Helper for natural extractive fallback monologue
   function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {
     const sentences = (packet.facts || []).map((f: any) => {
@@ -846,11 +864,11 @@ async function startServer() {
         ? await getOrBuildSongStoryCard(nextSong, selectedDate, undefined, { runLLMCheck: false })
         : null;
 
-      // Setup ScriptWriterProvider
+      // Setup ScriptWriterProvider (per-candidate timeout of 18s so one slow candidate never starves later categories)
       const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
       let writer: any;
       if (provider === 'lmstudio' || (!process.env.GEMINI_API_KEY && resolvedEndpoint)) {
-        writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 35000 });
+        writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 18000 });
       } else {
         const defaultModel = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
         const fallbackModel = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || 'gemini-2.5-flash';
@@ -1219,18 +1237,48 @@ async function startServer() {
         });
       }
 
-      // Group candidate categories in strict user requirement order:
-      // (1) next_song_story (needs 3+ facts)
-      // (2) music_news (cap 3 items)
-      // (3) major_news (cap 3 items)
-      // (4) short fallback: chart or credits
-      // (5) plain intro (when all above fail)
-      const candidateQueues: CandidateEval[][] = [
-        songStoryCandidate.ready ? [songStoryCandidate] : [],
-        musicNewsCandidates.slice(0, 3),
-        majorNewsCandidates.slice(0, 3),
-        fallbackCandidates.slice(0, 3),
-      ];
+      // FIX 2: Content rotation in /api/dj/segment-break
+      // - Never choose the same category twice in a row.
+      // - Guarantee a news break (major_news or music_news) at least once every 3 breaks when eligible news exists.
+      // - Alternate major_news and music_news as the primary news slot.
+      if (isFirstBreak || serverRotationState.selectedDate !== selectedDate) {
+        serverRotationState = {
+          selectedDate,
+          breaksSinceLastNews: 2, // Start due so news is tried within the first couple of breaks
+          lastCategory: null,
+          nextNewsSlot: 'major_news',
+          totalBreaksCount: 0,
+        };
+      }
+
+      const effectiveLastCategory = (typeof lastTopic === 'string' && lastTopic)
+        ? lastTopic
+        : serverRotationState.lastCategory;
+
+      const songStoryQueue = songStoryCandidate.ready ? [songStoryCandidate] : [];
+      const majorQueue = majorNewsCandidates.slice(0, 3);
+      const musicQueue = musicNewsCandidates.slice(0, 3);
+      const shortFallbackQueue = fallbackCandidates.slice(0, 3);
+
+      // Order the two news queues by alternating slot, avoiding repeating effectiveLastCategory
+      let primaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? majorQueue : musicQueue;
+      let secondaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? musicQueue : majorQueue;
+      if (effectiveLastCategory === 'major_news' && musicQueue.length > 0) {
+        primaryNewsQueue = musicQueue;
+        secondaryNewsQueue = majorQueue;
+      } else if (effectiveLastCategory === 'music_news' && majorQueue.length > 0) {
+        primaryNewsQueue = majorQueue;
+        secondaryNewsQueue = musicQueue;
+      }
+
+      const hasEligibleNews = majorQueue.length > 0 || musicQueue.length > 0;
+      const newsIsDue =
+        hasEligibleNews &&
+        (serverRotationState.breaksSinceLastNews >= 2 || effectiveLastCategory === 'next_song_story');
+
+      const candidateQueues: CandidateEval[][] = newsIsDue
+        ? [primaryNewsQueue, secondaryNewsQueue, songStoryQueue, shortFallbackQueue]
+        : [songStoryQueue, primaryNewsQueue, secondaryNewsQueue, shortFallbackQueue];
 
       // Summary list for logging
       const allEvaluatedSummary: string[] = [
@@ -1238,6 +1286,7 @@ async function startServer() {
         `music_news:${musicNewsCandidates.length}items`,
         `major_news:${majorNewsCandidates.length}items`,
         `short_fallback:${fallbackCandidates.length}items`,
+        `rotation(sinceNews=${serverRotationState.breaksSinceLastNews},last=${effectiveLastCategory || 'none'},newsDue=${newsIsDue},slot=${serverRotationState.nextNewsSlot})`,
       ];
 
       const fellThroughReasons: string[] = [];
@@ -1292,21 +1341,15 @@ async function startServer() {
       let auditResult = 'N/A';
       const newsDraftAttempts: Array<{ type: string; key: string; rejected: boolean; reason: string }> = [];
 
-      // Latency check: Give each song change a total budget of about 25 seconds across candidates,
-      // and on timeout use the best ready break. A break that takes over 30 seconds must be logged as "not ready".
-      const isOverBudget = (Date.now() - startTime) >= 25000;
-
-      // Evaluate categories in order, capping at 3 attempts per category
+      // Evaluate categories in order, capping at 3 attempts per category.
+      // Give each candidate its own time budget via the provider timeout rather than a shared 25s cutoff
+      // that would starve later categories when an earlier candidate fails slowly.
       categoryLoop:
       for (const queue of candidateQueues) {
         if (queue.length === 0) continue;
         let attemptsThisCategory = 0;
 
         for (const cand of queue) {
-          if (Date.now() - startTime >= 25000) {
-            fellThroughReasons.push('candidate budget timed out (25s reached)');
-            break categoryLoop;
-          }
           if (attemptsThisCategory >= 3) break;
           attemptsThisCategory++;
 
@@ -1799,24 +1842,40 @@ async function startServer() {
         ? undefined
         : `All candidates rejected: ${fellThroughReasons.join('; ') || 'No eligible candidates'}`;
 
-      // Step 1 Diagnostic Console Logging (5 required fields for every DJ break)
+      // Update server-side rotation state after choosing a candidate
       const chosenTypeStr = chosenCandidate?.type || 'silence';
+      const prevRotationSinceNews = serverRotationState.breaksSinceLastNews;
+      const prevRotationSlot = serverRotationState.nextNewsSlot;
+      if (chosenTypeStr === 'major_news' || chosenTypeStr === 'music_news') {
+        serverRotationState.breaksSinceLastNews = 0;
+        serverRotationState.nextNewsSlot = chosenTypeStr === 'major_news' ? 'music_news' : 'major_news';
+      } else {
+        serverRotationState.breaksSinceLastNews += 1;
+      }
+      serverRotationState.lastCategory = chosenTypeStr;
+      serverRotationState.totalBreaksCount += 1;
+
+      // Step 1 Diagnostic Console Logging (5 required fields for every DJ break)
       let whyChosenStr = '';
       if (chosenTypeStr === 'next_song_story') {
-        whyChosenStr = `Strict priority order in server.ts evaluates next_song_story first (score=110, facts=${factCount}>=3) and ignores lastTopic="${lastTopic || 'none'}", starving music_news (${musicNewsCandidates.length}) and major_news (${majorNewsCandidates.length})`;
+        whyChosenStr = newsIsDue
+          ? `News was due (sinceNews=${prevRotationSinceNews}), but all news candidates failed validation/audit (${newsDraftAttempts.length} tried), so fell back to next_song_story (facts=${factCount})`
+          : `Rotation placed next_song_story first (sinceNews=${prevRotationSinceNews}, last=${effectiveLastCategory || 'none'}) and it passed validation (facts=${factCount})`;
       } else if (chosenTypeStr === 'music_news' || chosenTypeStr === 'major_news') {
         const src = chosenCandidate?.packet?.facts?.[0]?.source || 'unknown';
-        whyChosenStr = `next_song_story was not ready (${songStoryCandidate.failureReason || 'failed'}), fell through to ${chosenTypeStr} [source=${src}]`;
+        whyChosenStr = newsIsDue
+          ? `Rotation prioritized news (${chosenTypeStr}, sinceNews=${prevRotationSinceNews}, last=${effectiveLastCategory || 'none'}, slot=${prevRotationSlot}) [source=${src}]`
+          : `next_song_story was not ready (${songStoryCandidate.failureReason || 'failed'}), rotated to ${chosenTypeStr} [source=${src}]`;
       } else {
         whyChosenStr = `Fallback to ${chosenTypeStr} (${fellThroughReasons.join('; ') || 'higher-priority queues empty'})`;
       }
 
       let newsSkippedReason = 'N/A (news was selected)';
       if (chosenTypeStr !== 'major_news' && chosenTypeStr !== 'music_news') {
-        if (chosenTypeStr === 'next_song_story') {
-          newsSkippedReason = `Selection priority: candidateQueues evaluates next_song_story before news with no rotation; next_song_story passed on attempt 1 so news queues were never reached`;
+        if (!newsIsDue && chosenTypeStr === 'next_song_story') {
+          newsSkippedReason = `Rotation scheduled next_song_story this turn (breaksSinceLastNews=${prevRotationSinceNews} < 2 and lastCategory="${effectiveLastCategory || 'none'}" !== "next_song_story")`;
         } else if (nytFunnel.totalArticlesReturned === 0) {
-          newsSkippedReason = `Missing NYT data: getOrBuildAlmanac only checks disk cache (cache/nyt/${nytFunnel.monthFile}) and never calls NYT Archive API`;
+          newsSkippedReason = `Missing NYT data: NYT archive returned 0 articles for ${nytFunnel.monthFile}`;
         } else if (newsDraftAttempts.length > 0) {
           newsSkippedReason = `Validator/audit rejected all ${newsDraftAttempts.length} news draft(s): ${newsDraftAttempts.map(a => `${a.type}(${a.key}): ${a.reason}`).join(' | ')}`;
         } else {
