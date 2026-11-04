@@ -145,16 +145,25 @@ export function isNonStoryItem(
   const section = (doc?.section_name || '').toLowerCase();
 
   // 2. Cultural desk listings, reviews, guides, ballet, theater, and dance items
-  // Exclude Cultural Desk listings, reviews, and guides ("Going Out Guide", "Books of The Times", ballet, theater, and dance items)
+  // Exclude non-music Cultural Desk listings, guides, ballet, theater, and dance items
+  // ("Going Out Guide", "Books of The Times", ballet, theater, dance),
+  // EXCEPT let music/concert/pop/rock/jazz/album/singer stories through even on Cultural/Weekend desks.
+  const isMusicOrConcertStory =
+    /\b(music|song|songs|album|albums|single|concert|concerts|musician|band|bands|rock|pop|jazz|soul|r&b|disco|country|folk|blues|billboard|grammy|singer|singers|vocalist|tour|festival)\b/i.test(
+      `${hLower} ${(summary || '').toLowerCase()}`
+    ) && !/\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(hLower);
+
   if (
-    desk.includes('cultural') ||
-    desk === 'culture' ||
-    desk.includes('weekend') ||
-    section.includes('weekend') ||
-    typeOfMaterial === 'review' ||
-    typeOfMaterial === 'guide' ||
-    /^(?:going out guide|books of the times|ballet:|the dance:|dance:|theater:|theatre:)/i.test(h) ||
-    /\b(?:going out guide|books of the times)\b/i.test(hLower)
+    /^(?:going out guide|books of the times|ballet:|the dance:|dance:|theater:|theatre:|art:|opera:)/i.test(h) ||
+    /\b(?:going out guide|books of the times)\b/i.test(hLower) ||
+    (!isMusicOrConcertStory && (
+      desk.includes('cultural') ||
+      desk === 'culture' ||
+      desk.includes('weekend') ||
+      section.includes('weekend') ||
+      typeOfMaterial === 'review' ||
+      typeOfMaterial === 'guide'
+    ))
   ) {
     return {
       isNonStory: true,
@@ -338,6 +347,15 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
 
   // Rule 3: Metro desk / section or NYC location tag check:
   // "unless it also meets a 'keep' condition above because it ran on the front page or the National or Foreign desk"
+  const isPre1980UnspecifiedDesk =
+    desk === '' || desk === 'unspecified' || desk === 'none' || desk === 'archives' || section === 'archives';
+  const majorNewsKeywordsRegex =
+    /\b(president|white house|congress|senate|house of representatives|supreme court|pentagon|state department|war|troops|treaty|peace|cease-fire|strike|union|soviet|moscow|vietnam|saigon|cambodia|china|peking|nato|united nations|u\.n\.|election|primary|campaign|assassination|space|nasa|apollo|gemini|mercury|astronaut|satellite|launch|disaster|earthquake|flood|hurricane|tornado|crash|hijack|embargo|oil|inflation|energy|civil rights|segregation|integration|demonstration|protest|nuclear|summit|governor|federal|fbi|cia|indict|trial|verdict|ruling|premier|chancellor|minister|embassy|diplomat|hostage|blockade|invasion)\b/i;
+  const musicCultureKeywordsRegex =
+    /\b(music|song|songs|album|albums|single|concert|concerts|musician|band|bands|rock|pop|jazz|soul|r&b|disco|country|folk|blues|billboard|grammy|singer|singers|vocalist|record|recording|festival|film|movie|movies|cinema|box office|oscar|academy award|hollywood|television|tv|emmy)\b/i;
+  const localNycExclusionRegex =
+    /\b(borough|city council|mayor|transit authority|subway|commuter|port authority|board of estimate|con edison|zoning|yonkers|nassau|suffolk|albany legislature|police precinct|housing authority)\b/i;
+
   if (isMetroDeskOrSection || hasNycLocation) {
     if (isFrontPage) {
       return {
@@ -354,6 +372,23 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
       return {
         keep: true,
         reason: `National/Foreign desk (${rawDesk}) overrides local NYC tag`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+        matchedNycLocation,
+      };
+    }
+
+    // For pre-1980 Unspecified/None desk items that happen to carry a location tag (e.g., United Nations in NYC, or major music/concert stories)
+    if (
+      isPre1980UnspecifiedDesk &&
+      !isMetroDeskOrSection &&
+      !localNycExclusionRegex.test(combinedText) &&
+      (majorNewsKeywordsRegex.test(combinedText) || musicCultureKeywordsRegex.test(combinedText))
+    ) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified desk with national/music keyword match overriding location tag`,
         isFrontPage: false,
         desk: rawDesk,
         section: rawSection,
@@ -394,6 +429,49 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
       desk: rawDesk,
       section: rawSection,
     };
+  }
+
+  // Rule 5 (Fix 3): When news_desk is "Unspecified", "None", or empty (pre-1980 NYT archives),
+  // do NOT reject on desk alone. Keep if headline/abstract/keywords match major-news or music/pop-culture keywords
+  // or if the article's DJ interest score >= 55 (while excluding routine local/metro NYC stories).
+  if (isPre1980UnspecifiedDesk && !localNycExclusionRegex.test(combinedText)) {
+    if (majorNewsKeywordsRegex.test(combinedText)) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified/None desk matched major-news keywords`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+      };
+    }
+    if (musicCultureKeywordsRegex.test(combinedText) && !/\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(headline)) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified/None desk matched music/pop-culture keywords`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+      };
+    }
+    const catCheck = categorizeNYTArticle(doc);
+    const interest = computeDJInterestScore({
+      isFrontPage,
+      category: catCheck.category,
+      desk: rawDesk,
+      section: rawSection,
+      headline,
+      abstract: summary,
+      keywords,
+    });
+    if (interest >= 55) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified/None desk passed interest threshold (score=${interest})`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+      };
+    }
   }
 
   // Default non-national items (society desks, local classifieds, regional entries, etc.)

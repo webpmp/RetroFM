@@ -164,8 +164,8 @@ export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnos
       afterNationalFocusFilter++;
 
       const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
-      const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage);
       const summary = sentences.slice(0, 4).join(' ');
+      const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, summary);
       const interestScore = scoreItemInterest(headline, summary, category);
 
       // Filter 3: Interest scoring threshold (>= 50)
@@ -462,8 +462,16 @@ export function isFactualSentence(sentence: string): boolean {
  * - "Sports": Baseball, basketball, football, racing, boxing, etc.
  * - "Major News": Headline national/world events, diplomacy, government, space. Excludes personnel appointments, routine business, corporate deals.
  */
-function categorizeNYT(headline: string, section?: string, desk?: string, isFrontPage?: boolean): { sectionName: string; category: AlmanacEntry['category'] } {
+function categorizeNYT(
+  headline: string,
+  section?: string,
+  desk?: string,
+  isFrontPage?: boolean,
+  summaryText?: string
+): { sectionName: string; category: AlmanacEntry['category'] } {
   const hLower = (headline || '').toLowerCase();
+  const sumLower = (summaryText || '').toLowerCase();
+  const combinedLower = `${hLower} ${sumLower}`;
   const s = (section || '').toLowerCase();
   const d = (desk || '').toLowerCase();
 
@@ -472,12 +480,25 @@ function categorizeNYT(headline: string, section?: string, desk?: string, isFron
     /\b(?:bought by|purchased|acquisition|merger|corp|quarterly earnings|stock|shares|dividend|patent)\b/i.test(hLower);
 
   // 1. Music items check: must be genuine music topics, NEVER business acquisitions
-  const isMusicDeskOrSection = (d.includes('arts and leisure') || d.includes('cultural') || d.includes('weekend') || s.includes('arts') || s === 'archives' || d === 'none') &&
-    !isBusinessOrFinancial;
+  // Note: Pre-1980 NYT records often have desk='unspecified', 'none', or '' and section='archives'.
+  const isMusicDeskOrSection = (
+    d.includes('arts') ||
+    d.includes('leisure') ||
+    d.includes('cultural') ||
+    d === 'culture' ||
+    d.includes('weekend') ||
+    s.includes('arts') ||
+    s.includes('music') ||
+    s === 'archives' ||
+    s === '' ||
+    d === 'none' ||
+    d === 'unspecified' ||
+    d === ''
+  ) && !isBusinessOrFinancial;
 
-  const isMusicKeyword = /\b(music|song|album|single|concert|orchestra|symphony|opera|musician|band|rock|jazz|billboard|grammy|pop life|singer|singers)\b/i.test(hLower);
+  const isMusicKeyword = /\b(music|song|songs|album|albums|single|concert|concerts|orchestra|symphony|opera|musician|band|bands|rock|jazz|pop|soul|r&b|disco|country|folk|blues|billboard|grammy|pop life|singer|singers|vocalist)\b/i.test(combinedLower);
   // Specifically prevent "Singer" when referring to Studebaker or Singer co.
-  const isSingerCompany = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(hLower);
+  const isSingerCompany = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(combinedLower);
 
   if (!isSingerCompany && isMusicDeskOrSection && isMusicKeyword) {
     return { sectionName: 'Music News', category: 'music' };
@@ -920,7 +941,6 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         if (!natResult.keep) continue;
 
         const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
-        const { sectionName, category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage);
 
         // Combine abstract, leadParagraph, and snippet for rich verified material
         const headline = a.headline || 'Historical Report';
@@ -936,6 +956,7 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         if (!rawSummaryText || rawSummaryText.length < 20) {
           rawSummaryText = headline;
         }
+        const { sectionName, category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, rawSummaryText);
 
         // Clean evaluative clauses and resolve relative time words against print date
         const strippedSummary = stripEvaluativeClauses(rawSummaryText);
