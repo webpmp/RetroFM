@@ -16,15 +16,221 @@
 
 import fs from 'fs';
 import path from 'path';
+import { evaluateNYTNationalFocus } from './nationalFocusFilter.js';
+import { getReducedMonthlyArchive, getLastNytFetchMeta, ReducedNYTArticle } from './nytArchiveService.js';
+
+export interface NYTFunnelDiagnostics {
+  selectedDate: string;
+  monthFile: string;
+  fetchAttempted: boolean;
+  httpStatus: string;
+  rateLimited: boolean;
+  errored: boolean;
+  fromCache: boolean;
+  totalArticlesReturned: number;
+  afterDateEligibility: number;
+  afterNationalFocusFilter: number;
+  afterInterestScoringThreshold: number;
+  almanacAcceptedTotal: number;
+  almanacAcceptedMajorNews: number;
+  almanacAcceptedMusicNews: number;
+  topRejectedItems: Array<{ pubDate: string; headline: string; reason: string }>;
+}
+
+/**
+ * Computes the Step 1 diagnostic funnel for the NYT Archive path on a given broadcastDate.
+ * Inspects how getOrBuildAlmanac + national-focus/interest filters treat the monthly NYT articles.
+ */
+export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnostics {
+  const [yearStr, monthStr] = broadcastDate.split('-');
+  const monthFile = `${yearStr}-${monthStr}.json`;
+  const nytFilePath = path.join(process.cwd(), 'cache', 'nyt', monthFile);
+  const almanacCachePath = path.join(ALMANAC_CACHE_DIR, `almanac-${broadcastDate}.json`);
+  const hasCachedAlmanac = fs.existsSync(almanacCachePath);
+  const hasCachedNyt = fs.existsSync(nytFilePath);
+
+  if (!hasCachedNyt) {
+    const fetchMeta = getLastNytFetchMeta(parseInt(yearStr, 10), parseInt(monthStr, 10));
+    return {
+      selectedDate: broadcastDate,
+      monthFile,
+      fetchAttempted: fetchMeta ? fetchMeta.fetchAttempted : false,
+      httpStatus: fetchMeta ? fetchMeta.httpStatus : 'N/A (not yet fetched)',
+      rateLimited: fetchMeta ? fetchMeta.rateLimited : false,
+      errored: fetchMeta ? fetchMeta.errored : false,
+      fromCache: false,
+      totalArticlesReturned: 0,
+      afterDateEligibility: 0,
+      afterNationalFocusFilter: 0,
+      afterInterestScoringThreshold: 0,
+      almanacAcceptedTotal: 0,
+      almanacAcceptedMajorNews: 0,
+      almanacAcceptedMusicNews: 0,
+      topRejectedItems: [
+        {
+          pubDate: broadcastDate,
+          headline: `[Missing ${monthFile}]`,
+          reason: fetchMeta ? `NYT fetch status: ${fetchMeta.httpStatus}` : `cache/nyt/${monthFile} not yet fetched${hasCachedAlmanac ? ' (stale almanac present)' : ''}`,
+        },
+      ],
+    };
+  }
+
+  try {
+    const fetchMeta = getLastNytFetchMeta(parseInt(yearStr, 10), parseInt(monthStr, 10));
+    const nytRaw = JSON.parse(fs.readFileSync(nytFilePath, 'utf8'));
+    const articles = nytRaw.articles || [];
+    const totalArticlesReturned = articles.length;
+
+    let afterDateEligibility = 0;
+    let afterNationalFocusFilter = 0;
+    let afterInterestScoringThreshold = 0;
+    let almanacAcceptedTotal = 0;
+    let almanacAcceptedMajorNews = 0;
+    let almanacAcceptedMusicNews = 0;
+    const rejected: Array<{ pubDate: string; headline: string; reason: string }> = [];
+
+    for (let i = 0; i < articles.length; i++) {
+      const a = articles[i];
+      const headline = (a.headline || 'Untitled').trim();
+      const pubDate = a.pubDate || '';
+
+      // Filter 1: Date eligibility (pubDate <= broadcastDate)
+      if (!pubDate || pubDate > broadcastDate) {
+        if (rejected.length < 200 && pubDate > broadcastDate) {
+          rejected.push({ pubDate, headline, reason: `date_ineligible (pubDate ${pubDate} > ${broadcastDate})` });
+        }
+        continue;
+      }
+      afterDateEligibility++;
+
+      // Filter 2: Non-story / opinion / business / national-focus filter
+      if (a.typeOfMaterial === 'Letter' || a.typeOfMaterial === 'Correction') {
+        rejected.push({ pubDate, headline, reason: `material_type (${a.typeOfMaterial})` });
+        continue;
+      }
+      const isReview = isOpinionOrReviewArticle(a);
+      if (isReview && a.typeOfMaterial !== 'Review' && !headline.toLowerCase().includes('review')) {
+        rejected.push({ pubDate, headline, reason: `opinion_or_editorial (${a.typeOfMaterial || a.desk || 'opinion'})` });
+        continue;
+      }
+      const hlLower = headline.toLowerCase();
+      if (
+        /\b(?:appoint|named|joins|promoted|earnings|quarterly|profit|loss|shares|dividend|corporate|bankrupt|merger|acquisition|buys|sold|sells|contract with|contract for|patent)\b/i.test(hlLower) ||
+        /\b(?:executive|officer|vice president|chairman|coo|ceo|cfo|director of marketing|hires)\b/i.test(hlLower)
+      ) {
+        rejected.push({ pubDate, headline, reason: 'routine_business_or_personnel' });
+        continue;
+      }
+
+      // Check national focus filter
+      const mockDoc = {
+        headline: { main: a.headline },
+        abstract: a.abstract,
+        lead_paragraph: a.leadParagraph,
+        snippet: a.snippet,
+        print_section: a.printSection,
+        print_page: a.printPage,
+        news_desk: a.desk,
+        section_name: a.section,
+        type_of_material: a.typeOfMaterial,
+        keywords: (a.keywords || []).map((k: string) => ({ name: 'subject', value: k })),
+      };
+      const natResult = evaluateNYTNationalFocus(mockDoc);
+      if (!natResult.keep) {
+        rejected.push({ pubDate, headline, reason: `national_focus_filter (${natResult.reason})` });
+        continue;
+      }
+
+      let rawSummaryText = a.abstract || a.leadParagraph || a.snippet || '';
+      if (!rawSummaryText || rawSummaryText.length < 20) {
+        rawSummaryText = headline;
+      }
+      const strippedSummary = stripEvaluativeClauses(rawSummaryText);
+      const { text: resolvedSummary } = resolveRelativeTimeWords(strippedSummary, a.pubDate);
+      let sentences = splitVerbatimSentences(resolvedSummary).filter((s) => s.length > 20);
+      if (sentences.length === 0) {
+        rejected.push({ pubDate, headline, reason: 'summary_too_short (<20 chars per sentence)' });
+        continue;
+      }
+      if (isReview) {
+        sentences = sentences.filter((s) => isFactualSentence(s));
+        if (sentences.length === 0) {
+          rejected.push({ pubDate, headline, reason: 'review_no_factual_sentences' });
+          continue;
+        }
+      }
+
+      afterNationalFocusFilter++;
+
+      const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
+      const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage);
+      const summary = sentences.slice(0, 4).join(' ');
+      const interestScore = scoreItemInterest(headline, summary, category);
+
+      // Filter 3: Interest scoring threshold (>= 50)
+      if (interestScore < 50) {
+        rejected.push({ pubDate, headline, reason: `interest_score_below_threshold (score=${interestScore} < 50, cat=${category})` });
+        continue;
+      }
+      afterInterestScoringThreshold++;
+      almanacAcceptedTotal++;
+      if (category === 'major_news') almanacAcceptedMajorNews++;
+      if (category === 'music') almanacAcceptedMusicNews++;
+    }
+
+    // Pick diverse top rejected items (on or near broadcastDate first)
+    const sortedRejected = rejected.sort((x, y) => y.pubDate.localeCompare(x.pubDate));
+
+    return {
+      selectedDate: broadcastDate,
+      monthFile,
+      fetchAttempted: fetchMeta ? fetchMeta.fetchAttempted : false,
+      httpStatus: fetchMeta ? fetchMeta.httpStatus : '200 (Disk Cache)',
+      rateLimited: fetchMeta ? fetchMeta.rateLimited : false,
+      errored: fetchMeta ? fetchMeta.errored : false,
+      fromCache: fetchMeta ? fetchMeta.fromCache : true,
+      totalArticlesReturned,
+      afterDateEligibility,
+      afterNationalFocusFilter,
+      afterInterestScoringThreshold,
+      almanacAcceptedTotal,
+      almanacAcceptedMajorNews,
+      almanacAcceptedMusicNews,
+      topRejectedItems: sortedRejected.slice(0, 5),
+    };
+  } catch (err: any) {
+    return {
+      selectedDate: broadcastDate,
+      monthFile,
+      fetchAttempted: false,
+      httpStatus: 'ERROR',
+      rateLimited: false,
+      errored: true,
+      fromCache: true,
+      totalArticlesReturned: 0,
+      afterDateEligibility: 0,
+      afterNationalFocusFilter: 0,
+      afterInterestScoringThreshold: 0,
+      almanacAcceptedTotal: 0,
+      almanacAcceptedMajorNews: 0,
+      almanacAcceptedMusicNews: 0,
+      topRejectedItems: [{ pubDate: broadcastDate, headline: monthFile, reason: `parse_error: ${err?.message}` }],
+    };
+  }
+}
 
 export interface AlmanacEntry {
   id: string;
   printDate: string; // YYYY-MM-DD (real article print date)
   eventDate: string; // YYYY-MM-DD (resolved event date)
-  source: string; // 'New York Times' | 'Wikipedia'
+  source: string; // 'New York Times Archive'
   section: string; // 'Sports' | 'Arts' | 'Movies' | 'Television' | 'Style' | 'Front Page' | 'General News'
   headline: string;
   summary: string; // 2-4 sentences
+  abstract?: string;
+  leadParagraph?: string;
+  snippet?: string;
   category: 'music' | 'movies' | 'television' | 'sports' | 'pop_culture' | 'major_news';
   verbatimSentences?: string[];
   interestScore?: number;
@@ -552,17 +758,97 @@ async function fetchWikiPageWikitext(pageTitle: string): Promise<string> {
   }
 }
 
+const inMemoryAlmanacCache = new Map<string, AlmanacSummary>();
+let hasPurgedInvalidAlmanacs = false;
+
+/**
+ * Purges any disk-cached almanac-*.json files that have 0 NYT articles or contain legacy Wikipedia news entries.
+ */
+export function purgeInvalidCachedAlmanacs(): void {
+  if (hasPurgedInvalidAlmanacs) return;
+  hasPurgedInvalidAlmanacs = true;
+  try {
+    if (!fs.existsSync(ALMANAC_CACHE_DIR)) return;
+    const files = fs.readdirSync(ALMANAC_CACHE_DIR).filter((f) => f.startsWith('almanac-') && f.endsWith('.json'));
+    let removedCount = 0;
+    for (const file of files) {
+      const fullPath = path.join(ALMANAC_CACHE_DIR, file);
+      try {
+        const parsed: AlmanacSummary = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+        const entries = parsed.entries || [];
+        const nytCount = entries.filter((e) => e.id.startsWith('nyt-') || e.source.includes('New York Times')).length;
+        const wikiCount = entries.filter((e) => e.id.startsWith('wiki-') || e.source.includes('Wikipedia')).length;
+        if (nytCount === 0 || wikiCount > 0) {
+          fs.unlinkSync(fullPath);
+          removedCount++;
+        }
+      } catch {
+        try { fs.unlinkSync(fullPath); } catch {}
+      }
+    }
+    if (removedCount > 0) {
+      console.log(`[Almanac] Purged ${removedCount} stale/Wikipedia-tainted or 0-NYT cached almanac file(s).`);
+    }
+  } catch (err) {
+    console.warn('[Almanac] Error checking cached almanac files:', err);
+  }
+}
+
+/**
+ * Prefetches the NYT archive for the selected month (and the previous month if the date is in the first week)
+ * in the background so no break waits on it.
+ */
+export async function prefetchAlmanacForDate(broadcastDate: string): Promise<void> {
+  try {
+    purgeInvalidCachedAlmanacs();
+    const [yearStr, monthStr, dayStr] = broadcastDate.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return;
+
+    console.log(`[Almanac Prefetch] Starting background NYT archive prefetch for ${broadcastDate}...`);
+    await getReducedMonthlyArchive(year, month);
+    if (day <= 7) {
+      const prevYear = month === 1 ? year - 1 : year;
+      const prevMonth = month === 1 ? 12 : month - 1;
+      await getReducedMonthlyArchive(prevYear, prevMonth);
+    }
+    await getOrBuildAlmanac(broadcastDate);
+    console.log(`[Almanac Prefetch] Background NYT almanac ready for ${broadcastDate}.`);
+  } catch (err: any) {
+    console.warn(`[Almanac Prefetch] Warning during background prefetch for ${broadcastDate}: ${err?.message}`);
+  }
+}
+
 /**
  * Builds or retrieves the historical almanac for a specific date.
+ * Strictly uses New York Times Archive as the ONLY news source (never Wikipedia year/month lists).
+ * Never permanently caches an almanac file with 0 NYT articles if the fetch failed or was rate-limited.
  */
 export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacSummary> {
   fs.mkdirSync(ALMANAC_CACHE_DIR, { recursive: true });
+  purgeInvalidCachedAlmanacs();
+
+  if (inMemoryAlmanacCache.has(broadcastDate)) {
+    return inMemoryAlmanacCache.get(broadcastDate)!;
+  }
+
   const cachePath = path.join(ALMANAC_CACHE_DIR, `almanac-${broadcastDate}.json`);
 
   if (fs.existsSync(cachePath)) {
     try {
       const cached: AlmanacSummary = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-      return cached;
+      const entries = cached.entries || [];
+      const nytCount = entries.filter((e) => e.id.startsWith('nyt-') || e.source.includes('New York Times')).length;
+      const wikiCount = entries.filter((e) => e.id.startsWith('wiki-') || e.source.includes('Wikipedia')).length;
+      if (nytCount > 0 && wikiCount === 0) {
+        inMemoryAlmanacCache.set(broadcastDate, cached);
+        return cached;
+      } else {
+        // Delete stale almanac that had 0 NYT items or Wikipedia news items
+        try { fs.unlinkSync(cachePath); } catch {}
+      }
     } catch (e) {}
   }
 
@@ -570,23 +856,35 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10);
   const day = parseInt(dayStr, 10);
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  const monthName = monthNames[month - 1];
 
   const entries: AlmanacEntry[] = [];
+  let nytFetchSucceeded = false;
 
-  // 1. Process NYT archive items for the month
-  const nytFilePath = path.join(process.cwd(), 'cache', 'nyt', `${yearStr}-${monthStr}.json`);
-  if (fs.existsSync(nytFilePath)) {
+  // 1. Fetch or load NYT archive items for the selected month (and previous month if in the first week of the month)
+  const allRawArticles: ReducedNYTArticle[] = [];
+  const primaryRes = await getReducedMonthlyArchive(year, month);
+  if (primaryRes.status === 'OK' || primaryRes.status === 'CACHED') {
+    if (primaryRes.articles.length > 0) {
+      nytFetchSucceeded = true;
+      allRawArticles.push(...primaryRes.articles);
+    }
+  } else {
+    console.warn(`[Almanac] NYT fetch for ${yearStr}-${monthStr} returned status=${primaryRes.status}: ${primaryRes.error || 'unavailable'}. Will not cache empty almanac.`);
+  }
+
+  if (day <= 7) {
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevRes = await getReducedMonthlyArchive(prevYear, prevMonth);
+    if ((prevRes.status === 'OK' || prevRes.status === 'CACHED') && prevRes.articles.length > 0) {
+      allRawArticles.push(...prevRes.articles);
+    }
+  }
+
+  if (allRawArticles.length > 0) {
     try {
-      const nytRaw = JSON.parse(fs.readFileSync(nytFilePath, 'utf8'));
-      const articles = nytRaw.articles || [];
-
-      for (let i = 0; i < articles.length; i++) {
-        const a = articles[i];
+      for (let i = 0; i < allRawArticles.length; i++) {
+        const a = allRawArticles[i];
         if (!a.pubDate || a.pubDate > broadcastDate) continue;
 
         // Skip letters to the editor, corrections, and general opinion/critique pieces
@@ -606,12 +904,35 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
           continue;
         }
 
-        const isFrontPage = a.printSection === '1' && (a.printPage === '1' || a.printPage === 'A1');
+        const mockDoc = {
+          headline: { main: a.headline },
+          abstract: a.abstract,
+          lead_paragraph: a.leadParagraph,
+          snippet: a.snippet,
+          print_section: a.printSection,
+          print_page: a.printPage,
+          news_desk: a.desk,
+          section_name: a.section,
+          type_of_material: a.typeOfMaterial,
+          keywords: (a.keywords || []).map((k: string) => ({ name: 'subject', value: k })),
+        };
+        const natResult = evaluateNYTNationalFocus(mockDoc);
+        if (!natResult.keep) continue;
+
+        const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
         const { sectionName, category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage);
 
-        // Ensure 2-4 sentences summary
+        // Combine abstract, leadParagraph, and snippet for rich verified material
         const headline = a.headline || 'Historical Report';
-        let rawSummaryText = a.abstract || a.leadParagraph || '';
+        const parts: string[] = [];
+        if (a.abstract && a.abstract.trim().length > 15) parts.push(a.abstract.trim());
+        if (a.leadParagraph && a.leadParagraph.trim().length > 15 && !parts.includes(a.leadParagraph.trim())) {
+          parts.push(a.leadParagraph.trim());
+        }
+        if (a.snippet && a.snippet.trim().length > 15 && !parts.includes(a.snippet.trim())) {
+          parts.push(a.snippet.trim());
+        }
+        let rawSummaryText = parts.join(' ').trim();
         if (!rawSummaryText || rawSummaryText.length < 20) {
           rawSummaryText = headline;
         }
@@ -635,6 +956,7 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         const summary = sentences.join(' ');
 
         const interestScore = scoreItemInterest(headline, summary, category);
+        if (interestScore < 50) continue;
 
         entries.push({
           id: `nyt-${a.pubDate}-${i}`,
@@ -644,6 +966,9 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
           section: sectionName,
           headline,
           summary,
+          abstract: a.abstract || undefined,
+          leadParagraph: a.leadParagraph || undefined,
+          snippet: a.snippet || undefined,
           category,
           verbatimSentences: sentences,
           interestScore,
@@ -654,118 +979,7 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
     }
   }
 
-  // 2. Process Wikipedia Month page (e.g. "May 1982")
-  const monthPageTitle = `${monthName}_${year}`;
-  const monthWikitext = await fetchWikiPageWikitext(monthPageTitle);
-  if (monthWikitext) {
-    const monthEntries = parseMonthPageEvents(monthWikitext, year, month, day);
-    entries.push(...monthEntries);
-  }
-
-  // 3. Process Wikipedia Year lists ("YYYY in music", "YYYY in film", "YYYY in television", "YYYY in sports")
-  const yearTopics: Array<{ topic: string; category: AlmanacEntry['category']; section: string }> = [
-    { topic: 'music', category: 'music', section: 'Music News' },
-    { topic: 'film', category: 'movies', section: 'Film & Cinema' },
-    { topic: 'television', category: 'television', section: 'Television' },
-    { topic: 'sports', category: 'sports', section: 'Sports' },
-  ];
-
-  for (const yt of yearTopics) {
-    const pageTitle = `${year}_in_${yt.topic}`;
-    const wikitext = await fetchWikiPageWikitext(pageTitle);
-    if (!wikitext) continue;
-
-    // Split wikitext into top-level sections (== Section ==) to handle == Births == and == Deaths ==
-    const sectionSplits = listWikitextSections(wikitext);
-
-    for (const sec of sectionSplits) {
-      const headingLower = sec.heading.toLowerCase();
-
-      // Rule 4: Exclude births by Wikipedia section heading (Births, Deaths), not by text.
-      if (headingLower.includes('birth')) {
-        continue;
-      }
-
-      const isDeathSection = headingLower.includes('death');
-
-      // Look for dated entries matching "Month Day" on or before broadcastDate
-      // e.g. "* [[April 19]] – 38 Special releases their studio album Special Forces..."
-      const datePattern = new RegExp(`(?:\\*|;)\\s*(?:\\[\\[)?([A-Za-z]+)\\s+(\\d{1,2})(?:\\]\\])?\\s*[-–—:]\\s*([^\\n]+)`, 'g');
-      let match: RegExpExecArray | null;
-      let idx = 0;
-      while ((match = datePattern.exec(sec.body)) !== null) {
-        const entryMonth = match[1];
-        const entryDay = parseInt(match[2], 10);
-        const mIdx = monthNames.findIndex((m) => m.toLowerCase() === entryMonth.toLowerCase());
-        if (mIdx === -1) continue;
-
-        const mNum = mIdx + 1;
-        const formattedEntryDate = `${year}-${String(mNum).padStart(2, '0')}-${String(entryDay).padStart(2, '0')}`;
-        if (formattedEntryDate > broadcastDate) continue;
-
-        const clean = cleanWikiText(match[3]);
-        if (clean.length < 25) continue;
-
-        // Rule 2 & 4: Allow a death only for a prominent musician or public figure,
-        // and strictly if it happened at least 1 day before the broadcast date (formattedEntryDate < broadcastDate)
-        if (isDeathSection) {
-          if (formattedEntryDate >= broadcastDate) continue;
-          const { isProminent } = isBirthOrDeathEntry(clean, yt.topic);
-          if (!isProminent) continue;
-        }
-
-        // Split strictly into verbatim sentences
-        let verbatim = splitVerbatimSentences(clean);
-        if (verbatim.length === 0) continue;
-
-        // Fix Grammy / Award Song of the Year attribution if found:
-        // Song of the Year is an award for songwriters, not performers
-        verbatim = verbatim.map((s) => {
-          let fixed = s;
-          // E.g. Barbra Streisand's "The Way We Were" wins Song of the Year -> songwriters Marvin Hamlisch and Alan & Marilyn Bergman win Song of the Year for "The Way We Were"
-          if (/Barbra Streisand's\s+"The Way We Were"\s+wins\s+(?:Grammy Award for\s+)?Song of the Year/i.test(fixed)) {
-            fixed = fixed.replace(/Barbra Streisand's\s+"The Way We Were"\s+wins\s+(?:Grammy Award for\s+)?Song of the Year/i, 'songwriters Marvin Hamlisch and Alan and Marilyn Bergman win Song of the Year for "The Way We Were"');
-          }
-          // Contextualize major ceremonies/events with date if missing
-          // e.g., "The 17th Annual Grammy Awards are presented in New York" -> "At the 17th Annual Grammy Awards on March 1, 1975 in New York,"
-          if (/^The (\d+(?:st|nd|rd|th)? Annual [^,]+ Awards) are presented in ([^,.]+)/i.test(fixed)) {
-            const dateStr = `${entryMonth} ${entryDay}, ${year}`;
-            fixed = fixed.replace(/^The (\d+(?:st|nd|rd|th)? Annual [^,]+ Awards) are presented in ([^,.]+)/i, `At the $1 on ${dateStr} in $2,`);
-          }
-          return fixed;
-        });
-
-        // Rule 2: Written as "died", never reworded or phrased as celebration of birthday
-        let sentences = verbatim.slice(0, 4);
-        if (isDeathSection) {
-          sentences = sentences.map((s) => {
-            // Ensure death facts are phrased as "died"
-            return s.replace(/\b(?:passed away|dead at|died at)\b/gi, 'died');
-          });
-        }
-        const firstSentence = sentences[0];
-        const headline = firstSentence.length > 80 ? firstSentence.slice(0, 80) + '...' : firstSentence;
-        const summary = sentences.join(' ');
-
-        const interestScore = scoreItemInterest(headline, summary, yt.category);
-
-        entries.push({
-          id: `wiki-${yt.topic}-${formattedEntryDate}-${idx++}`,
-          printDate: formattedEntryDate,
-          eventDate: formattedEntryDate,
-          source: `Wikipedia ${year} in ${yt.topic}`,
-          section: isDeathSection ? 'Milestones' : yt.section,
-          headline,
-          summary,
-          category: yt.category,
-          verbatimSentences: sentences,
-          interestScore,
-        });
-      }
-    }
-  }
-
-  // Compile summary counts
+  // Compile summary counts (NYT is the ONLY news source; Wikipedia year/month lists are excluded)
   const byCategory: Record<string, number> = {};
   const bySection: Record<string, number> = {};
   for (const entry of entries) {
@@ -781,10 +995,16 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
     entries,
   };
 
-  try {
-    fs.writeFileSync(cachePath, JSON.stringify(result, null, 2), 'utf8');
-  } catch (err) {
-    console.warn(`[Almanac] Failed to cache almanac for ${broadcastDate}:`, err);
+  // Only cache an almanac on disk and in memory if the NYT fetch succeeded and produced NYT entries
+  if (nytFetchSucceeded && entries.length > 0) {
+    inMemoryAlmanacCache.set(broadcastDate, result);
+    try {
+      fs.writeFileSync(cachePath, JSON.stringify(result, null, 2), 'utf8');
+    } catch (err) {
+      console.warn(`[Almanac] Failed to cache almanac for ${broadcastDate}:`, err);
+    }
+  } else {
+    console.warn(`[Almanac] Skipping disk cache for ${broadcastDate} (nytFetchSucceeded=${nytFetchSucceeded}, entries=${entries.length}).`);
   }
 
   return result;

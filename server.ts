@@ -37,7 +37,7 @@ import {
   computeSongChartStatusFact,
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
-import { getOrBuildAlmanac, resolveRelativeTimeWords } from './src/services/news/almanacService.js';
+import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs } from './src/services/news/almanacService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
@@ -419,9 +419,19 @@ async function startServer() {
     }
   });
 
-  // API Route: Trigger background prefetch for news (Cleaned up - old news writer removed)
+  // Purge any stale or Wikipedia-tainted cached almanac files at startup
+  purgeInvalidCachedAlmanacs();
+
+  // API Route: Trigger background prefetch for NYT archive & almanac at session start
   app.post('/api/news/prefetch', async (req, res) => {
-    return res.json({ success: true, message: 'Legacy news prefetch removed. Segment pipeline active.' });
+    const targetDate = req.body?.targetDate || req.body?.selectedDate;
+    if (targetDate && typeof targetDate === 'string') {
+      // Fire and forget in the background so no break waits on it
+      prefetchAlmanacForDate(targetDate).catch((err) => {
+        console.warn(`[API /api/news/prefetch] Background prefetch error for ${targetDate}:`, err);
+      });
+    }
+    return res.json({ success: true, message: 'NYT background prefetch started.' });
   });
 
   // API Route: Poll status of news prefetch (Cleaned up - old news writer removed)
@@ -1240,11 +1250,18 @@ async function startServer() {
       const prevTitle = prevSong?.title || 'none';
       const nextTitle = nextSong?.title || 'none';
 
+      const nytFunnel = getNYTFunnelDiagnostics(selectedDate);
+
       // If roll did not pass frequency check, log and return silence
       if (!rollPassed) {
         const elapsedMs = Date.now() - startTime;
         const candidatesSummary = allEvaluatedSummary.join(' ');
         const reasonStr = `roll exceeded frequency threshold (${roll.toFixed(2)} > ${freqSetting.toFixed(2)}) [preset=${freqPreset || 'custom'}, source=${freqSource}]`;
+        console.log(`[DJ Break Diagnostics] 1. SelectedDate=${selectedDate} ChosenType=silence Why="${reasonStr}"`);
+        console.log(`[DJ Break Diagnostics] 2. NewsPath: fetchAttempted=${nytFunnel.fetchAttempted} httpStatus="${nytFunnel.httpStatus}" rateLimited=${nytFunnel.rateLimited} errored=${nytFunnel.errored} totalArticles=${nytFunnel.totalArticlesReturned} fromCache=${nytFunnel.fromCache}`);
+        console.log(`[DJ Break Diagnostics] 3. FilterFunnel: total=${nytFunnel.totalArticlesReturned} -> dateEligible=${nytFunnel.afterDateEligibility} -> nationalFocus=${nytFunnel.afterNationalFocusFilter} -> interestThreshold=${nytFunnel.afterInterestScoringThreshold} | topRejected=${JSON.stringify(nytFunnel.topRejectedItems.slice(0, 3))}`);
+        console.log(`[DJ Break Diagnostics] 4. ValidatorAudit: newsDraftWritten=false rejected=N/A reason="N/A"`);
+        console.log(`[DJ Break Diagnostics] 5. NewsSkippedReason: frequency setting (${reasonStr})`);
         console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="${reasonStr}"`);
         return res.json({
           decision: 'silence',
@@ -1264,6 +1281,7 @@ async function startServer() {
             nextSong: nextTitle,
             candidatesSummary: allEvaluatedSummary,
             fellThroughReasons,
+            nytFunnel,
           },
         });
       }
@@ -1272,6 +1290,7 @@ async function startServer() {
       let finalSpeech = '';
       let validatorResult = 'N/A';
       let auditResult = 'N/A';
+      const newsDraftAttempts: Array<{ type: string; key: string; rejected: boolean; reason: string }> = [];
 
       // Latency check: Give each song change a total budget of about 25 seconds across candidates,
       // and on timeout use the best ready break. A break that takes over 30 seconds must be logged as "not ready".
@@ -1504,6 +1523,9 @@ async function startServer() {
                 });
 
                 if (finalVal.valid) {
+                  if (cand.type === 'major_news' || cand.type === 'music_news') {
+                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
+                  }
                   chosenCandidate = cand;
                   finalSpeech = scriptText;
                   validatorResult = 'PASS';
@@ -1511,6 +1533,9 @@ async function startServer() {
                   break categoryLoop;
                 } else {
                   const failReason = `post-handoff validator rejected: ${finalVal.rejectedReason}`;
+                  if (cand.type === 'major_news' || cand.type === 'music_news') {
+                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                  }
                   cand.failureReason = failReason;
                   fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
                   if (itemKey) {
@@ -1522,6 +1547,9 @@ async function startServer() {
                 const failReason = !valResult?.valid
                   ? `validator rejected: ${valResult?.rejectedReason}`
                   : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+                if (cand.type === 'major_news' || cand.type === 'music_news') {
+                  newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                }
                 cand.failureReason = failReason;
                 fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
 
@@ -1533,6 +1561,9 @@ async function startServer() {
               }
             } else {
               const failReason = 'script generation returned empty';
+              if (cand.type === 'major_news' || cand.type === 'music_news') {
+                newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+              }
               cand.failureReason = failReason;
               fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
               if (itemKey) {
@@ -1542,6 +1573,9 @@ async function startServer() {
             }
           } catch (err: any) {
             const failReason = `generation error: ${err?.message}`;
+            if (cand.type === 'major_news' || cand.type === 'music_news') {
+              newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+            }
             cand.failureReason = failReason;
             fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
             if (itemKey) {
@@ -1765,6 +1799,37 @@ async function startServer() {
         ? undefined
         : `All candidates rejected: ${fellThroughReasons.join('; ') || 'No eligible candidates'}`;
 
+      // Step 1 Diagnostic Console Logging (5 required fields for every DJ break)
+      const chosenTypeStr = chosenCandidate?.type || 'silence';
+      let whyChosenStr = '';
+      if (chosenTypeStr === 'next_song_story') {
+        whyChosenStr = `Strict priority order in server.ts evaluates next_song_story first (score=110, facts=${factCount}>=3) and ignores lastTopic="${lastTopic || 'none'}", starving music_news (${musicNewsCandidates.length}) and major_news (${majorNewsCandidates.length})`;
+      } else if (chosenTypeStr === 'music_news' || chosenTypeStr === 'major_news') {
+        const src = chosenCandidate?.packet?.facts?.[0]?.source || 'unknown';
+        whyChosenStr = `next_song_story was not ready (${songStoryCandidate.failureReason || 'failed'}), fell through to ${chosenTypeStr} [source=${src}]`;
+      } else {
+        whyChosenStr = `Fallback to ${chosenTypeStr} (${fellThroughReasons.join('; ') || 'higher-priority queues empty'})`;
+      }
+
+      let newsSkippedReason = 'N/A (news was selected)';
+      if (chosenTypeStr !== 'major_news' && chosenTypeStr !== 'music_news') {
+        if (chosenTypeStr === 'next_song_story') {
+          newsSkippedReason = `Selection priority: candidateQueues evaluates next_song_story before news with no rotation; next_song_story passed on attempt 1 so news queues were never reached`;
+        } else if (nytFunnel.totalArticlesReturned === 0) {
+          newsSkippedReason = `Missing NYT data: getOrBuildAlmanac only checks disk cache (cache/nyt/${nytFunnel.monthFile}) and never calls NYT Archive API`;
+        } else if (newsDraftAttempts.length > 0) {
+          newsSkippedReason = `Validator/audit rejected all ${newsDraftAttempts.length} news draft(s): ${newsDraftAttempts.map(a => `${a.type}(${a.key}): ${a.reason}`).join(' | ')}`;
+        } else {
+          newsSkippedReason = `No eligible news candidates remained (${fellThroughReasons.join('; ')})`;
+        }
+      }
+
+      console.log(`[DJ Break Diagnostics] 1. SelectedDate=${selectedDate} ChosenType=${chosenTypeStr} Why="${whyChosenStr}"`);
+      console.log(`[DJ Break Diagnostics] 2. NewsPath: fetchAttempted=${nytFunnel.fetchAttempted} httpStatus="${nytFunnel.httpStatus}" rateLimited=${nytFunnel.rateLimited} errored=${nytFunnel.errored} totalArticles=${nytFunnel.totalArticlesReturned} fromCache=${nytFunnel.fromCache}`);
+      console.log(`[DJ Break Diagnostics] 3. FilterFunnel: total=${nytFunnel.totalArticlesReturned} -> dateEligible=${nytFunnel.afterDateEligibility} -> nationalFocus=${nytFunnel.afterNationalFocusFilter} -> interestThreshold=${nytFunnel.afterInterestScoringThreshold} (almanac major_news=${nytFunnel.almanacAcceptedMajorNews}, music_news=${nytFunnel.almanacAcceptedMusicNews}) | topRejected=${JSON.stringify(nytFunnel.topRejectedItems.slice(0, 3))}`);
+      console.log(`[DJ Break Diagnostics] 4. ValidatorAudit: newsDraftWritten=${newsDraftAttempts.length > 0} attempts=${JSON.stringify(newsDraftAttempts)}`);
+      console.log(`[DJ Break Diagnostics] 5. NewsSkippedReason: ${newsSkippedReason}`);
+
       if (chosenCandidate?.type === 'plain_intro') {
         console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus} reason="every other candidate failed"${failureReasonLog}`);
       } else if (chosenCandidate) {
@@ -1806,6 +1871,9 @@ async function startServer() {
           nextSong: nextTitle,
           candidatesSummary: allEvaluatedSummary,
           fellThroughReasons,
+          nytFunnel,
+          newsDraftAttempts,
+          newsSkippedReason,
         },
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,

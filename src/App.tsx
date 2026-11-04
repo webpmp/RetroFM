@@ -1091,6 +1091,11 @@ export default function App() {
         setIsLibraryLoaded(true);
         if (activeDateRef.current) {
           logStationPools(activeDateRef.current, lib);
+          fetch('/api/news/prefetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetDate: activeDateRef.current }),
+          }).catch(() => {});
         }
       })
       .catch((err) => {
@@ -1802,6 +1807,13 @@ export default function App() {
             const targetDate = action.date || activeDateRef.current;
             const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
 
+            // Prefetch NYT archive month (and previous month if in first week) in the background at session start
+            fetch('/api/news/prefetch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targetDate }),
+            }).catch(() => {});
+
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
             varietyStateRef.current = newVarietyState();
@@ -1856,6 +1868,11 @@ export default function App() {
           case 'REQUEST_DATE_STATIONS': {
             if (action.date) {
               activeDateRef.current = action.date;
+              fetch('/api/news/prefetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetDate: action.date }),
+              }).catch(() => {});
               if (typeof action.decade === 'number') {
                 activeDecadeRef.current = action.decade;
               }
