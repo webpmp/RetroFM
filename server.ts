@@ -1144,6 +1144,7 @@ async function startServer() {
             snippet: entry.snippet,
             section: entry.section,
             printDate: entry.printDate,
+            isFrontPage: entry.section === 'Front Page',
             targetSongTitle: nextSong?.title,
             targetSongArtist: nextSong?.artist,
             facts: subFacts,
@@ -1177,6 +1178,7 @@ async function startServer() {
             snippet: entry.snippet,
             section: entry.section,
             printDate: entry.printDate,
+            isFrontPage: entry.section === 'Front Page',
             targetSongTitle: nextSong?.title,
             targetSongArtist: nextSong?.artist,
             facts: subFacts,
@@ -1353,6 +1355,27 @@ async function startServer() {
       let auditResult = 'N/A';
       const newsDraftAttempts: Array<{ type: string; key: string; rejected: boolean; reason: string }> = [];
 
+      // Single source of truth for writer input. News packets never carry the next song's title (4f).
+      const buildWriterInput = (packet: any, failureReason?: string) => {
+        const isNewsPacket = packet.topic === 'major_news' || packet.topic === 'music_news';
+        return {
+          targetDate: selectedDate,
+          personality: 'mike' as const,
+          topic: packet.topic,
+          topicTitle: packet.topicTitle,
+          targetSongTitle: isNewsPacket ? undefined : packet.targetSongTitle,
+          targetSongArtist: isNewsPacket ? undefined : packet.targetSongArtist,
+          facts: packet.facts,
+          isFrontPage: packet.isFrontPage,
+          timePhrase: packet.timePhrase,
+          headline: packet.headline,
+          section: packet.section,
+          articleDate: packet.printDate,
+          failureReason,
+          allowRetroFm,
+        };
+      };
+
       // Evaluate categories in order, capping at 3 attempts per category.
       // Give each candidate its own time budget via the provider timeout rather than a shared 25s cutoff
       // that would starve later categories when an earlier candidate fails slowly.
@@ -1376,16 +1399,7 @@ async function startServer() {
             // Attempt 1: Initial LLM Generation
             const tWriterStart = Date.now();
             if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
-              const scriptRes = await writer.writeSegmentBreakScript({
-                targetDate: selectedDate,
-                personality: 'mike',
-                topic: packet.topic,
-                topicTitle: packet.topicTitle,
-                targetSongTitle: packet.targetSongTitle,
-                targetSongArtist: packet.targetSongArtist,
-                facts: packet.facts,
-                allowRetroFm,
-              });
+              const scriptRes = await writer.writeSegmentBreakScript(buildWriterInput(packet));
               if (scriptRes.success && scriptRes.scriptText) {
                 scriptText = scriptRes.scriptText;
                 unsupportedClaims = scriptRes.unsupportedClaims || [];
@@ -1429,17 +1443,7 @@ async function startServer() {
 
                 if (writer.writeSegmentBreakScript) {
                   const tRegenStart = Date.now();
-                  const regenRes = await writer.writeSegmentBreakScript({
-                    targetDate: selectedDate,
-                    personality: 'mike',
-                    topic: packet.topic,
-                    topicTitle: packet.topicTitle,
-                    targetSongTitle: packet.targetSongTitle,
-                    targetSongArtist: packet.targetSongArtist,
-                    facts: packet.facts,
-                    failureReason: `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`,
-                    allowRetroFm,
-                  });
+                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`));
                   if (regenRes.success && regenRes.scriptText) {
                     scriptText = regenRes.scriptText;
                     unsupportedClaims = regenRes.unsupportedClaims || [];
@@ -1501,17 +1505,7 @@ async function startServer() {
                   // Fewer than 2 supported sentences remain: regenerate once with exact unsupported claims in prompt
                   if (writer.writeSegmentBreakScript) {
                     const exactAuditClaims = unsupportedClaims.join('; ');
-                    const regenRes = await writer.writeSegmentBreakScript({
-                      targetDate: selectedDate,
-                      personality: 'mike',
-                      topic: packet.topic,
-                      topicTitle: packet.topicTitle,
-                      targetSongTitle: packet.targetSongTitle,
-                      targetSongArtist: packet.targetSongArtist,
-                      facts: packet.facts,
-                      failureReason: `UNSUPPORTED CLAIMS: ${exactAuditClaims}. Use ONLY the stated facts. Do NOT write a song handoff.`,
-                      allowRetroFm,
-                    });
+                    const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, `UNSUPPORTED CLAIMS: ${exactAuditClaims}. Use ONLY the stated facts. Do NOT write a song handoff.`));
                     if (regenRes.success && regenRes.scriptText) {
                       scriptText = regenRes.scriptText;
                       unsupportedClaims = regenRes.unsupportedClaims || [];

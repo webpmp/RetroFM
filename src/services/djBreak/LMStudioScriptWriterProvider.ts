@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import { chooseNewsHook, prependHook } from './newsHooks.js';
 import {
   ScriptWriterProvider,
   BreakGeneratorInput,
@@ -935,26 +936,6 @@ Respond strictly with JSON schema:
           'Here is the history behind this sound.',
         ];
         hook = SONG_OPENERS[seed % SONG_OPENERS.length];
-      } else if (input.topic === 'music_news') {
-        const MUSIC_NEWS_OPENERS = [
-          'In music news this week,',
-          'Across the music world,',
-          'From the music wires,',
-          'In the headlines across the music scene,',
-          'Turning to the music beat this week,',
-          'Checking the news wire in music,',
-        ];
-        hook = MUSIC_NEWS_OPENERS[seed % MUSIC_NEWS_OPENERS.length];
-      } else if (input.topic === 'major_news') {
-        const NEWS_OPENERS = [
-          'The Times reports this week,',
-          'In national news,',
-          'From the front pages of The Times,',
-          'Across the country this week,',
-          'In headlines from The Times,',
-          'Checking the national news wire,',
-        ];
-        hook = NEWS_OPENERS[seed % NEWS_OPENERS.length];
       } else if (input.topic === 'sports') {
         const SPORTS_OPENERS = [
           'In sports action,',
@@ -963,6 +944,11 @@ Respond strictly with JSON schema:
         ];
         hook = SPORTS_OPENERS[seed % SPORTS_OPENERS.length];
       }
+    }
+
+    // News hooks are chosen by code: a front-page hook only when the article ran on page 1 / section A.
+    if (input.topic === 'major_news' || input.topic === 'music_news') {
+      hook = chooseNewsHook(input.topic, input.isFrontPage, seed);
     }
 
     const systemPromptStep1 = `You are ${persona.name}, a genuine Top 40 radio DJ broadcasting on ${fullDateSpoken}.
@@ -988,7 +974,7 @@ STRICT STYLE RULES:
 7. Use full artist and person names at least once (e.g. "P.M. Dawn", "C.C. Lemonhead", "Robin S.", "Jay Ski", "Mr. Big", "R.E.M."). Never truncate names.
 8. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
 9. No hindsight language (never say what a song "went on to do" or "later became").
-10. If the hook is given, open with it; otherwise jump right into the first fact.
+10. Start immediately with the first fact. Never write an opener phrase.
 11. NEVER write a song handoff or announce the upcoming track title. The station automation adds the upcoming song hand-off by code.
 12. Fix punctuation: never leave double periods (..) after abbreviations, and never capitalize after a comma unless it is a proper name.`;
 
@@ -998,7 +984,7 @@ STRICT STYLE RULES:
 
     const userPromptStep1 = `FACT SHEET:
 ${factLines}
-${hook ? `CHOSEN HOOK: "${hook}"` : `CHOSEN HOOK: None (start immediately with the facts)`}${failureCorrection}
+OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
 
 TASK:
 Write the complete spoken radio segment monologue following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
@@ -1044,7 +1030,7 @@ Write the complete spoken radio segment monologue following all rules. Output ON
 
     if (!rawDraft) {
       // Fallback: build natural script from facts
-      rawDraft = `${hook ? hook + ' ' : ''}${factItems.map(f => f.text).join(' ')}`.trim();
+      rawDraft = factItems.map(f => f.text).join(' ').trim();
     }
 
     // Fix comma capitalization bug
@@ -1162,7 +1148,9 @@ VERDICTS:`;
       finalSentences.pop();
     }
 
-    const finalScript = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    const auditedBody = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    // Code-added hook is prepended only after the audit, so it is never audited as a model claim.
+    const finalScript = prependHook(hook, auditedBody);
 
     const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
     return {
