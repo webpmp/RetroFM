@@ -35,6 +35,16 @@ export interface SegmentValidationContext {
   selectedDate: string; // YYYY-MM-DD
   factPacket: {
     topic?: string;
+    topicTitle?: string;
+    headline?: string;
+    abstract?: string;
+    leadParagraph?: string;
+    snippet?: string;
+    section?: string;
+    desk?: string;
+    printDate?: string;
+    timePhrase?: string;
+    isFrontPage?: boolean;
     facts: Array<{ text: string; source?: string; date?: string; eventDate?: string; printDate?: string }>;
     targetSongTitle?: string;
     targetSongArtist?: string;
@@ -638,16 +648,23 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // 6. Grounding: Build permissible corpus from packet facts, song metadata, and artist metadata
+  // 6. Grounding: Build permissible corpus from packet facts, NYT headline/abstract/lead/section, song metadata, and artist metadata
   const packetFactTexts = context.factPacket.facts.map((f) => `${f.text} ${f.source || ''}`).join(' ');
   const corpus = [
     packetFactTexts,
+    context.factPacket.topicTitle || '',
+    context.factPacket.headline || '',
+    context.factPacket.abstract || '',
+    context.factPacket.leadParagraph || '',
+    context.factPacket.snippet || '',
+    context.factPacket.section || '',
+    context.factPacket.desk || '',
     context.factPacket.targetSongTitle || '',
     context.factPacket.targetSongArtist || '',
     context.selectedDate,
     'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
     'first', 'second', 'third', 'fourth', 'fifth',
-    'billboard', 'hot 100', 'top 40', 'radio', 'times', 'news',
+    'billboard', 'hot 100', 'top 40', 'radio', 'times', 'news', 'york', 'new york',
     'us', 'u.s.', 'usa', 'u.s.a.', 'uk', 'u.k.', 'britain', 'british', 'america', 'american', 'england', 'english'
   ].join(' ').toLowerCase();
 
