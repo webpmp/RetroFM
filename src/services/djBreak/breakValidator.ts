@@ -159,8 +159,14 @@ export function validateSegmentBreakOutput(
   // 3a4. Incomplete sentence check (e.g. bare artist name like "Ray Parker Jr." on its own)
   // Split also on periods before capitalized sentence starters to catch bare names ending with abbreviations like "Jr."
   const splitCandidateSentences = (text: string): string[] => {
-    const raw = text.split(/(?<=[.!?])\s+(?=[A-Z])/);
-    return raw.map(s => s.trim()).filter(Boolean);
+    // Protect periods after initials, titles/abbreviations, and numbers so they never split a sentence
+    let s = text;
+    s = s.replace(/\bU\.S\.(A\.)?/g, (m) => m.replace(/\./g, '§D§'));
+    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|Gov|No|Vol|Inc|Corp|Co|Mt|Ft)\./g, '$1§D§');
+    s = s.replace(/\b([A-Z])\./g, '$1§D§');
+    s = s.replace(/\b(\d+)\.(?=\s)/g, '$1§D§');
+    const raw = s.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    return raw.map((p) => p.replace(/§D§/g, '.').trim()).filter(Boolean);
   };
   const allSentences = splitCandidateSentences(trimmed);
   for (const s of allSentences) {
