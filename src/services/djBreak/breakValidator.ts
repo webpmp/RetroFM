@@ -420,6 +420,22 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 7b. Reject invented recency phrases like "in recent days" unless explicitly present in the source fact packet
+  if (/\b(?:in recent days|in recent weeks|in recent months)\b/i.test(trimmed)) {
+    const packetFacts = context.factPacket?.facts || [];
+    const inPacket = packetFacts.some((f: any) => {
+      const txt = typeof f === 'string' ? f : (f.text || f.factText || '');
+      return /\b(?:in recent days|in recent weeks|in recent months)\b/i.test(txt);
+    });
+    if (!inPacket) {
+      return {
+        valid: false,
+        rejectedReason: 'Contains invented recency ("in recent days/weeks") not present in fact packet',
+        sanitizedText: '',
+      };
+    }
+  }
+
   // 3b. Check freshness and relative time words
   // "this week", "this Friday", "tonight", "today", "last night", "this morning" etc.
   // Rule: A relative word is allowed only if the event date is within 7 days before the broadcast date

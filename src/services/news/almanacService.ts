@@ -148,7 +148,7 @@ export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnos
         rawSummaryText = headline;
       }
       const strippedSummary = stripEvaluativeClauses(rawSummaryText);
-      const { text: resolvedSummary } = resolveRelativeTimeWords(strippedSummary, a.pubDate);
+      const { text: resolvedSummary } = resolveRelativeTimeWords(strippedSummary, a.pubDate, broadcastDate);
       let sentences = splitVerbatimSentences(resolvedSummary).filter((s) => s.length > 20);
       if (sentences.length === 0) {
         rejected.push({ pubDate, headline, reason: 'summary_too_short (<20 chars per sentence)' });
@@ -339,7 +339,7 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
  * - "yesterday" = day before filing date (print date minus 2 days)
  * - "this week" = this past week
  */
-export function resolveRelativeTimeWords(text: string, printDate: string): { text: string; eventDate: string; converted: boolean } {
+export function resolveRelativeTimeWords(text: string, printDate: string, broadcastDate?: string): { text: string; eventDate: string; converted: boolean } {
   if (!text || !printDate) return { text: text || '', eventDate: printDate, converted: false };
 
   const [y, m, d] = printDate.split('-').map(Number);
@@ -358,9 +358,41 @@ export function resolveRelativeTimeWords(text: string, printDate: string): { tex
   const dayBeforeFilingD = new Date(Date.UTC(y, m - 1, d - 2));
   const dayBeforeFilingDay = WEEKDAY_NAMES[dayBeforeFilingD.getUTCDay()];
 
+  // day after print date (for "tomorrow" in an advance preview)
+  const dayAfterPrintD = new Date(Date.UTC(y, m - 1, d + 1));
+  const dayAfterPrintDateStr = dayAfterPrintD.toISOString().slice(0, 10);
+
   let updated = text;
   let converted = false;
   let eventDate = filingDateStr;
+
+  // 7b: Convert source relative-day words relative to the broadcast date:
+  // e.g., article on 1985-07-12 says "tomorrow's Live Aid concert"; on 1985-07-13 broadcast it is "today's" or "tonight's"
+  if (broadcastDate && broadcastDate === dayAfterPrintDateStr) {
+    if (/\btomorrow\b/i.test(updated)) {
+      updated = updated.replace(/\btomorrow\b/gi, 'today');
+      eventDate = broadcastDate;
+      converted = true;
+    }
+  } else if (broadcastDate && broadcastDate === printDate) {
+    if (/\btomorrow\b/i.test(updated)) {
+      updated = updated.replace(/\btomorrow\b/gi, 'tomorrow');
+      eventDate = dayAfterPrintDateStr;
+      converted = true;
+    }
+  } else {
+    // If broadcast date is well after the advance preview event, re-express as absolute weekday or omit "tomorrow's"
+    if (/\btomorrow['’]s\b/i.test(updated)) {
+      updated = updated.replace(/\btomorrow['’]s\b/gi, `the`);
+      eventDate = dayAfterPrintDateStr;
+      converted = true;
+    } else if (/\btomorrow\b/i.test(updated)) {
+      const advanceWeekday = WEEKDAY_NAMES[dayAfterPrintD.getUTCDay()];
+      updated = updated.replace(/\btomorrow\b/gi, `on ${advanceWeekday}`);
+      eventDate = dayAfterPrintDateStr;
+      converted = true;
+    }
+  }
 
   if (/\blast night\b/i.test(updated)) {
     updated = updated.replace(/\blast night\b/gi, `${nightBeforeFilingDay} night`);
@@ -1082,7 +1114,7 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
 
         // Clean evaluative clauses and resolve relative time words against print date
         const strippedSummary = stripEvaluativeClauses(rawSummaryText);
-        const { text: resolvedSummary, eventDate: resolvedDate } = resolveRelativeTimeWords(strippedSummary, a.pubDate);
+        const { text: resolvedSummary, eventDate: resolvedDate } = resolveRelativeTimeWords(strippedSummary, a.pubDate, broadcastDate);
 
         // Split strictly into verbatim sentences without filler additions
         let sentences = splitVerbatimSentences(resolvedSummary).filter((s) => s.length > 20);
