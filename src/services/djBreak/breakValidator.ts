@@ -395,7 +395,16 @@ export function validateSegmentBreakOutput(
       const isChartTopic = context.factPacket?.topic === 'chart' || context.factPacket?.topic === 'chart_story' || context.factPacket?.topic === 'next_song_story';
       const isChartSentence = relWord === 'this week' && isChartTopic;
 
-      if (!isChartSentence) {
+      // 4e: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
+      const pktTimePhrase = (context.factPacket?.timePhrase || '').toLowerCase();
+      const matchesPacketTimePhrase = pktTimePhrase && (
+        relWord === pktTimePhrase ||
+        (pktTimePhrase === 'earlier this week' && relWord === 'this week') ||
+        (pktTimePhrase === 'today' && relWord === 'today') ||
+        (pktTimePhrase === 'yesterday' && relWord === 'yesterday')
+      );
+
+      if (!isChartSentence && !matchesPacketTimePhrase) {
         // Must verify event date is within 7 days before broadcast date and weekday/date matches
         let isEligible = false;
         if (context.selectedDate && context.factPacket?.facts) {

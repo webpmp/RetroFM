@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { computeNewsDateTier } from './src/services/news/relativeTime.js';
 import { GeminiTTSProvider } from './src/services/tts/GeminiTTSProvider.js';
 import { KokoroTTSProvider } from './src/services/tts/KokoroTTSProvider.js';
 import { createZipFromDirectory } from './src/server/zipUtil.js';
@@ -1093,25 +1094,6 @@ async function startServer() {
         };
       }
 
-      // 2. Music News Candidates (Up to 3 distinct items from almanac music category)
-      // Freshness: Must be within 14 days before the broadcast date, unless phrased as a dated past event, at most 1 in 8 breaks.
-      const musicNewsCandidates: CandidateEval[] = [];
-      const bDateMs = new Date(selectedDate + 'T00:00:00Z').getTime();
-
-      const musicAlmanacEntries = (almanac.entries || [])
-        .filter((e) => {
-          if (e.category !== 'music' || isKeyBlocked(`almanac:${e.id}`)) return false;
-          if (!e.eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(e.eventDate)) return false;
-          const eDateMs = new Date(e.eventDate + 'T00:00:00Z').getTime();
-          const diffDays = (bDateMs - eDateMs) / (1000 * 60 * 60 * 24);
-          if (diffDays < 0) return false; // future event
-          if (diffDays <= 14) return true; // recent event within 14 days
-          // If > 14 days, allowed ONLY if rate-limit allows (at most 1 in 8 breaks)
-          return allowMusicNewsPast;
-        })
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 12);
-
       // Helper to strip evaluative/figurative language from review sentences
       const cleanFigurativeSentences = (facts: Array<{ text: string; source: string; printDate?: string; date: string }>) => {
         const FIGURATIVE_PATTERNS = [
@@ -1135,7 +1117,36 @@ async function startServer() {
         return { facts, budget };
       };
 
-      for (const entry of musicAlmanacEntries) {
+      // 4e & 4h: Tiered date window and interest-score ranking for both news categories.
+      // - Restricts both major_news and music_news to 0..7 days (Tier 1 = same day, Tier 2 = 1-3 days, Tier 3 = 4-7 days).
+      // - Older items (>7 days) are dropped; future items are dropped.
+      // - Computes exact relative-time phrase in code ("today", "yesterday", "a couple of days ago", "earlier this week").
+      // - Sorts by tier first (freshest first), then by interestScore descending (best eligible story picked).
+      interface TieredNewsEntry {
+        entry: any;
+        tierInfo: NonNullable<ReturnType<typeof computeNewsDateTier>>;
+      }
+      const selectTieredNewsEntries = (category: 'major_news' | 'music'): TieredNewsEntry[] => {
+        const pool: TieredNewsEntry[] = [];
+        for (const e of (almanac.entries || [])) {
+          if (e.category !== category) continue;
+          if (isKeyBlocked(`almanac:${e.id}`)) continue;
+          const artDate = e.printDate || e.eventDate;
+          if (!artDate) continue;
+          const tierInfo = computeNewsDateTier(artDate, selectedDate);
+          if (!tierInfo) continue; // older than 7 days, or future
+          pool.push({ entry: e, tierInfo });
+        }
+        pool.sort((a, b) => {
+          if (a.tierInfo.tier !== b.tierInfo.tier) return a.tierInfo.tier - b.tierInfo.tier;
+          return (b.entry.interestScore || 50) - (a.entry.interestScore || 50);
+        });
+        return pool;
+      };
+
+      // 2. Music News Candidates
+      const musicNewsCandidates: CandidateEval[] = [];
+      for (const { entry, tierInfo } of selectTieredNewsEntries('music')) {
         const itemKey = `almanac:${entry.id}`;
         let subFacts = splitEntryIntoFacts(entry);
         subFacts = cleanFigurativeSentences(subFacts);
@@ -1161,23 +1172,20 @@ async function startServer() {
             snippet: entry.snippet,
             section: entry.section,
             printDate: entry.printDate,
+            timePhrase: tierInfo.timePhrase,
             isFrontPage: entry.section === 'Front Page',
-            targetSongTitle: nextSong?.title,
-            targetSongArtist: nextSong?.artist,
+            targetSongTitle: undefined,
+            targetSongArtist: undefined,
             facts: subFacts,
             factKeys: [itemKey],
           },
         });
+        if (musicNewsCandidates.length >= 6) break;
       }
 
-      // 3. Major News Candidates (Up to 3 distinct items from almanac major_news category)
+      // 3. Major News Candidates
       const majorNewsCandidates: CandidateEval[] = [];
-      const majorNewsEntries = (almanac.entries || [])
-        .filter((e) => e.category === 'major_news' && !isKeyBlocked(`almanac:${e.id}`))
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 12);
-
-      for (const entry of majorNewsEntries) {
+      for (const { entry, tierInfo } of selectTieredNewsEntries('major_news')) {
         const itemKey = `almanac:${entry.id}`;
         const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
         if (majorMaterial.budget.tooThin) {
@@ -1200,13 +1208,15 @@ async function startServer() {
             snippet: entry.snippet,
             section: entry.section,
             printDate: entry.printDate,
+            timePhrase: tierInfo.timePhrase,
             isFrontPage: entry.section === 'Front Page',
-            targetSongTitle: nextSong?.title,
-            targetSongArtist: nextSong?.artist,
+            targetSongTitle: undefined,
+            targetSongArtist: undefined,
             facts: subFacts,
             factKeys: [itemKey],
           },
         });
+        if (majorNewsCandidates.length >= 6) break;
       }
 
       // 4. Short Fallback Candidates: chart status or credits (1-2 facts short fallback)
