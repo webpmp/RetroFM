@@ -628,8 +628,15 @@ function categorizeNYT(
   // Require: Front page (isFrontPage), OR National/Foreign/Washington desk, OR strong major-news keyword match.
   // Fix 6b: If material type is provided and not News/Brief, exclude from major_news.
   // Exclude local/regional business, real estate, construction, corporate personnel/board, society/births/surgery.
+  // Fix 7g: Exclude feature headline patterns
+  // (e.g. "The Man Behind...", "Inside...", "A Look at...", "Why...", "Writing Memoir...", "...Found a Narrative for Life")
+  const isFeatureHeadline =
+    /^(?:the (?:man|woman) behind|inside\b|a look at\b|why\b|writing memoir\b)/i.test(hLower) ||
+    /\bfound a narrative for life\b/i.test(hLower);
+
   const isExcludedMajorNews =
     isExcludedModernMaterialType ||
+    isFeatureHeadline ||
     /\b(?:construction|board of trustees|trustees|elected head|elevated|general manager|president of the board|hospital of brooklyn|underwent surgery|a son was born|son to mrs|container corp|named two|names two|doing well|hospital yesterday)\b/i.test(combinedLower);
 
   const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');

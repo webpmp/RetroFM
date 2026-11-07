@@ -135,6 +135,18 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Table-like headline or "News of" column title' };
   }
 
+  // Fix 7g: Exclude feature headline patterns
+  // (e.g. "The Man Behind...", "Inside...", "A Look at...", "Why...", "Writing Memoir...", "...Found a Narrative for Life")
+  if (
+    /^(?:the (?:man|woman) behind|inside\b|a look at\b|why\b|writing memoir\b)/i.test(hLower) ||
+    /\bfound a narrative for life\b/i.test(hLower)
+  ) {
+    return {
+      isNonStory: true,
+      reason: 'Non-story item: Feature headline pattern (Inside / Why / A Look at / The Man Behind / Writing Memoir)',
+    };
+  }
+
   // 1. Specific non-story headline phrases
   for (const phrase of NON_STORY_HEADLINE_PHRASES) {
     if (hLower.includes(phrase)) {
