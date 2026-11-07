@@ -1135,31 +1135,43 @@ async function startServer() {
         return { facts: compactFacts, budget };
       };
 
-      // 4e & 4h: Tiered date window and interest-score ranking for both news categories.
-      // - Restricts both major_news and music_news to 0..7 days (Tier 1 = same day, Tier 2 = 1-3 days, Tier 3 = 4-7 days).
-      // - Older items (>7 days) are dropped; future items are dropped.
-      // - Computes exact relative-time phrase in code ("today", "yesterday", "a couple of days ago", "earlier this week").
-      // - Sorts by tier first (freshest first), then by interestScore descending (best eligible story picked).
+      // 4e, 5j & 5l: Tiered relative-time candidate selection
+      // - Older items (>7 days for music, >3 days for major_news) are dropped; future items are dropped.
+      // - Computes exact relative-time phrase in code ("in today's Times", "in yesterday's Times", "a couple of days ago", "last week").
+      // - Sorts by interestScore descending, breaking ties by isFrontPage then recency (pubDate descending).
+      // - Fix 5j: Capped at top ~40 per window.
       interface TieredNewsEntry {
         entry: any;
         tierInfo: NonNullable<ReturnType<typeof computeNewsDateTier>>;
       }
       const selectTieredNewsEntries = (category: 'major_news' | 'music'): TieredNewsEntry[] => {
         const pool: TieredNewsEntry[] = [];
+        const mappedCat = category === 'music' ? 'music_news' : 'major_news';
         for (const e of (almanac.entries || [])) {
           if (e.category !== category) continue;
           if (isKeyBlocked(`almanac:${e.id}`)) continue;
           const artDate = e.printDate || e.eventDate;
           if (!artDate) continue;
-          const tierInfo = computeNewsDateTier(artDate, selectedDate);
-          if (!tierInfo) continue; // older than 7 days, or future
+          const tierInfo = computeNewsDateTier(artDate, selectedDate, mappedCat);
+          if (!tierInfo) continue;
           pool.push({ entry: e, tierInfo });
         }
         pool.sort((a, b) => {
-          if (a.tierInfo.tier !== b.tierInfo.tier) return a.tierInfo.tier - b.tierInfo.tier;
-          return (b.entry.interestScore || 50) - (a.entry.interestScore || 50);
+          // Sort primarily by interestScore descending
+          const scoreA = a.entry.interestScore || 50;
+          const scoreB = b.entry.interestScore || 50;
+          if (scoreB !== scoreA) return scoreB - scoreA;
+          // Break ties by front page
+          const fpA = (a.entry.printSection === '1' || a.entry.printSection === 'A' || a.entry.section === 'Front Page') ? 1 : 0;
+          const fpB = (b.entry.printSection === '1' || b.entry.printSection === 'A' || b.entry.section === 'Front Page') ? 1 : 0;
+          if (fpB !== fpA) return fpB - fpA;
+          // Break ties by recency (pubDate / printDate descending)
+          const dateA = a.entry.printDate || a.entry.eventDate || '';
+          const dateB = b.entry.printDate || b.entry.eventDate || '';
+          return dateB.localeCompare(dateA);
         });
-        return pool;
+        // Fix 5j: Cap candidate pool at top ~40 per window
+        return pool.slice(0, 40);
       };
 
       // 2. Music News Candidates

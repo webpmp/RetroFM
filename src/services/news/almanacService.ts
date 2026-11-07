@@ -167,7 +167,13 @@ export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnos
       const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
       const summary = sentences.slice(0, 4).join(' ');
       const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, summary);
-      const interestScore = scoreItemInterest(headline, summary, category);
+      const interestScore = scoreItemInterest(headline, summary, category, {
+        isFrontPage,
+        desk: a.desk,
+        section: a.section,
+        pubDate: a.pubDate,
+        broadcastDate,
+      });
 
       // Filter 3: Interest scoring threshold (>= 50)
       if (interestScore < 50) {
@@ -630,18 +636,43 @@ export function isBirthOrDeathEntry(text: string, sectionTitle?: string): { isBi
 }
 
 /**
- * Calculates an interest score for music and culture items:
- * High: pop, rock, r&b, country, jazz, Billboard charts, major tours, album releases.
- * Low (downranked): classical listings, minor chamber concerts, opera listings, appointments, museum grants.
+ * Calculates an interest score for music, culture, and news items.
+ * Fix 5j: Scoring must discriminate!
+ * - Bonus for front page / section A (+20)
+ * - Bonus for National/Foreign/Washington desk (+15)
+ * - Bonus for stronger or multiple major-news keyword matches (+10 to +25)
+ * - Bonus for same-day publication (+5)
+ * - Penalty for Unspecified/None desk items that are not front page (-15)
  */
-export function scoreItemInterest(headline: string, summary: string, category: string): number {
+export function scoreItemInterest(
+  headline: string,
+  summary: string,
+  category: string,
+  context?: {
+    isFrontPage?: boolean;
+    desk?: string;
+    section?: string;
+    pubDate?: string;
+    broadcastDate?: string;
+  }
+): number {
   const combined = (headline + ' ' + summary).toLowerCase();
   let score = 50;
+
+  const isFront = Boolean(context?.isFrontPage);
+  const d = (context?.desk || '').toLowerCase();
+  const s = (context?.section || '').toLowerCase();
+  const isNatDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
+  const isUnspecifiedDesk = d === '' || d === 'none' || d === 'unspecified' || d === 'archives';
+  const isSameDay = context?.pubDate && context?.broadcastDate && context.pubDate === context.broadcastDate;
 
   if (category === 'music') {
     if (/\b(?:rock|pop|r&b|soul|country|hip-hop|rap|billboard|hot 100|chart|album release|single|tour|concert tour|motown)\b/i.test(combined)) {
       score += 35;
     }
+    if (isFront) score += 15;
+    if (isNatDesk) score += 10;
+    if (isSameDay) score += 5;
     if (/\b(?:classical|chamber|philharmonic|symphony|opera|metropolitan opera|recital|orchestra)\b/i.test(combined)) {
       score -= 25;
     }
@@ -651,12 +682,33 @@ export function scoreItemInterest(headline: string, summary: string, category: s
   }
 
   if (category === 'major_news') {
-    // Boost major historic and national headlines, demote routine administrative items
-    if (/\b(president|white house|congress|senate|supreme court|war|troops|treaty|summit|strike|election|assassination|space|nasa|apollo|disaster|crash|nuclear|hostage)\b/i.test(combined)) {
-      score += 25;
-    } else {
+    if (isFront) score += 20;
+    if (isNatDesk) score += 15;
+    if (isSameDay) score += 5;
+    if (isUnspecifiedDesk && !isFront) score -= 15;
+
+    // Count strong major news keywords for bonus
+    const majorKeywords = [
+      /\b(?:president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman|obama|clinton|bush)|the president|white house)\b/i,
+      /\b(?:congress|senate|house of representatives|supreme court)\b/i,
+      /\b(?:war|troops|invasion|battle|military|pentagon)\b/i,
+      /\b(?:treaty|summit|cease-fire|peacekeeping|hostage)\b/i,
+      /\b(?:election|primary|voting|campaign)\b/i,
+      /\b(?:space|nasa|apollo|satellite|astronaut)\b/i,
+      /\b(?:disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear)\b/i,
+      /\b(?:strike|union|labor dispute)\b/i,
+      /\b(?:soviet|moscow|vietnam|cambodia|nato|united nations|u\.n\.)\b/i,
+    ];
+    let kwHits = 0;
+    for (const pat of majorKeywords) {
+      if (pat.test(combined)) kwHits++;
+    }
+    if (kwHits >= 2) {
+      score += 20;
+    } else if (kwHits === 1) {
       score += 10;
     }
+
     if (/\b(?:building begun|builder advises|plant cost|settles suit|settles antitrust|settle suit|real estate|zoning|tonsorial|anniversary|did you know)\b/i.test(combined)) {
       score -= 30;
     }
@@ -1017,7 +1069,13 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         sentences = sentences.slice(0, 4);
         const summary = sentences.join(' ');
 
-        const interestScore = scoreItemInterest(headline, summary, category);
+        const interestScore = scoreItemInterest(headline, summary, category, {
+          isFrontPage,
+          desk: a.desk,
+          section: a.section,
+          pubDate: a.pubDate,
+          broadcastDate,
+        });
         if (interestScore < 50) continue;
 
         entries.push({
