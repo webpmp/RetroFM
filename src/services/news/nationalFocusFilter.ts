@@ -194,7 +194,49 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Obituary / memorial notice' };
   }
 
-  // 3. Short summary (< 60 chars)
+  // 4. Retrospectives and history essays are NOT news (Fix 5f)
+  // Exclude essay/series formats: "The Early Days of...", "A History of...", "Looking Back", "Remember when", anniversary pieces
+  if (
+    /\b(?:the early days of|a history of|looking back|remember when|anniversary)\b/i.test(hLower) ||
+    /^(?:the early days of|a history of|looking back|remember when)\b/i.test(h)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Retrospective / history series essay' };
+  }
+
+  // Exclude article whose headline/abstract places main events > 5 years before print date (year, decade or century like 1740s, 19th century, etc.)
+  // unless the text shows a current event (death, ruling, discovery, reissue, auction).
+  const pubDateStr = doc?.pub_date || doc?.pubDate || '';
+  const printYear = pubDateStr ? parseInt(pubDateStr.slice(0, 4), 10) : NaN;
+  const combinedAll = `${h} ${summary}`.toLowerCase();
+  const hasCurrentAnchor = /\b(died|dies|death|dead|ruling|verdict|discovered|discovery|reissue|reissued|auction|auctioned|sentenced|indicted|unveiled|announced today|announced yesterday)\b/i.test(combinedAll);
+
+  if (!hasCurrentAnchor) {
+    // Century / historical era matches: 1600s, 1700s, 1800s, 1740s, 1850s, 19th century, 18th century, etc.
+    if (/\b(?:1[5-8]\d\d'?s?|19[0-4]\d'?s?|\d{1,2}(?:th|st|nd|rd) century)\b/i.test(combinedAll)) {
+      return { isNonStory: true, reason: 'Non-story item: Historical retrospective (>5 years in past without current anchor)' };
+    }
+    // Specific year > 5 years before printYear
+    if (!isNaN(printYear)) {
+      const yearMatches = combinedAll.match(/\b(1[5-9]\d\d|20\d\d)\b/g);
+      if (yearMatches) {
+        const pastYears = yearMatches.map(Number).filter((y) => printYear - y > 5);
+        // If headline or opening summary explicitly focuses on a distant past year
+        const distantYearInHeadline = (h.match(/\b(1[5-9]\d\d|20\d\d)\b/g) || []).map(Number).some((y) => printYear - y > 5);
+        if (distantYearInHeadline || (pastYears.length > 0 && /\b(?:in the mid-|in the early|in late|back in|during)\s+(?:1[5-9]\d\d|20\d\d)/i.test(combinedAll))) {
+          return { isNonStory: true, reason: 'Non-story item: Historical retrospective (>5 years in past without current anchor)' };
+        }
+      }
+    }
+  }
+
+  // Science/Health/Style features not tied to a current event
+  if ((desk.includes('science') || desk.includes('health') || desk.includes('style') || section.includes('science') || section.includes('health') || section.includes('style')) &&
+      !hasCurrentAnchor &&
+      !/\b(study|researchers?|scientists?|fda|report|trial|published|approved|outbreak|cdc|virus|epidemic)\b/i.test(combinedAll)) {
+    return { isNonStory: true, reason: 'Non-story item: Science/Health/Style feature without current event anchor' };
+  }
+
+  // 5. Short summary (< 60 chars)
   const trimmedSummary = (summary || '').trim();
   if (trimmedSummary.length < 60) {
     return {
