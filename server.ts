@@ -788,8 +788,20 @@ async function startServer() {
     return sentences.join(' ');
   }
 
-  // In-memory registry of prepared break metadata for lifecycle logging (4h)
-  const preparedBreakMeta = new Map<string, { type: string; headline?: string; articleDate?: string; section?: string; timePhrase?: string }>();
+  // In-memory registry of prepared break metadata for lifecycle logging (4h & 7h)
+  const preparedBreakMeta = new Map<string, {
+    type: string;
+    headline?: string;
+    articleDate?: string;
+    section?: string;
+    timePhrase?: string;
+    printPage?: string;
+    printSection?: string;
+    newsDesk?: string;
+    sectionName?: string;
+    typeOfMaterial?: string;
+    isFrontPage?: boolean;
+  }>();
 
   // Segment Lifecycle & Status Reporting Endpoint
   app.post('/api/dj/segment-status', (req, res) => {
@@ -803,7 +815,7 @@ async function startServer() {
       console.log(`[Segment Aired] id=${breakId}`);
       const meta = preparedBreakMeta.get(breakId);
       if (meta && (meta.type === 'major_news' || meta.type === 'music_news')) {
-        console.log(`[News Aired] type=${meta.type} headline="${meta.headline}" articleDate=${meta.articleDate} section="${meta.section}" timePhrase="${meta.timePhrase}"`);
+        console.log(`[News Aired] type=${meta.type} headline="${meta.headline}" articleDate=${meta.articleDate} section="${meta.section}" isFrontPage=${Boolean(meta.isFrontPage)} rawPrintPage="${meta.printPage || ''}" rawPrintSection="${meta.printSection || ''}" rawDesk="${meta.newsDesk || ''}" rawSectionName="${meta.sectionName || ''}" rawMaterial="${meta.typeOfMaterial || ''}" timePhrase="${meta.timePhrase}"`);
       }
     } else if (event === 'discarded') {
       console.log(`[Segment Discarded] id=${breakId} reason="${reason || 'unknown'}"`);
@@ -1176,8 +1188,8 @@ async function startServer() {
           const scoreB = b.entry.interestScore || 50;
           if (scoreB !== scoreA) return scoreB - scoreA;
           // Break ties by front page
-          const fpA = (a.entry.printSection === '1' || a.entry.printSection === 'A' || a.entry.section === 'Front Page') ? 1 : 0;
-          const fpB = (b.entry.printSection === '1' || b.entry.printSection === 'A' || b.entry.section === 'Front Page') ? 1 : 0;
+          const fpA = (a.entry.isFrontPage || a.entry.printPage === '1' || a.entry.printPage === '01' || a.entry.printPage === 'A1') ? 1 : 0;
+          const fpB = (b.entry.isFrontPage || b.entry.printPage === '1' || b.entry.printPage === '01' || b.entry.printPage === 'A1') ? 1 : 0;
           if (fpB !== fpA) return fpB - fpA;
           // Break ties by recency (pubDate / printDate descending)
           const dateA = a.entry.printDate || a.entry.eventDate || '';
@@ -1218,7 +1230,12 @@ async function startServer() {
             printDate: entry.printDate,
             diffDays: tierInfo.diffDays,
             timePhrase: tierInfo.timePhrase,
-            isFrontPage: entry.section === 'Front Page',
+            isFrontPage: Boolean(entry.isFrontPage),
+            printPage: entry.printPage,
+            printSection: entry.printSection,
+            newsDesk: entry.newsDesk,
+            sectionName: entry.sectionName,
+            typeOfMaterial: entry.typeOfMaterial,
             targetSongTitle: undefined,
             targetSongArtist: undefined,
             facts: subFacts,
@@ -1255,7 +1272,12 @@ async function startServer() {
             printDate: entry.printDate,
             diffDays: tierInfo.diffDays,
             timePhrase: tierInfo.timePhrase,
-            isFrontPage: entry.section === 'Front Page',
+            isFrontPage: Boolean(entry.isFrontPage),
+            printPage: entry.printPage,
+            printSection: entry.printSection,
+            newsDesk: entry.newsDesk,
+            sectionName: entry.sectionName,
+            typeOfMaterial: entry.typeOfMaterial,
             targetSongTitle: undefined,
             targetSongArtist: undefined,
             facts: subFacts,
@@ -2052,8 +2074,14 @@ async function startServer() {
             articleDate: pkt.printDate,
             section: pkt.section,
             timePhrase: pkt.timePhrase,
+            printPage: pkt.printPage,
+            printSection: pkt.printSection,
+            newsDesk: pkt.newsDesk,
+            sectionName: pkt.sectionName,
+            typeOfMaterial: pkt.typeOfMaterial,
+            isFrontPage: pkt.isFrontPage,
           });
-          console.log(`[News Break Chosen] type=${chosenCandidate.type} headline="${pkt.headline || pkt.topicTitle}" articleDate=${pkt.printDate} section="${pkt.section}" timePhrase="${pkt.timePhrase}"`);
+          console.log(`[News Break Chosen] type=${chosenCandidate.type} headline="${pkt.headline || pkt.topicTitle}" articleDate=${pkt.printDate} section="${pkt.section}" isFrontPage=${Boolean(pkt.isFrontPage)} rawPrintPage="${pkt.printPage || ''}" rawPrintSection="${pkt.printSection || ''}" rawDesk="${pkt.newsDesk || ''}" rawSectionName="${pkt.sectionName || ''}" rawMaterial="${pkt.typeOfMaterial || ''}" timePhrase="${pkt.timePhrase}"`);
         }
       }
 

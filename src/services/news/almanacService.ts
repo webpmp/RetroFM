@@ -241,6 +241,12 @@ export interface AlmanacEntry {
   category: 'music' | 'movies' | 'television' | 'sports' | 'pop_culture' | 'major_news';
   verbatimSentences?: string[];
   interestScore?: number;
+  isFrontPage?: boolean;
+  printPage?: string;
+  printSection?: string;
+  newsDesk?: string;
+  sectionName?: string;
+  typeOfMaterial?: string;
 }
 
 export interface AlmanacSummary {
@@ -1164,6 +1170,12 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
           category,
           verbatimSentences: sentences,
           interestScore,
+          isFrontPage,
+          printPage: a.printPage,
+          printSection: a.printSection,
+          newsDesk: a.desk,
+          sectionName: a.section,
+          typeOfMaterial: a.typeOfMaterial,
         });
       }
     } catch (e) {
