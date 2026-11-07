@@ -1493,7 +1493,13 @@ async function startServer() {
 
                 if (writer.writeSegmentBreakScript) {
                   const tRegenStart = Date.now();
-                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`));
+                  // 4l: On retry, quote the exact offending phrase to the writer and tell it to rewrite that sentence in different words
+                  let retryPromptReason = `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`;
+                  const copyMatch = offendingReason.match(/reproduces \d+ consecutive words \("([^"]+)"\)/);
+                  if (copyMatch) {
+                    retryPromptReason = `You copied the exact phrase "${copyMatch[1]}" from the source. Rewrite that sentence completely in your own different words without copying that phrase.`;
+                  }
+                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, retryPromptReason));
                   if (regenRes.success && regenRes.scriptText) {
                     scriptText = regenRes.scriptText;
                     unsupportedClaims = regenRes.unsupportedClaims || [];

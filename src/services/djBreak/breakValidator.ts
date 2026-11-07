@@ -574,6 +574,17 @@ export function validateSegmentBreakOutput(
     if (nonContentCount >= tokens.length - 2 && tokens.length > 5) {
       return true;
     }
+    // 4l: Check if phrase consists solely of proper names / titles from the headline/topicTitle
+    const headline = context.factPacket.headline || context.factPacket.topicTitle || '';
+    if (headline) {
+      const normHeadline = headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const headlineTokens = new Set(normHeadline.split(' ').filter(Boolean));
+      const phraseTokens = phrase.split(' ');
+      if (phraseTokens.every((tok) => headlineTokens.has(tok))) {
+        return true;
+      }
+    }
+
     return false;
   };
 
