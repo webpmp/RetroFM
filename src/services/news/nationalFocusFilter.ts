@@ -62,6 +62,19 @@ const NON_STORY_HEADLINE_PHRASES = [
   'a guide for',
   'how-to',
   'how to ',
+  // Fix 5k: Roundup, column, and listing formats
+  'news summary',
+  'in brief',
+  'notes on people',
+  'all the city',
+  'movies in new york',
+  'carloadings',
+  'admitted by supreme court',
+  'admitted to bar',
+  'ads stressing',
+  'ever optimistic',
+  'hold the jojoba',
+  'try out chemistry',
 ];
 
 /**
@@ -236,7 +249,23 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Science/Health/Style feature without current event anchor' };
   }
 
-  // 5. Short summary (< 60 chars)
+  // 5. Fix 5k: Local accidents, routine crime, routine economic indicators, bar admissions, local construction/zoning
+  // Exclude local traffic accidents and routine crime (require plane/train disaster, multiple deaths, or famous person)
+  const isRoutineAccidentOrCrime = /\b(?:car crash|auto crash|traffic accident|car collision|hit-and-run|holdup|mugging|robbed of|burglary|stolen car)\b/i.test(combinedAll);
+  const isMajorDisasterOrCrime = /\b(?:plane crash|train crash|airliner|multiple deaths|dozens dead|scores dead|\d{2,}\s+(?:dead|killed)|assassination|governor|senator|mayor|celebrity)\b/i.test(combinedAll);
+  if (isRoutineAccidentOrCrime && !isMajorDisasterOrCrime) {
+    return { isNonStory: true, reason: 'Non-story item: Local traffic accident or routine crime' };
+  }
+
+  // Exclude bar/court admissions, routine economic indicators, local construction/zoning, marketing/ad campaigns
+  if (
+    /\b(?:admitted by supreme court|admitted to bar|carloadings|freight carloadings|construction begun|zoning board|zoning variance|advertising campaign|ad campaign|marketing campaign|ads stressing)\b/i.test(combinedAll) ||
+    /^(?:in north dakota, too|in [a-z\s]+, too)\b/i.test(h)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Routine bar admission, carloadings, local zoning, or filler column' };
+  }
+
+  // 6. Short summary (< 60 chars)
   const trimmedSummary = (summary || '').trim();
   if (trimmedSummary.length < 60) {
     return {

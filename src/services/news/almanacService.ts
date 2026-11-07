@@ -521,16 +521,21 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  // Fix 5b: Strict music keyword check. Require a genuine music signal: Arts/Music desk, music keywords
-  // in headline/abstract, or match to known artist.
-  const isMusicKeyword = /\b(musician|musicians|rock band|jazz band|pop band|folk band|touring band|orchestra|symphony|billboard|grammy|pop life|recording artist|record label|hot 100|hit single|new single|single release|album release|debut album|solo album)\b/i.test(combinedLower) ||
-    (/\b(music|song|songs|album|albums|concert|concerts|opera|rock|jazz|r&b|disco|singer|singers|vocalist|vocalists|musical)\b/i.test(combinedLower) &&
-     /\b(helen reddy|seeger|folk singers|singing|recorded|theater|recital|broadway|performer|performers|show|track|band|tune|melody|lyrics|instrumental|soundtrack)\b/i.test(combinedLower));
+  // Fix 5b & 5k: Strict music keyword check. Require naming a specific artist, record, concert, or festival
+  // in headline/abstract. Pure movie/TV/theater listings or generic reviews without artist/record/concert are not music_news.
+  const isSpecificMusicTarget =
+    /\b(musician|musicians|rock band|jazz band|pop band|folk band|touring band|orchestra|symphony|billboard|grammy|pop life|recording artist|record label|hot 100|hit single|new single|single release|album release|debut album|solo album)\b/i.test(combinedLower) ||
+    (/\b(music|song|songs|album|albums|concert|concerts|opera|rock|jazz|r&b|disco|singer|singers|vocalist|vocalists)\b/i.test(combinedLower) &&
+     /\b(recorded|recording|single|album|tour|concert|recital|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince)\b/i.test(combinedLower));
+
+  // Reject pure movie/TV/theater listings from music_news
+  const isPureTheaterOrMovie = /^(?:theater:|theatre:|film:|movie:|television:|tv:)\b/i.test(hLower) ||
+    /\b(?:all the city's film set|movies in new york|theater directory|movie listings)\b/i.test(hLower);
 
   // Specifically prevent "Singer" when referring to Studebaker or Singer co. or baseball pitcher Bill Singer
   const isNonMusicSinger = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt|bill singer)\b/i.test(combinedLower);
 
-  if (!isNonMusicSinger && isMusicDeskOrSection && isMusicKeyword) {
+  if (!isNonMusicSinger && !isPureTheaterOrMovie && isMusicDeskOrSection && isSpecificMusicTarget) {
     return { sectionName: 'Music News', category: 'music' };
   }
 
