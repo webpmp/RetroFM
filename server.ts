@@ -1248,7 +1248,7 @@ async function startServer() {
             factKeys: [itemKey],
           },
         });
-        if (musicNewsCandidates.length >= 6) break;
+        if (musicNewsCandidates.length >= 8) break;
       }
 
       // 3. Major News Candidates
@@ -1290,7 +1290,7 @@ async function startServer() {
             factKeys: [itemKey],
           },
         });
-        if (majorNewsCandidates.length >= 6) break;
+        if (majorNewsCandidates.length >= 8) break;
       }
 
       // 4. Short Fallback Candidates: chart status or credits (1-2 facts short fallback)
@@ -1385,8 +1385,21 @@ async function startServer() {
       const filteredMusicNewsCandidates = isMusicNewsPoolTiny ? [] : musicNewsCandidates;
 
       const songStoryQueue = songStoryCandidate.ready ? [songStoryCandidate] : [];
-      const majorQueue = majorNewsCandidates.slice(0, 3);
-      const musicQueue = filteredMusicNewsCandidates.slice(0, 3);
+      // Fix 8g: Variety - choose randomly among the top ~8 eligible items by score instead of always taking #1
+      const shuffleTopCandidates = (list: CandidateEval[], topN = 8): CandidateEval[] => {
+        if (list.length <= 1) return list;
+        const pool = list.slice(0, Math.min(list.length, topN));
+        const rest = list.slice(topN);
+        // Fisher-Yates shuffle
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        return [...pool, ...rest];
+      };
+
+      const majorQueue = shuffleTopCandidates(majorNewsCandidates, 8).slice(0, 3);
+      const musicQueue = shuffleTopCandidates(filteredMusicNewsCandidates, 8).slice(0, 3);
       const shortFallbackQueue = fallbackCandidates.slice(0, 3);
 
       // Order the two news queues by alternating slot, avoiding repeating effectiveLastCategory
