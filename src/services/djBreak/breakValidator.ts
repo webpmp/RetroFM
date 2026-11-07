@@ -207,6 +207,18 @@ export function validateSegmentBreakOutput(
   ];
 
   if (context.isModelDraft) {
+    // Fix 8h: If the topic is next_song_story (or any model draft) and the LAST sentence is a hand-off phrase,
+    // strip it in code and validate the rest instead of rejecting.
+    const rawSentences = trimmed.split(/(?<=[.!?])\s+/);
+    if (rawSentences.length >= 3) {
+      const lastSentence = rawSentences[rawSentences.length - 1];
+      const isLastSentenceHandoff = HANDOFF_PHRASE_PATTERNS.some((hp) => hp.test(lastSentence));
+      if (isLastSentenceHandoff) {
+        trimmed = rawSentences.slice(0, -1).join(' ').trim();
+        words = trimmed.split(/\s+/).filter(Boolean);
+      }
+    }
+
     // If the topic is next_song_story, the fact packet itself is about the song, so mentioning the song title
     // in commentary (e.g. "Michael Jackson released 'Don't Stop 'Til You Get Enough' in 1979") is natural,
     // but hand-off phrases or placing the title at the end as an intro must be rejected.
