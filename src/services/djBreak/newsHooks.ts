@@ -9,18 +9,18 @@
 
 /** Front-page style hooks: only used when the NYT article actually ran on page 1 / section A. */
 const FRONT_PAGE_HOOKS = ['From the front pages of The Times,', 'On the front page of The Times,'];
-/** Neutral news hooks: no claim about page placement and no relative-time words. */
-const NEUTRAL_NEWS_HOOKS = ['In the news,', 'In the headlines,'];
-/** Music news hooks: no relative-time words. */
-const MUSIC_NEWS_HOOKS = ['In music news,', 'Across the music world,'];
+/** Major news neutral hooks: used for items that pass the strict major_news gate. */
+const MAJOR_NEWS_HOOKS = ['In the news,', 'In the headlines,'];
+/** Features / Arts / Music hooks: neutral hook or none. */
+const ARTS_FEATURE_HOOKS = ["From today's Times,", ''];
 
 export function chooseNewsHook(topic: string, isFrontPage: boolean | undefined, seed: number): string {
   if (topic === 'major_news') {
-    const list = isFrontPage ? FRONT_PAGE_HOOKS : NEUTRAL_NEWS_HOOKS;
+    const list = isFrontPage ? FRONT_PAGE_HOOKS : MAJOR_NEWS_HOOKS;
     return list[seed % list.length];
   }
   if (topic === 'music_news') {
-    return MUSIC_NEWS_HOOKS[seed % MUSIC_NEWS_HOOKS.length];
+    return ARTS_FEATURE_HOOKS[seed % ARTS_FEATURE_HOOKS.length];
   }
   return '';
 }
