@@ -1604,10 +1604,16 @@ async function startServer() {
                   : '';
                 scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
 
-                // Final post-handoff validation
+                // Final post-handoff validation:
+                // 4i: Code-added handoff must NEVER be rejected against news packet facts.
+                // Always provide targetSongTitle and targetSongArtist in the validation context for post-handoff check.
                 const finalVal = validateSegmentBreakOutput(scriptText, {
                   selectedDate,
-                  factPacket: packet,
+                  factPacket: {
+                    ...packet,
+                    targetSongTitle: nextSong?.title,
+                    targetSongArtist: nextSong?.artist,
+                  },
                   isModelDraft: false,
                 });
 
