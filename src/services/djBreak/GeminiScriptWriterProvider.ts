@@ -904,7 +904,7 @@ Exemplar 3:
 STRICT RULES (Must follow all):
 1. PARAPHRASE: Put all facts in your own spoken words. Never copy more than 5 consecutive words from the Fact Sheet.
 2. NO SONG INTRO / NO HANDOFF: Never name the upcoming song or artist. Never write handoff phrases like "next up", "coming up", "here is", "let's hear". Station automation handles the handoff.
-3. STATION IDENTITY: Never mention radio formats, "Top 40", frequencies, dial numbers, or call letters. Only "RetroFM" is permitted.
+3. STATION IDENTITY: Never mention radio formats, "Top 40", "FM radio", frequencies, dial numbers, or call letters. Never say "on FM radio". Only "RetroFM" is permitted.
 4. BANNED HYPE WORDS: Never use astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, banger, epic, smash hit, or legendary.
 5. NO OUTSIDE FACTS: Use ONLY what is in the Fact Sheet. Never invent facts, people, or background.
 6. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
