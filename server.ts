@@ -1340,9 +1340,13 @@ async function startServer() {
         hasEligibleNews &&
         (serverRotationState.breaksSinceLastNews >= 2 || effectiveLastCategory === 'next_song_story');
 
+      // 4m: Group candidate categories:
+      // Try at most 2 news candidates per break (best interest score first).
+      // Fallback order: news (if due) -> next_song_story -> fallback candidates (chart/credit) -> plain_intro.
+      // If news is not due: next_song_story -> primary news -> secondary news -> fallback candidates.
       const candidateQueues: CandidateEval[][] = newsIsDue
-        ? [primaryNewsQueue, secondaryNewsQueue, songStoryQueue, shortFallbackQueue]
-        : [songStoryQueue, primaryNewsQueue, secondaryNewsQueue, shortFallbackQueue];
+        ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
+        : [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue];
 
       // Summary list for logging
       const allEvaluatedSummary: string[] = [
@@ -1426,7 +1430,7 @@ async function startServer() {
         };
       };
 
-      // Evaluate categories in order, capping at 3 attempts per category.
+      // Evaluate categories in order, capping at 2 attempts per category.
       // Give each candidate its own time budget via the provider timeout rather than a shared 25s cutoff
       // that would starve later categories when an earlier candidate fails slowly.
       categoryLoop:
@@ -1435,7 +1439,7 @@ async function startServer() {
         let attemptsThisCategory = 0;
 
         for (const cand of queue) {
-          if (attemptsThisCategory >= 3) break;
+          if (attemptsThisCategory >= 2) break;
           attemptsThisCategory++;
 
           const packet = cand.packet;
@@ -1918,7 +1922,9 @@ async function startServer() {
         serverRotationState.breaksSinceLastNews = 0;
         serverRotationState.nextNewsSlot = chosenTypeStr === 'major_news' ? 'music_news' : 'major_news';
       } else {
-        serverRotationState.breaksSinceLastNews += 1;
+        // 4m: If a news break fails or another category aired, set to try again at next break (breaksSinceLastNews = 2)
+        // so it never blocks song stories on consecutive breaks.
+        serverRotationState.breaksSinceLastNews = 2;
       }
       serverRotationState.lastCategory = chosenTypeStr;
       serverRotationState.totalBreaksCount += 1;
