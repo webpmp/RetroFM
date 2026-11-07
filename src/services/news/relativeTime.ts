@@ -5,8 +5,8 @@
  * 4e: Relative-time calculation and tiered date windows for news breaks.
  *
  * Phrase rules (article date vs. broadcast date):
- * - 0 days (same day) -> "today"
- * - 1 day              -> "yesterday"
+ * - 0 days (same day) -> "in today's Times"
+ * - 1 day              -> "in yesterday's Times"
  * - 2 to 3 days        -> "a couple of days ago"
  * - 4 to 7 days        -> "earlier this week"
  *
@@ -20,7 +20,7 @@
 export interface NewsDateTier {
   diffDays: number;
   tier: 1 | 2 | 3;
-  timePhrase: 'today' | 'yesterday' | 'a couple of days ago' | 'earlier this week';
+  timePhrase: "in today's Times" | "in yesterday's Times" | 'a couple of days ago' | 'earlier this week';
 }
 
 export function computeNewsDateTier(articleDate: string, broadcastDate: string): NewsDateTier | null {
@@ -35,10 +35,10 @@ export function computeNewsDateTier(articleDate: string, broadcastDate: string):
   let timePhrase: NewsDateTier['timePhrase'];
   if (diffDays === 0) {
     tier = 1;
-    timePhrase = 'today';
+    timePhrase = "in today's Times";
   } else if (diffDays === 1) {
     tier = 2;
-    timePhrase = 'yesterday';
+    timePhrase = "in yesterday's Times";
   } else if (diffDays <= 3) {
     tier = 2;
     timePhrase = 'a couple of days ago';

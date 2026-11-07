@@ -411,11 +411,13 @@ export function validateSegmentBreakOutput(
       const isChartTopic = context.factPacket?.topic === 'chart' || context.factPacket?.topic === 'chart_story' || context.factPacket?.topic === 'next_song_story';
       const isChartSentence = relWord === 'this week' && isChartTopic;
 
-      // 4e: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
+      // 4e & 5d: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
       const pktTimePhrase = (context.factPacket?.timePhrase || '').toLowerCase();
       const matchesPacketTimePhrase = pktTimePhrase && (
         relWord === pktTimePhrase ||
         (pktTimePhrase === 'earlier this week' && relWord === 'this week') ||
+        (pktTimePhrase.includes("today's times") && (relWord === 'today' || relWord === "today's times")) ||
+        (pktTimePhrase.includes("yesterday's times") && (relWord === 'yesterday' || relWord === "yesterday's times")) ||
         (pktTimePhrase === 'today' && relWord === 'today') ||
         (pktTimePhrase === 'yesterday' && relWord === 'yesterday')
       );

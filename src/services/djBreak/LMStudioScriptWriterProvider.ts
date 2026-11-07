@@ -976,7 +976,8 @@ STRICT RULES (Must follow all):
 6. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
 7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
 8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
-9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.`;
+9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
+10. TIME PHRASING: In news breaks, when referring to the date of the report, use "in today's Times" or "in yesterday's Times" according to TIME OF EVENT. Do not claim the event happened today unless the source text says so.`;
 
     const failureCorrection = input.failureReason
       ? `\n\nCRITICAL FIX REQUIRED FROM PREVIOUS ATTEMPT: Your previous draft was rejected for the following exact reason: "${input.failureReason}". You MUST avoid this completely and adhere strictly to the rules.`

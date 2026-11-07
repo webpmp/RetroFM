@@ -911,6 +911,7 @@ STRICT RULES (Must follow all):
 7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
 8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
 9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
+10. TIME PHRASING: In news breaks, when referring to the date of the report, use "in today's Times" or "in yesterday's Times" according to TIME OF EVENT. Do not claim the event happened today unless the source text says so.
 
 FACT SHEET:
 ${factLines}${newsSectionLine}${timePhraseLine}
