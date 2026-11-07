@@ -744,22 +744,27 @@ async function startServer() {
   const chartFactRepo = new ChartFactRepository();
   const songCreditRepo = new SongCreditRepository(undefined, chartFactRepo);
 
-  // Per-session rotation tracking on the server (Fix 2):
-  // Guarantees news at least every 3rd break, never chooses the same category twice in a row,
-  // and alternates major_news and music_news as the primary news slot.
+  // 7c: Rotation tuning: Cap news at ~1 in 3 breaks.
+  // Never 2 news breaks in a row, and at most 2 news breaks in any 6 consecutive breaks.
+  const MAX_NEWS_IN_SIX_BREAKS = 2;
+  const MIN_BREAKS_BETWEEN_NEWS = 2;
+
+  // Per-session rotation tracking on the server (Fix 2 & 7c):
   interface ServerRotationState {
     selectedDate: string;
     breaksSinceLastNews: number;
     lastCategory: string | null;
     nextNewsSlot: 'major_news' | 'music_news';
     totalBreaksCount: number;
+    recentCategoriesWindow: string[]; // Last up to 6 categories
   }
   let serverRotationState: ServerRotationState = {
     selectedDate: '',
-    breaksSinceLastNews: 2, // Start due so news is tried early in the session (within first 2-3 breaks)
+    breaksSinceLastNews: 2, // Start eligible so news can air within the first couple of breaks
     lastCategory: null,
     nextNewsSlot: 'major_news',
     totalBreaksCount: 0,
+    recentCategoriesWindow: [],
   };
 
   // Helper for natural extractive fallback monologue
@@ -1324,10 +1329,11 @@ async function startServer() {
       if (isFirstBreak || serverRotationState.selectedDate !== selectedDate) {
         serverRotationState = {
           selectedDate,
-          breaksSinceLastNews: 2, // Start due so news is tried within the first couple of breaks
+          breaksSinceLastNews: 2, // Start eligible so news can air within the first couple of breaks
           lastCategory: null,
           nextNewsSlot: 'major_news',
           totalBreaksCount: 0,
+          recentCategoriesWindow: [],
         };
       }
 
@@ -1357,23 +1363,29 @@ async function startServer() {
       }
 
       const hasEligibleNews = majorQueue.length > 0 || musicQueue.length > 0;
+
+      // 7c: Cap news at ~1 in 3 breaks:
+      // Never 2 news breaks in a row, and at most 2 news breaks in any 6 consecutive breaks.
+      const recentNewsCountInSix = (serverRotationState.recentCategoriesWindow || []).filter(
+        (c) => c === 'major_news' || c === 'music_news'
+      ).length;
+      const isLastBreakNews =
+        effectiveLastCategory === 'major_news' ||
+        effectiveLastCategory === 'music_news' ||
+        serverRotationState.lastCategory === 'major_news' ||
+        serverRotationState.lastCategory === 'music_news';
+
       const newsIsDue =
         hasEligibleNews &&
-        (serverRotationState.breaksSinceLastNews >= 2 || effectiveLastCategory === 'next_song_story');
+        !isLastBreakNews &&
+        serverRotationState.breaksSinceLastNews >= MIN_BREAKS_BETWEEN_NEWS &&
+        recentNewsCountInSix < MAX_NEWS_IN_SIX_BREAKS;
 
-      // 4m & 5c: Group candidate categories:
-      // Prefer silence/song stories to filler: If no candidate passes the strict gate for a date/window,
-      // air no news on that break and fall back to next_song_story (or chart/credits). Do NOT lower the gate to hit news quota.
-      // Try at most 2 news candidates per break (best interest score first).
-      // Fallback order: news (if due) -> next_song_story -> fallback candidates (chart/credit) -> plain_intro.
-      // If news is not due: next_song_story -> primary news -> secondary news -> fallback candidates.
-      if (newsIsDue && !hasEligibleNews) {
-        console.log(`[DJ News Gate] No high-quality news candidates passed the strict gate for ${selectedDate} (window 0..7d). Falling back to next_song_story without lowering gate.`);
-      }
-
+      // 7c: When news is NOT due, try next_song_story first, then credit_fallback, then plain_intro.
+      // Candidate queues when news is not due: try song story -> credit fallback -> plain intro. (DO NOT fall back to news!)
       const candidateQueues: CandidateEval[][] = newsIsDue
         ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
-        : [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue];
+        : [songStoryQueue, shortFallbackQueue];
 
       // Summary list for logging
       const allEvaluatedSummary: string[] = [
@@ -1958,12 +1970,15 @@ async function startServer() {
         serverRotationState.breaksSinceLastNews = 0;
         serverRotationState.nextNewsSlot = chosenTypeStr === 'major_news' ? 'music_news' : 'major_news';
       } else {
-        // 4m: If a news break fails or another category aired, set to try again at next break (breaksSinceLastNews = 2)
-        // so it never blocks song stories on consecutive breaks.
-        serverRotationState.breaksSinceLastNews = 2;
+        // Increment breaks since last news
+        serverRotationState.breaksSinceLastNews += 1;
       }
       serverRotationState.lastCategory = chosenTypeStr;
       serverRotationState.totalBreaksCount += 1;
+      serverRotationState.recentCategoriesWindow.push(chosenTypeStr);
+      if (serverRotationState.recentCategoriesWindow.length > 6) {
+        serverRotationState.recentCategoriesWindow.shift();
+      }
 
       // Step 1 Diagnostic Console Logging (5 required fields for every DJ break)
       let whyChosenStr = '';
