@@ -574,21 +574,19 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  // Fix 5b, 5k, 6d & 7d: Positive pop-oriented test for music_news.
-  // Allowed genres: pop, rock, soul/R&B, folk, country, jazz, blues, hip-hop and reggae.
-  // Excluded genres: classical, opera, church/choral, early music/madrigals, chamber music, recitals,
-  // symphonies, philharmonic, oratorios, sonatas, and modern academic composition.
-  // Classical, opera, recitals, church, school, and early music items fail even if no negative word is present.
+  // Fix 8d: Stricter negative list for music_news:
+  // Disqualify: composer, pianist, violinist, quartet, symphony, orchestra, philharmonic, recital, chamber, choir, cabaret, opera, book review, essays.
+  // The generic words music, concert, composer, pianist, review, and Music-desk do NOT count as positive signals.
   const isExcludedMusicGenre =
-    /\b(?:classical|opera|operatic|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital|recitals|madrigal|madrigals|elizabethan|renaissance band|early music|pro musica|tully hall|carnegie hall recital|composer|composers ensemble|sonata|concerto|trio for|string quartet|motet|modus lascivus)\b/i.test(combinedLower) &&
+    /\b(?:classical|opera|operatic|chamber|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital|recitals|madrigal|madrigals|elizabethan|renaissance band|early music|pro musica|tully hall|carnegie hall recital|composer|composers|composers ensemble|pianist|pianists|violinist|violinists|quartet|string quartet|sonata|concerto|trio for|motet|modus lascivus|cabaret|book review|essays|selected essays|volume of selected essays)\b/i.test(combinedLower) &&
     !/\b(?:elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|seeger|helen reddy)\b/i.test(combinedLower);
 
   // Positive pop signal requirement: headline/abstract must contain pop/rock/soul/R&B/folk/country/jazz/blues/hip-hop/reggae signal
-  // or name a recognized artist in the library.
+  // or name a recognized artist in the library. Generic words music, concert, composer, pianist, review, or Music desk do NOT count.
   const isAllowedMusicGenre =
     /\b(?:pop music|pop album|pop single|pop chart|pop artist|pop life|rock music|rock band|rock and roll|rock 'n' roll|rock & roll|rock 'n roll|punk rock|new wave|folk music|folk singer|folk song|country music|country singer|country song|bluegrass|r&b|rhythm and blues|soul music|motown|disco|dance music|dance single|dance club|jazz|blues|hip-hop|hip hop|rap music|reggae|billboard|hot 100|hit single|new single|single release|album release|debut album|solo album|recording artist|record label|touring band)\b/i.test(combinedLower) ||
-    (/\b(?:musician|musicians|song|songs|album|albums|concert|concerts|singer|singers|vocalist|vocalists|touring band|rock band)\b/i.test(combinedLower) &&
-     /\b(?:recorded|recording|single|album|tour|concert|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|ac\/dc|oasis|boy george|peter gabriel)\b/i.test(combinedLower));
+    (/\b(?:rock band|pop singer|folk singer|soul singer|jazz musician|reggae band|punk band)\b/i.test(combinedLower)) ||
+    (/\b(?:helen reddy|pete seeger|seeger|elvis|beatles|dylan|springsteen|madonna|michael jackson|sinatra|aretha|bowie|prince|ac\/dc|oasis|boy george|peter gabriel|fall out boy|elvis costello|pharrell|t\.i\.|rihanna|katy perry|flo rida|kid cudi|depeche mode|omd|orchestral manoeuvres|aswad|bryan ferry|blasters|phil alvin|tish hinojosa)\b/i.test(combinedLower));
 
   // Reject pure movie/TV/theater listings or column labels like "Topics" from music_news
   const isPureTheaterOrMovie =
