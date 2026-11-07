@@ -901,19 +901,16 @@ Exemplar 2:
 Exemplar 3:
 "Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit."
 
-STRICT STYLE RULES:
-1. Short spoken sentences with direct address and varied rhythm. Talk straight to the listener.
-2. ABSOLUTELY NO CONNECTOR WORDS. Never use: "Furthermore", "Meanwhile", "In addition", "At the same time", "On that note", "Along with that", "Adding to that", "Beyond that".
-3. STRICTLY BANNED PHRASES: Never use "making waves", "latest news", "music scene", "epic", "insane", "mind-blowing", "whopping", "heartfelt", "you might be surprised", "showcasing its lasting appeal", "himself", "lasting appeal", "a feat unmatched". Never use "record-breaking" unless the word "record-breaking" appears directly in the Fact Sheet. Never say a band or group was "formed" unless the word "formed" appears directly in the Fact Sheet.
-4. PARAPHRASE ALL SOURCE FACTS: Never copy more than 6 consecutive words from the Fact Sheet (or 12 for short credits). Put facts into your own natural spoken words.
-5. LOCKED CHART SENTENCES: Any chart sentence (e.g. "It reached number one on the Hot 100 in May 1975." or "It spent 21 weeks on the chart.") is code-locked: you MUST keep it verbatim or omit it entirely. NEVER paraphrase or merge chart facts. Never say "topped the charts" or "staying there for X weeks". Weeks at number one and weeks on the chart must never be mixed.
-6. In any news or review break, name the person or event in your very first sentence.
-7. Use full artist and person names at least once (e.g. "P.M. Dawn", "C.C. Lemonhead", "Robin S.", "Jay Ski", "Mr. Big", "R.E.M."). Never truncate names.
-8. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
-9. No hindsight language (never say what a song "went on to do" or "later became").
-10. Start immediately with the first fact. Never write an opener phrase.
-11. NEVER write a song handoff or announce the upcoming track title. The station automation adds the upcoming song hand-off by code.
-12. Fix punctuation: never leave double periods (..) after abbreviations, and never capitalize after a comma unless it is a proper name.
+STRICT RULES (Must follow all):
+1. PARAPHRASE: Put all facts in your own spoken words. Never copy more than 5 consecutive words from the Fact Sheet.
+2. NO SONG INTRO / NO HANDOFF: Never name the upcoming song or artist. Never write handoff phrases like "next up", "coming up", "here is", "let's hear". Station automation handles the handoff.
+3. STATION IDENTITY: Never mention radio formats, "Top 40", frequencies, dial numbers, or call letters. Only "RetroFM" is permitted.
+4. BANNED HYPE WORDS: Never use astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, banger, epic, smash hit, or legendary.
+5. NO OUTSIDE FACTS: Use ONLY what is in the Fact Sheet. Never invent facts, people, or background.
+6. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
+7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
+8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
+9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
 
 FACT SHEET:
 ${factLines}${newsSectionLine}${timePhraseLine}
