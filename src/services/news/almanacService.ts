@@ -166,7 +166,7 @@ export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnos
 
       const isFrontPage = (a.printSection === '1' || a.printSection === 'A' || a.printSection === '') && (a.printPage === '1' || a.printPage === 'A1' || a.printPage === '01');
       const summary = sentences.slice(0, 4).join(' ');
-      const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, summary);
+      const { category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, summary, a.typeOfMaterial);
       const interestScore = scoreItemInterest(headline, summary, category, {
         isFrontPage,
         desk: a.desk,
@@ -474,13 +474,24 @@ function categorizeNYT(
   section?: string,
   desk?: string,
   isFrontPage?: boolean,
-  summaryText?: string
+  summaryText?: string,
+  typeOfMaterial?: string
 ): { sectionName: string; category: AlmanacEntry['category'] } {
   const hLower = (headline || '').toLowerCase();
   const sumLower = (summaryText || '').toLowerCase();
   const combinedLower = `${hLower} ${sumLower}`;
   const s = (section || '').toLowerCase();
   const d = (desk || '').toLowerCase();
+  const mat = (typeOfMaterial || '').trim().toLowerCase();
+
+  // Fix 6b: When material type is provided, allow major_news only for "News" and "Brief"
+  // Exclude News Analysis, Profile, Biography, Special Report, Interview, Review, Op-Ed, Editorial, Blog, Letter, Feature
+  const isMaterialTypeBlockedForMajorNews = Boolean(
+    mat &&
+    mat !== 'news' &&
+    mat !== 'brief' &&
+    mat !== 'front page'
+  );
 
   // Check if financial/business desk or corporate headline
   const isBusinessOrFinancial = d.includes('financial') || d.includes('business') || s.includes('business') ||
@@ -566,10 +577,12 @@ function categorizeNYT(
   }
 
   // 6. Major News (National / World / Front Page)
-  // Fix 5a: Stricter major_news gate
+  // Fix 5a & 6b: Stricter major_news gate
   // Require: Front page (isFrontPage), OR National/Foreign/Washington desk, OR strong major-news keyword match.
+  // Fix 6b: If material type is provided and not News/Brief, exclude from major_news.
   // Exclude local/regional business, real estate, construction, corporate personnel/board, society/births/surgery.
   const isExcludedMajorNews =
+    isMaterialTypeBlockedForMajorNews ||
     /\b(?:construction|board of trustees|trustees|elected head|elevated|general manager|president of the board|hospital of brooklyn|underwent surgery|a son was born|son to mrs|container corp|named two|names two|doing well|hospital yesterday)\b/i.test(combinedLower);
 
   const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
@@ -1054,7 +1067,7 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         if (!rawSummaryText || rawSummaryText.length < 20) {
           rawSummaryText = headline;
         }
-        const { sectionName, category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, rawSummaryText);
+        const { sectionName, category } = categorizeNYT(a.headline, a.section, a.desk, isFrontPage, rawSummaryText, a.typeOfMaterial);
 
         // Clean evaluative clauses and resolve relative time words against print date
         const strippedSummary = stripEvaluativeClauses(rawSummaryText);
