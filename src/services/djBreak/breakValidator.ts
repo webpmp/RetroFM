@@ -404,6 +404,28 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 7e. Reject filler phrases in news breaks
+  const FILLER_PHRASES = [
+    /\bexciting developments\b/i,
+    /\bcontinue to shape\b/i,
+    /\bas we know it\b/i,
+    /\bthis analysis comes from\b/i,
+    /\bnotes shared\b/i,
+    /\bis highlighted\b/i,
+    /\bis featured\b/i,
+    /\bit['’]s reported that\b/i,
+  ];
+  for (const fp of FILLER_PHRASES) {
+    const m = trimmed.match(fp);
+    if (m) {
+      return {
+        valid: false,
+        rejectedReason: `Contains generic filler phrase ("${m[0]}")`,
+        sanitizedText: '',
+      };
+    }
+  }
+
   // Check "record-breaking" unless it appears in fact packet
   if (/\brecord-breaking\b/i.test(trimmed)) {
     const packetFacts = context.factPacket?.facts || [];
@@ -634,8 +656,12 @@ export function validateSegmentBreakOutput(
       return true;
     }
     // 4l: Check if phrase consists solely of proper names / titles from the headline/topicTitle
+    // 7e: But do not exempt phrases in news breaks if they copy 5+ consecutive headline words
     const headline = context.factPacket.headline || context.factPacket.topicTitle || '';
     if (headline) {
+      if (isNewsTopic) {
+        return false;
+      }
       const normHeadline = headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
       const headlineTokens = new Set(normHeadline.split(' ').filter(Boolean));
       const phraseTokens = phrase.split(' ');
@@ -668,6 +694,32 @@ export function validateSegmentBreakOutput(
           }
         } else {
           break;
+        }
+      }
+    }
+  }
+
+  // 7e: In news breaks, reject drafts that repeat the headline or 5+ consecutive headline words
+  if (isNewsTopic) {
+    const rawHeadline = context.factPacket.headline || context.factPacket.topicTitle || '';
+    if (rawHeadline) {
+      const hlNorm = rawHeadline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      const hlStr = hlNorm.join(' ');
+      if (hlNorm.length >= 3 && scriptNorm.join(' ').includes(hlStr)) {
+        return {
+          valid: false,
+          rejectedReason: `Repeats news headline verbatim ("${rawHeadline}")`,
+          sanitizedText: '',
+        };
+      }
+      for (let i = 0; i <= hlNorm.length - 5; i++) {
+        const fiveWords = hlNorm.slice(i, i + 5).join(' ');
+        if (scriptNorm.join(' ').includes(fiveWords)) {
+          return {
+            valid: false,
+            rejectedReason: `Draft copies 5+ consecutive headline words ("${fiveWords}")`,
+            sanitizedText: '',
+          };
         }
       }
     }
@@ -848,6 +900,31 @@ export function validateSegmentBreakOutput(
       return {
         valid: false,
         rejectedReason: `Unverified proper name "${name}" not found in fact packet`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 7e: Substance check in news breaks: must contain at least 2 specific concrete facts (proper name, number, or year)
+  if (isNewsTopic) {
+    const verifiedNamesCount = properNames.filter((n) => {
+      const nl = n.toLowerCase();
+      const common = new Set([
+        'the', 'this', 'that', 'here', 'now', 'well', 'and', 'right', 'so', 'from', 'stay', 'coming', 'next',
+        'billboard', 'hot', 'rock', 'music', 'album', 'single', 'song', 'chart', 'times', 'records', 'studio',
+        'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+        'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
+      ]);
+      return !common.has(nl) && corpus.includes(nl);
+    }).length;
+    const verifiedNumbersCount = numbersInText.filter((num) => corpus.includes(num.toLowerCase())).length;
+    const verifiedYearsCount = yearsInText.filter((y) => corpus.includes(String(y))).length;
+    const totalConcreteFacts = verifiedNamesCount + verifiedNumbersCount + verifiedYearsCount;
+
+    if (totalConcreteFacts < 2) {
+      return {
+        valid: false,
+        rejectedReason: `Substance check failed: contains ${totalConcreteFacts} verified concrete facts (minimum 2 required)`,
         sanitizedText: '',
       };
     }

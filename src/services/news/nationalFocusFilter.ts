@@ -207,7 +207,19 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Obituary / memorial notice' };
   }
 
-  // 4. Retrospectives and history essays are NOT news (Fix 5f)
+  // 4. Retrospectives, history essays, and column/editorial labels are NOT news (Fix 5f & 7e)
+  // Skip items whose abstract or headline is a column label, editorial, or topic label ("Topics", "Preventing Economic Chaos", etc.)
+  const absLower = (summary || '').trim().toLowerCase();
+  if (
+    /^topics\b/i.test(hLower) ||
+    /^topics\b/i.test(absLower) ||
+    /\btopics (?:ed|editorial|column)\b/i.test(absLower) ||
+    /^(?:editorial|op-ed|news analysis|the editor's notebook|editor's notebook)\b/i.test(hLower) ||
+    /^(?:editorial|op-ed|news analysis)\b/i.test(absLower)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Column label, editorial, or topic label ("Topics")' };
+  }
+
   // Exclude essay/series formats: "The Early Days of...", "A History of...", "Looking Back", "Remember when", anniversary pieces
   if (
     /\b(?:the early days of|a history of|looking back|remember when|anniversary)\b/i.test(hLower) ||
