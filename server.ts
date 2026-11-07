@@ -1628,7 +1628,15 @@ async function startServer() {
                 const stationIdPhrase = allowRetroFm
                   ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now()) + ' '
                   : '';
+                const rawModelBody = scriptText;
                 scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
+
+                // 5h: Log raw model output next to final spoken text to verify origin of exclamation points.
+                // Convert any remaining '!' to '.' in final code before TTS.
+                if (scriptText.includes('!') || rawModelBody.includes('!')) {
+                  console.log(`[Exclamation Point Detected] rawModel="${rawModelBody}" -> finalSpeechBeforeFix="${scriptText}"`);
+                  scriptText = scriptText.replace(/!+/g, '.');
+                }
 
                 // Final post-handoff validation:
                 // 4i: Code-added handoff must NEVER be rejected against news packet facts.
