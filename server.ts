@@ -749,7 +749,7 @@ async function startServer() {
   const MAX_NEWS_IN_SIX_BREAKS = 2;
   const MIN_BREAKS_BETWEEN_NEWS = 2;
 
-  // Per-session rotation tracking on the server (Fix 2 & 7c):
+  // Per-session rotation tracking on the server (Fix 2 & 7c & 7i):
   interface ServerRotationState {
     selectedDate: string;
     breaksSinceLastNews: number;
@@ -759,6 +759,7 @@ async function startServer() {
     recentCategoriesWindow: string[]; // Last up to 6 categories
     airedArticleIds: Set<string>; // 7f: Session-wide article IDs to prevent repeat stories
     airedHeadlinesNorm: Set<string>; // 7f: Session-wide normalized headlines to prevent repeat stories
+    breaksSinceLastRetroFm: number; // 7i: Breaks since last station ID
   }
   let serverRotationState: ServerRotationState = {
     selectedDate: '',
@@ -769,6 +770,7 @@ async function startServer() {
     recentCategoriesWindow: [],
     airedArticleIds: new Set<string>(),
     airedHeadlinesNorm: new Set<string>(),
+    breaksSinceLastRetroFm: 0,
   };
 
   // Helper for natural extractive fallback monologue
@@ -868,11 +870,15 @@ async function startServer() {
       const roll = Math.random();
       const rollPassed = roll <= freqSetting;
 
-      const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number' ? breaksSinceLastRetroFm : 4;
-      const allowRetroFm = sinceRetroFm >= 4;
+      const isFirstBreak = (typeof totalBreaksSession === 'number' ? totalBreaksSession : 0) === 0;
+
+      // Fix 7i: Station ID fires on break 1, and then once every ~5 breaks thereafter
+      const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number'
+        ? breaksSinceLastRetroFm
+        : serverRotationState.breaksSinceLastRetroFm;
+      const allowRetroFm = isFirstBreak || sinceRetroFm >= 5;
       const sinceMusicNews = typeof breaksSinceLastMusicNews === 'number' ? breaksSinceLastMusicNews : 8;
       const allowMusicNewsPast = sinceMusicNews >= 8;
-      const isFirstBreak = (typeof totalBreaksSession === 'number' ? totalBreaksSession : 0) === 0;
 
       const usedKeysSet = new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []);
       const blacklistedKeysSet = new Set<string>(Array.isArray(blacklistedFactKeys) ? blacklistedFactKeys : []);
@@ -1365,6 +1371,7 @@ async function startServer() {
           recentCategoriesWindow: [],
           airedArticleIds: new Set<string>(),
           airedHeadlinesNorm: new Set<string>(),
+          breaksSinceLastRetroFm: 0,
         };
       }
 
@@ -2014,6 +2021,14 @@ async function startServer() {
         // Increment breaks since last news
         serverRotationState.breaksSinceLastNews += 1;
       }
+
+      // Fix 7i: Update station ID counter
+      if (/RetroFM/i.test(finalSpeech)) {
+        serverRotationState.breaksSinceLastRetroFm = 0;
+      } else {
+        serverRotationState.breaksSinceLastRetroFm += 1;
+      }
+
       serverRotationState.lastCategory = chosenTypeStr;
       serverRotationState.totalBreaksCount += 1;
       serverRotationState.recentCategoriesWindow.push(chosenTypeStr);
@@ -2120,6 +2135,7 @@ async function startServer() {
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,
         shortCloser: chosenShortCloser,
+        breaksSinceLastRetroFm: serverRotationState.breaksSinceLastRetroFm,
       });
     } catch (err: any) {
       const elapsedMs = Date.now() - startTime;
