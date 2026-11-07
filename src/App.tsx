@@ -5015,7 +5015,7 @@ export default function App() {
         if (/RetroFM/i.test(aired)) {
           specABreakStateRef.current.breaksSinceLastRetroFm = 0;
         } else {
-          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 4) + 1;
+          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 0) + 1;
         }
       }
 
