@@ -1340,10 +1340,16 @@ async function startServer() {
         hasEligibleNews &&
         (serverRotationState.breaksSinceLastNews >= 2 || effectiveLastCategory === 'next_song_story');
 
-      // 4m: Group candidate categories:
+      // 4m & 5c: Group candidate categories:
+      // Prefer silence/song stories to filler: If no candidate passes the strict gate for a date/window,
+      // air no news on that break and fall back to next_song_story (or chart/credits). Do NOT lower the gate to hit news quota.
       // Try at most 2 news candidates per break (best interest score first).
       // Fallback order: news (if due) -> next_song_story -> fallback candidates (chart/credit) -> plain_intro.
       // If news is not due: next_song_story -> primary news -> secondary news -> fallback candidates.
+      if (newsIsDue && !hasEligibleNews) {
+        console.log(`[DJ News Gate] No high-quality news candidates passed the strict gate for ${selectedDate} (window 0..7d). Falling back to next_song_story without lowering gate.`);
+      }
+
       const candidateQueues: CandidateEval[][] = newsIsDue
         ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
         : [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue];
