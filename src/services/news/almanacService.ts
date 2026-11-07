@@ -480,7 +480,14 @@ function categorizeNYT(
   const isBusinessOrFinancial = d.includes('financial') || d.includes('business') || s.includes('business') ||
     /\b(?:bought by|purchased|acquisition|merger|corp|quarterly earnings|stock|shares|dividend|patent)\b/i.test(hLower);
 
-  // 1. Music items check: must be genuine music topics, NEVER business acquisitions
+  // Check if sports or secondary games (evaluated BEFORE music keyword guessing so sports terms never match music)
+  const isSports = s.includes('sport') || d.includes('sport') ||
+    /\b(?:baseball|basketball|football|hockey|derby|bulls|knicks|yankees|mets|dodgers|defeats|victory over|pinch-hit|inning|intercollegiate|league game|ncaa|yale|harvard|nyu|scored|stadium|pennant|golf|semi-finals in golf|colts|quarterback|pitcher|touchdown|innings|tournament|match play|bogey|birdie|par\b)\b/i.test(hLower);
+  if (isSports) {
+    return { sectionName: 'Sports', category: 'sports' };
+  }
+
+  // 1. Music items check: must be genuine music topics, NEVER business acquisitions or sports
   // Note: Pre-1980 NYT records often have desk='unspecified', 'none', or '' and section='archives'.
   const isMusicDeskOrSection = (
     d.includes('arts') ||
@@ -497,7 +504,12 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  const isMusicKeyword = /\b(music|song|songs|album|albums|single|concert|concerts|orchestra|symphony|opera|musician|band|bands|rock|jazz|pop|soul|r&b|disco|country|folk|blues|billboard|grammy|pop life|singer|singers|vocalist)\b/i.test(combinedLower);
+  // Fix 5b: Strict music keyword check. Avoid broad words like "tour" (golf tour), "single" (baseball single),
+  // "band" (headband/armband), "record" (court/temperature record).
+  const isMusicKeyword = /\b(music|musician|musicians|song|songs|album|albums|concert|concerts|orchestra|symphony|opera|rock|jazz|r&b|disco|billboard|grammy|pop life|singer|singers|vocalist|vocalists|record label|recording artist|musical)\b/i.test(combinedLower) ||
+    /\b(touring band|rock band|jazz band|pop band|folk band|musical tour|concert tour)\b/i.test(combinedLower) ||
+    /\b(hot 100|hit single|new single|single release)\b/i.test(combinedLower);
+
   // Specifically prevent "Singer" when referring to Studebaker or Singer co.
   const isSingerCompany = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(combinedLower);
 
@@ -513,13 +525,6 @@ function categorizeNYT(
   // 3. Television
   if (s.includes('television') || d.includes('television') || s.includes('tv') || d.includes('tv') || /\b(television|broadcasting|nbc|cbs|abc|fox|tv series)\b/i.test(hLower)) {
     return { sectionName: 'Television', category: 'television' };
-  }
-
-  // 4. Sports (Classify college sports or secondary games as sports, never major_news)
-  const isSports = s.includes('sport') || d.includes('sport') ||
-    /\b(?:baseball|basketball|football|hockey|derby|bulls|knicks|yankees|mets|dodgers|defeats|victory over|pinch-hit|inning|intercollegiate|league game|ncaa|yale|harvard|nyu|scored|stadium|pennant)\b/i.test(hLower);
-  if (isSports) {
-    return { sectionName: 'Sports', category: 'sports' };
   }
 
   // 4b. Routine travel, society, weddings, or local human interest are NOT major news
