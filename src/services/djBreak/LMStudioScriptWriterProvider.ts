@@ -1075,10 +1075,10 @@ Write 2-3 short, natural sentences (35-55 words total) following all rules. Outp
 Verify each numbered claim sentence against the fact sheet.
 
 CRITICAL RULES:
-1. If a claim contains ANY detail, adjective, title, praise, or characterization (such as "pioneering", "legendary", "iconic", "virtuoso", studio name, location, number of stories, or drum name) that is NOT explicitly stated in the fact sheet, you MUST output:
-[Claim N]: UNSUPPORTED: <reason>
-2. General cultural knowledge, external facts, or historical inferences outside the fact sheet are STRICTLY FORBIDDEN.
-3. If every detail in the claim is explicitly supported by a fact, output:
+1. Flag ONLY factual claims (invented names, dates, numbers, places, specific events) that are not supported by the fact sheet. Output:
+[Claim N]: UNSUPPORTED: <reason naming the unverified fact>
+2. DO NOT REJECT conversational framing, natural transitions, time phrases (like "today" or "earlier this week"), or reasonable paraphrases of the facts.
+3. If the facts reasonably support the statement, output:
 [Claim N]: SUPPORTED (Fact <id>)`;
 
     const userPromptStep2 = `FACT SHEET:
