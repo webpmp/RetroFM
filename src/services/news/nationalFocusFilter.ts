@@ -49,6 +49,19 @@ const NON_STORY_HEADLINE_PHRASES = [
   'most issues drop',
   'trading session',
   'treasury bills',
+  'office building begun',
+  'builder advises',
+  'settles suit',
+  'settles antitrust',
+  'settle suit',
+  'settles case',
+  'tonsorial guide',
+  'did you know',
+  'began in 1914',
+  'began in 19',
+  'a guide for',
+  'how-to',
+  'how to ',
 ];
 
 /**
@@ -431,9 +444,9 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
     };
   }
 
-  // Rule 5 (Fix 3): When news_desk is "Unspecified", "None", or empty (pre-1980 NYT archives),
-  // do NOT reject on desk alone. Keep if headline/abstract/keywords match major-news or music/pop-culture keywords
-  // or if the article's DJ interest score >= 55 (while excluding routine local/metro NYC stories).
+  // Rule 5 (Fix 3 & Fix 5a): When news_desk is "Unspecified", "None", or empty (pre-1980 NYT archives),
+  // do NOT reject on desk alone. Items with desk Unspecified/None must be front page or keyword matches.
+  // Interest score alone is NOT enough for them (Fix 5a).
   if (isPre1980UnspecifiedDesk && !localNycExclusionRegex.test(combinedText)) {
     if (majorNewsKeywordsRegex.test(combinedText)) {
       return {
@@ -453,25 +466,7 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
         section: rawSection,
       };
     }
-    const catCheck = categorizeNYTArticle(doc);
-    const interest = computeDJInterestScore({
-      isFrontPage,
-      category: catCheck.category,
-      desk: rawDesk,
-      section: rawSection,
-      headline,
-      abstract: summary,
-      keywords,
-    });
-    if (interest >= 55) {
-      return {
-        keep: true,
-        reason: `Pre-1980 Unspecified/None desk passed interest threshold (score=${interest})`,
-        isFrontPage: false,
-        desk: rawDesk,
-        section: rawSection,
-      };
-    }
+    // Fix 5a: Unspecified/None items without front page or keyword match are rejected
   }
 
   // Default non-national items (society desks, local classifieds, regional entries, etc.)

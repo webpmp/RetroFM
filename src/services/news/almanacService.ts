@@ -117,7 +117,8 @@ export function getNYTFunnelDiagnostics(broadcastDate: string): NYTFunnelDiagnos
       const hlLower = headline.toLowerCase();
       if (
         /\b(?:appoint|named|joins|promoted|earnings|quarterly|profit|loss|shares|dividend|corporate|bankrupt|merger|acquisition|buys|sold|sells|contract with|contract for|patent)\b/i.test(hlLower) ||
-        /\b(?:executive|officer|vice president|chairman|coo|ceo|cfo|director of marketing|hires)\b/i.test(hlLower)
+        /\b(?:executive|officer|vice president|chairman|coo|ceo|cfo|director of marketing|hires)\b/i.test(hlLower) ||
+        /\b(?:settles suit|settles antitrust|settle suit|settles case|office building begun|builder advises|tonsorial guide|did you know|began in 1914|began in 19|a guide for|how-to|how to )\b/i.test(hlLower)
       ) {
         rejected.push({ pubDate, headline, reason: 'routine_business_or_personnel' });
         continue;
@@ -538,10 +539,18 @@ function categorizeNYT(
   }
 
   // 6. Major News (National / World / Front Page)
-  if (isFrontPage) {
-    return { sectionName: 'Front Page', category: 'major_news' };
+  // Fix 5a: Stricter major_news gate
+  // Require: Front page (isFrontPage), OR National/Foreign/Washington desk, OR strong major-news keyword match.
+  // Items with desk Unspecified/None must be front page or keyword matches.
+  const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
+  const majorNewsKeywordMatch = /\b(president|white house|congress|senate|supreme court|pentagon|state department|war|troops|treaty|summit|strike|election|primary|campaign|assassination|space|nasa|apollo|astronaut|satellite|disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear|ruling|verdict|soviet|vietnam|cambodia|nato|united nations|u\.n\.|hostage|peacekeeping|cease-fire|embargo|civil rights|indict|federal|fbi|cia)\b/i.test(combinedLower);
+
+  if (isFrontPage || isNationalOrForeignDesk || majorNewsKeywordMatch) {
+    return { sectionName: isFrontPage ? 'Front Page' : 'National / World', category: 'major_news' };
   }
-  return { sectionName: 'National / World', category: 'major_news' };
+
+  // Miscellaneous non-qualifying desk/items go to pop_culture rather than major_news
+  return { sectionName: 'Living & Leisure', category: 'pop_culture' };
 }
 
 /**
@@ -619,6 +628,18 @@ export function scoreItemInterest(headline: string, summary: string, category: s
     }
     if (/\b(?:grant|endowment|board|trustee|appointment|postpones?|auditorium)\b/i.test(combined)) {
       score -= 20;
+    }
+  }
+
+  if (category === 'major_news') {
+    // Boost major historic and national headlines, demote routine administrative items
+    if (/\b(president|white house|congress|senate|supreme court|war|troops|treaty|summit|strike|election|assassination|space|nasa|apollo|disaster|crash|nuclear|hostage)\b/i.test(combined)) {
+      score += 25;
+    } else {
+      score += 10;
+    }
+    if (/\b(?:building begun|builder advises|plant cost|settles suit|settles antitrust|settle suit|real estate|zoning|tonsorial|anniversary|did you know)\b/i.test(combined)) {
+      score -= 30;
     }
   }
 
@@ -920,7 +941,8 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         const hlLower = (a.headline || '').toLowerCase();
         if (
           /\b(?:appoint|named|joins|promoted|earnings|quarterly|profit|loss|shares|dividend|corporate|bankrupt|merger|acquisition|buys|sold|sells|contract with|contract for|patent)\b/i.test(hlLower) ||
-          /\b(?:executive|officer|vice president|chairman|coo|ceo|cfo|director of marketing|hires)\b/i.test(hlLower)
+          /\b(?:executive|officer|vice president|chairman|coo|ceo|cfo|director of marketing|hires)\b/i.test(hlLower) ||
+          /\b(?:settles suit|settles antitrust|settle suit|settles case|office building begun|builder advises|tonsorial guide|did you know|began in 1914|began in 19|a guide for|how-to|how to )\b/i.test(hlLower)
         ) {
           continue;
         }
