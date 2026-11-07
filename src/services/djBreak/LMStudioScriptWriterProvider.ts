@@ -1077,10 +1077,11 @@ Write 2-3 short, natural sentences (35-55 words total) following all rules. Outp
 Verify each numbered claim sentence against the fact sheet.
 
 CRITICAL RULES:
-1. Flag ONLY factual claims (invented names, dates, numbers, places, specific events) that are not supported by the fact sheet. Output:
-[Claim N]: UNSUPPORTED: <reason naming the unverified fact>
-2. DO NOT REJECT conversational framing, natural transitions, time phrases (like "today" or "earlier this week"), or reasonable paraphrases of the facts.
-3. If the facts reasonably support the statement, output:
+1. Flag factual claims (invented names, figures, dates, numbers, places, specific events, or motives) not supported by the fact sheet.
+2. Flag causal claims ("leading to", "because", "as a result", "in order to") and any figure, name or motive not explicitly stated in the fact sheet. Output:
+[Claim N]: UNSUPPORTED: <reason naming the unverified fact, causal link, or motive>
+3. DO NOT REJECT harmless conversational framing, natural transitions, or time phrases (like "today" or "a couple of days ago").
+4. If the facts reasonably support the statement without unverified inferences, output:
 [Claim N]: SUPPORTED (Fact <id>)`;
 
     const userPromptStep2 = `FACT SHEET:
