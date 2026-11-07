@@ -779,6 +779,9 @@ async function startServer() {
     return sentences.join(' ');
   }
 
+  // In-memory registry of prepared break metadata for lifecycle logging (4h)
+  const preparedBreakMeta = new Map<string, { type: string; headline?: string; articleDate?: string; section?: string; timePhrase?: string }>();
+
   // Segment Lifecycle & Status Reporting Endpoint
   app.post('/api/dj/segment-status', (req, res) => {
     const { breakId, event, reason } = req.body;
@@ -789,8 +792,13 @@ async function startServer() {
       console.log(`[Segment Queued] id=${breakId}`);
     } else if (event === 'aired') {
       console.log(`[Segment Aired] id=${breakId}`);
+      const meta = preparedBreakMeta.get(breakId);
+      if (meta && (meta.type === 'major_news' || meta.type === 'music_news')) {
+        console.log(`[News Aired] type=${meta.type} headline="${meta.headline}" articleDate=${meta.articleDate} section="${meta.section}" timePhrase="${meta.timePhrase}"`);
+      }
     } else if (event === 'discarded') {
       console.log(`[Segment Discarded] id=${breakId} reason="${reason || 'unknown'}"`);
+      preparedBreakMeta.delete(breakId);
     }
     return res.json({ success: true });
   });
@@ -1938,6 +1946,17 @@ async function startServer() {
       // Part 1: Log [Segment Prepared] id=<id> when a break is generated and validated
       if (finalSpeech) {
         console.log(`[Segment Prepared] id=${breakId}`);
+        if (chosenCandidate?.type === 'major_news' || chosenCandidate?.type === 'music_news') {
+          const pkt = chosenCandidate.packet || {};
+          preparedBreakMeta.set(breakId, {
+            type: chosenCandidate.type,
+            headline: pkt.headline || pkt.topicTitle,
+            articleDate: pkt.printDate,
+            section: pkt.section,
+            timePhrase: pkt.timePhrase,
+          });
+          console.log(`[News Break Chosen] type=${chosenCandidate.type} headline="${pkt.headline || pkt.topicTitle}" articleDate=${pkt.printDate} section="${pkt.section}" timePhrase="${pkt.timePhrase}"`);
+        }
       }
 
       return res.json({
