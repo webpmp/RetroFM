@@ -401,7 +401,7 @@ export function validateSegmentBreakOutput(
   // and the script's weekday/date matches.
   // Exception: Chart "this week" wording stays allowed for chart sentences built from the latest chart on/before broadcast date.
   const RELATIVE_TIME_WORDS = [
-    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow)\b/i,
+    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow|last week|a couple of days ago)\b/i,
   ];
   for (const pat of RELATIVE_TIME_WORDS) {
     const match = trimmed.match(pat);
@@ -411,16 +411,26 @@ export function validateSegmentBreakOutput(
       const isChartTopic = context.factPacket?.topic === 'chart' || context.factPacket?.topic === 'chart_story' || context.factPacket?.topic === 'next_song_story';
       const isChartSentence = relWord === 'this week' && isChartTopic;
 
-      // 4e & 5d: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
+      // 4e, 5d, 5l: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
       const pktTimePhrase = (context.factPacket?.timePhrase || '').toLowerCase();
       const matchesPacketTimePhrase = pktTimePhrase && (
         relWord === pktTimePhrase ||
-        (pktTimePhrase === 'earlier this week' && relWord === 'this week') ||
+        (pktTimePhrase === 'last week' && relWord === 'last week') ||
+        (pktTimePhrase === 'a couple of days ago' && relWord === 'a couple of days ago') ||
         (pktTimePhrase.includes("today's times") && (relWord === 'today' || relWord === "today's times")) ||
         (pktTimePhrase.includes("yesterday's times") && (relWord === 'yesterday' || relWord === "yesterday's times")) ||
         (pktTimePhrase === 'today' && relWord === 'today') ||
         (pktTimePhrase === 'yesterday' && relWord === 'yesterday')
       );
+
+      // Fix 5l: Never allow "earlier this week" or "this week" for items older than 4 days
+      if ((relWord === 'this week' || relWord === 'earlier this week') && pktTimePhrase === 'last week') {
+        return {
+          valid: false,
+          rejectedReason: `Time phrase mismatch: used "${relWord}" for item 4-7 days old (expected "last week")`,
+          sanitizedText: '',
+        };
+      }
 
       if (!isChartSentence && !matchesPacketTimePhrase) {
         // Must verify event date is within 7 days before broadcast date and weekday/date matches
