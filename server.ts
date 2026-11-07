@@ -878,10 +878,12 @@ async function startServer() {
       let writer: any;
       if (provider === 'lmstudio' || (!process.env.GEMINI_API_KEY && resolvedEndpoint)) {
         writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 18000 });
+        console.log(`[DJ Break Writer] Using LMStudioScriptWriterProvider (model: ${model || 'default'}, endpoint: ${resolvedEndpoint})`);
       } else {
         const defaultModel = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
         const fallbackModel = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || 'gemini-2.5-flash';
         writer = new GeminiScriptWriterProvider(process.env.GEMINI_API_KEY, defaultModel, fallbackModel);
+        console.log(`[DJ Break Writer] Using GeminiScriptWriterProvider (primary: ${defaultModel}, fallback: ${fallbackModel})`);
       }
 
       // Collect candidates
