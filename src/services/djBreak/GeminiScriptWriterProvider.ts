@@ -4,7 +4,7 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
-import { buildNewsLeadIn, prependHook } from './newsHooks.js';
+import { buildNewsLeadIn, prependHook, stripModelPublicationPhrases } from './newsHooks.js';
 import {
   ScriptWriterProvider,
   BreakGeneratorInput,
@@ -602,13 +602,14 @@ Fact: "${input.factPacket.factText}"
 
 CRITICAL RULES:
 1. Write EXACTLY ONE plain spoken sentence (~15 to 25 words max).
-2. Always attribute news to "The Times". Use one of these rotating openers: "The Times reports...", "In the news this morning, The Times reports...", "According to The Times...".
-3. Use ONLY facts and names provided in the packet. Never invent details or outcomes.
-4. Do NOT use the words "yesterday" or "today".
-5. Do NOT include personal opinions, reactions, commentary, or humor.
-6. Do NOT mention upcoming songs or say "coming up".
-7. No exclamation points (!). Use periods only. No hype words or interjections.
-8. Output ONLY the raw spoken radio script.
+2. Report the news fact factually. Do not invent details or outcomes.
+3. Use ONLY facts and names provided in the packet.
+4. Do NOT mention when or where the story was published (station automation adds the lead-in).
+5. Do NOT use relative-day words like "yesterday", "today", or "tomorrow".
+6. Do NOT include personal opinions, reactions, commentary, or humor.
+7. Do NOT mention upcoming songs or say "coming up".
+8. No exclamation points (!). Use periods only. No hype words or interjections.
+9. Output ONLY the raw spoken radio script.
 `.trim();
 
     } else if (isChartFact) {
@@ -1059,7 +1060,10 @@ VERDICTS:`;
       finalSentences.pop();
     }
 
-    const auditedBody = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    let auditedBody = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    if (input.topic === 'major_news' || input.topic === 'music_news') {
+      auditedBody = stripModelPublicationPhrases(auditedBody);
+    }
     // Code-added hook is prepended only after the audit, so it is never audited as a model claim.
     const finalScript = prependHook(hook, auditedBody);
 
