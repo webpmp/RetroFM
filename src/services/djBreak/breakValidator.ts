@@ -458,6 +458,23 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 8b / C3: In news drafts (or draft bodies), if article date != broadcast date,
+  // reject any draft containing relative-day words: tomorrow, tonight, today, yesterday, this/next/last week, this weekend, or bare weekday names.
+  if (isNewsTopic && context.isModelDraft) {
+    const artDate = context.factPacket?.printDate || (context.factPacket?.facts?.[0] as any)?.printDate || (context.factPacket?.facts?.[0] as any)?.date;
+    if (artDate && context.selectedDate && artDate !== context.selectedDate) {
+      const BANNED_REL_DAY = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+      const relMatch = trimmed.match(BANNED_REL_DAY);
+      if (relMatch) {
+        return {
+          valid: false,
+          rejectedReason: `Model news draft contains relative-day word "${relMatch[0]}" when article date (${artDate}) != broadcast date (${context.selectedDate})`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
   // 3b. Check freshness and relative time words
   // "this week", "this Friday", "tonight", "today", "last night", "this morning" etc.
   // Rule: A relative word is allowed only if the event date is within 7 days before the broadcast date
