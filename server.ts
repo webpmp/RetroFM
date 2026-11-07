@@ -1333,9 +1333,14 @@ async function startServer() {
         ? lastTopic
         : serverRotationState.lastCategory;
 
+      // Fix 6d: If the music news candidate pool for a date comes out empty or tiny (< 2 items),
+      // do not air music_news for that date; fall back to next_song_story and do not loosen the filter.
+      const isMusicNewsPoolTiny = musicNewsCandidates.length < 2;
+      const filteredMusicNewsCandidates = isMusicNewsPoolTiny ? [] : musicNewsCandidates;
+
       const songStoryQueue = songStoryCandidate.ready ? [songStoryCandidate] : [];
       const majorQueue = majorNewsCandidates.slice(0, 3);
-      const musicQueue = musicNewsCandidates.slice(0, 3);
+      const musicQueue = filteredMusicNewsCandidates.slice(0, 3);
       const shortFallbackQueue = fallbackCandidates.slice(0, 3);
 
       // Order the two news queues by alternating slot, avoiding repeating effectiveLastCategory

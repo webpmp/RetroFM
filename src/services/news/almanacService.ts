@@ -532,12 +532,17 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  // Fix 5b & 5k: Strict music keyword check. Require naming a specific artist, record, concert, or festival
-  // in headline/abstract. Pure movie/TV/theater listings or generic reviews without artist/record/concert are not music_news.
-  const isSpecificMusicTarget =
-    /\b(musician|musicians|rock band|jazz band|pop band|folk band|touring band|orchestra|symphony|billboard|grammy|pop life|recording artist|record label|hot 100|hit single|new single|single release|album release|debut album|solo album)\b/i.test(combinedLower) ||
-    (/\b(music|song|songs|album|albums|concert|concerts|opera|rock|jazz|r&b|disco|singer|singers|vocalist|vocalists)\b/i.test(combinedLower) &&
-     /\b(recorded|recording|single|album|tour|concert|recital|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince)\b/i.test(combinedLower));
+  // Fix 5b, 5k & 6d: Strict music keyword check.
+  // Allowed genres: pop, rock, soul/R&B, folk, country, jazz, blues, hip-hop and reggae.
+  // Excluded genres: classical, opera, church/choral, school and children's concerts, and local recital listings unless a famous name appears.
+  const isExcludedMusicGenre =
+    /\b(?:classical|opera|operatic|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital)\b/i.test(combinedLower) &&
+    !/\b(?:elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|seeger|helen reddy)\b/i.test(combinedLower);
+
+  const isAllowedMusicGenre =
+    /\b(?:pop|rock|rock and roll|rock 'n' roll|rock & roll|rock 'n roll|punk|new wave|folk|country|bluegrass|r&b|rhythm and blues|soul|motown|disco|dance|jazz|blues|hip-hop|hip hop|rap|reggae|billboard|hot 100|hit single|new single|single release|album release|debut album|solo album|recording artist|record label|touring band|rock band|pop band|jazz band)\b/i.test(combinedLower) ||
+    (/\b(?:musician|musicians|song|songs|album|albums|concert|concerts|singer|singers|vocalist|vocalists)\b/i.test(combinedLower) &&
+     /\b(?:recorded|recording|single|album|tour|concert|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|ac\/dc|oasis|boy george|peter gabriel)\b/i.test(combinedLower));
 
   // Reject pure movie/TV/theater listings from music_news
   const isPureTheaterOrMovie = /^(?:theater:|theatre:|film:|movie:|television:|tv:)\b/i.test(hLower) ||
@@ -546,7 +551,7 @@ function categorizeNYT(
   // Specifically prevent "Singer" when referring to Studebaker or Singer co. or baseball pitcher Bill Singer
   const isNonMusicSinger = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt|bill singer)\b/i.test(combinedLower);
 
-  if (!isNonMusicSinger && !isPureTheaterOrMovie && isMusicDeskOrSection && isSpecificMusicTarget) {
+  if (!isNonMusicSinger && !isPureTheaterOrMovie && !isExcludedMusicGenre && isMusicDeskOrSection && isAllowedMusicGenre) {
     return { sectionName: 'Music News', category: 'music' };
   }
 
