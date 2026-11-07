@@ -503,10 +503,10 @@ export function validateSegmentBreakOutput(
   }
 
   // 3f. Check invented station frequency or format (only "RetroFM" is permitted).
-  // Fix 5e: Tighten regex so decades ("70s", "80s"), ordinals ("45th", "1st"), and normal numbers don't match.
-  // Catch real frequencies ("101.5 FM", "98.7"), 4-letter K/W call signs, and "Top 40" / "FM radio".
-  // Log exact text matched on every rejection.
-  const STATION_INVENTED_REGEX = /\b(?:\d{2,3}\.\d\s*(?:FM|AM)?|\d{2,3}\s*FM|[KW][A-Z]{3}|Top 40|FM radio)\b/i;
+  // Fix 5e: Catch real frequencies ("101.5 FM", "98.7 FM"), 4-letter all-caps K/W call signs (e.g. WABC, KROQ),
+  // and format names ("Top 40", "FM radio").
+  // Do NOT use case-insensitive [KW][A-Z]{3} because it matches normal English words like "with", "were", "what", "week"!
+  const STATION_INVENTED_REGEX = /\b(?:\d{2,3}(?:\.\d)?\s*FM|[KW][A-Z]{3}\b|Top\s*40|FM\s*radio)\b/;
   const stationMatch = trimmed.match(STATION_INVENTED_REGEX);
   if (stationMatch) {
     console.log(`[Validator Station Ban Matched] matchedText="${stationMatch[0]}" script="${trimmed}"`);
