@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { chooseNewsHook, prependHook } from './newsHooks.js';
+import { buildNewsLeadIn, prependHook } from './newsHooks.js';
 import {
   ScriptWriterProvider,
   BreakGeneratorInput,
@@ -949,9 +949,9 @@ Respond strictly with JSON schema:
       }
     }
 
-    // News hooks are chosen by code: a front-page hook only when the article ran on page 1 / section A.
+    // News lead-ins are chosen strictly by code matching story age and front page status (Fix 7a).
     if (input.topic === 'major_news' || input.topic === 'music_news') {
-      hook = chooseNewsHook(input.topic, input.isFrontPage, seed);
+      hook = buildNewsLeadIn(input.topic, input.isFrontPage, typeof input.diffDays === 'number' ? input.diffDays : 0);
     }
 
     const systemPromptStep1 = `You are ${persona.name}, a genuine Top 40 radio DJ broadcasting on ${fullDateSpoken}.
@@ -962,7 +962,7 @@ Exemplar 1:
 "Checking in on the Hot 100, Kenny Rogers climbs into the top forty this week with 'She Believes In Me.' He recorded the track in Nashville with producer Larry Butler earlier this spring."
 
 Exemplar 2:
-"The Times reports twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze."
+"Twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze."
 
 Exemplar 3:
 "Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit."
@@ -977,7 +977,7 @@ STRICT RULES (Must follow all):
 7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
 8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
 9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
-10. TIME PHRASING: In news breaks, when referring to the date of the report, use "in today's Times" or "in yesterday's Times" according to TIME OF EVENT. Do not claim the event happened today unless the source text says so.
+10. NO PUBLICATION OR TIME OPENERS: In news breaks, NEVER mention when or where the story was published. Never say "The Times", "today's Times", "yesterday's Times", "in the headlines", "in today's", or "reported that". The station lead-in already handles the publication and timing.
 11. NO EXCLAMATION MARKS: Never use exclamation marks (!). Always use periods.
 12. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.`;
 

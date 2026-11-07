@@ -201,6 +201,31 @@ export function validateSegmentBreakOutput(
         };
       }
     }
+
+    // 7a: Reject news drafts containing "Times", "in the headlines", "today's", "yesterday's" or other time/publication phrases (the code adds them)
+    if (context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news') {
+      const BANNED_NEWS_DRAFT_PHRASES = [
+        /\b(?:the\s+)?times\b/i,
+        /\bin\s+the\s+headlines\b/i,
+        /\btoday['’]s\b/i,
+        /\byesterday['’]s\b/i,
+        /\breported\s+that\b/i,
+        /\bfrom\s+today['’]s\b/i,
+        /\bfrom\s+yesterday['’]s\b/i,
+        /\bon\s+the\s+front\s+page\b/i,
+        /\bfrom\s+the\s+front\s+page\b/i,
+      ];
+      for (const bp of BANNED_NEWS_DRAFT_PHRASES) {
+        const m = trimmed.match(bp);
+        if (m) {
+          return {
+            valid: false,
+            rejectedReason: `Model news draft contains publication/time lead-in phrase ("${m[0]}"); only code adds lead-ins`,
+            sanitizedText: '',
+          };
+        }
+      }
+    }
   }
 
   // 3a3. Check: No break contains the song title more than once

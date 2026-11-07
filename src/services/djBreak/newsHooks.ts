@@ -2,27 +2,36 @@
  * @license
  * SPDX-License-Identifier: MIT
  *
- * Code-added opener hooks for segment breaks.
+ * Code-added opener hooks and lead-ins for segment breaks.
  * The model never writes these; code prepends them AFTER the Step 2 claim audit,
  * so the audit only ever checks the model's own sentences.
  */
 
-/** Front-page style hooks: only used when the NYT article actually ran on page 1 / section A. */
-const FRONT_PAGE_HOOKS = ['From the front pages of The Times,', 'On the front page of The Times,'];
-/** Major news neutral hooks: used for items that pass the strict major_news gate. */
-const MAJOR_NEWS_HOOKS = ['In the news,', 'In the headlines,'];
-/** Features / Arts / Music hooks: neutral hook or none. */
-const ARTS_FEATURE_HOOKS = ["From today's Times,", ''];
-
-export function chooseNewsHook(topic: string, isFrontPage: boolean | undefined, seed: number): string {
-  if (topic === 'major_news') {
-    const list = isFrontPage ? FRONT_PAGE_HOOKS : MAJOR_NEWS_HOOKS;
-    return list[seed % list.length];
+/**
+ * 7a: Builds a single lead-in string in code matching story age and placement:
+ * - 0 days + Front page: "On the front page of today's Times,"
+ * - 0 days + Other:      "In today's Times,"
+ * - 1 day:               "In yesterday's Times,"
+ * - 2-3 days:            "A couple of days ago, The Times reported,"
+ * - 4-7 days:            "Last week, The Times reported,"
+ */
+export function buildNewsLeadIn(
+  category: 'major_news' | 'music_news' | string,
+  isFrontPage: boolean | undefined,
+  diffDays: number
+): string {
+  if (diffDays <= 0) {
+    return isFrontPage
+      ? "On the front page of today's Times,"
+      : "In today's Times,";
   }
-  if (topic === 'music_news') {
-    return ARTS_FEATURE_HOOKS[seed % ARTS_FEATURE_HOOKS.length];
+  if (diffDays === 1) {
+    return "In yesterday's Times,";
   }
-  return '';
+  if (diffDays <= 3) {
+    return "A couple of days ago, The Times reported,";
+  }
+  return "Last week, The Times reported,";
 }
 
 /** Prepends a hook to a body, lowercasing a common sentence-initial word after a comma hook. */
