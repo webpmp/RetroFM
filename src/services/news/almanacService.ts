@@ -485,12 +485,16 @@ function categorizeNYT(
   const mat = (typeOfMaterial || '').trim().toLowerCase();
 
   // Fix 6b: When material type is provided, allow major_news only for "News" and "Brief"
-  // Exclude News Analysis, Profile, Biography, Special Report, Interview, Review, Op-Ed, Editorial, Blog, Letter, Feature
-  const isMaterialTypeBlockedForMajorNews = Boolean(
+  // Exclude News Analysis, Profile, Biography, Special Report, Interview, Review, Op-Ed, Editorial, Blog, Letter, Feature.
+  // Pre-1980 items without a specific modern material type (or with placeholder "Archives" / "Article" / "Front Page" / "")
+  // keep the existing rules.
+  const isExcludedModernMaterialType = Boolean(
     mat &&
     mat !== 'news' &&
     mat !== 'brief' &&
-    mat !== 'front page'
+    mat !== 'front page' &&
+    mat !== 'archives' &&
+    mat !== 'article'
   );
 
   // Check if financial/business desk or corporate headline
@@ -535,12 +539,14 @@ function categorizeNYT(
   // Fix 5b, 5k & 6d: Strict music keyword check.
   // Allowed genres: pop, rock, soul/R&B, folk, country, jazz, blues, hip-hop and reggae.
   // Excluded genres: classical, opera, church/choral, school and children's concerts, and local recital listings unless a famous name appears.
+  // Note: "country" and "dance" as isolated words appear in political news ("across the country", "diplomatic dance").
+  // They only qualify as music when combined with music terms (country music, country song, dance track, dance single, disco, etc.).
   const isExcludedMusicGenre =
     /\b(?:classical|opera|operatic|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital)\b/i.test(combinedLower) &&
     !/\b(?:elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|seeger|helen reddy)\b/i.test(combinedLower);
 
   const isAllowedMusicGenre =
-    /\b(?:pop|rock|rock and roll|rock 'n' roll|rock & roll|rock 'n roll|punk|new wave|folk|country|bluegrass|r&b|rhythm and blues|soul|motown|disco|dance|jazz|blues|hip-hop|hip hop|rap|reggae|billboard|hot 100|hit single|new single|single release|album release|debut album|solo album|recording artist|record label|touring band|rock band|pop band|jazz band)\b/i.test(combinedLower) ||
+    /\b(?:pop music|pop album|pop single|pop chart|pop artist|pop life|rock music|rock band|rock and roll|rock 'n' roll|rock & roll|rock 'n roll|punk rock|new wave|folk music|folk singer|folk song|country music|country singer|country song|bluegrass|r&b|rhythm and blues|soul music|motown|disco|dance music|dance single|dance club|jazz|blues|hip-hop|hip hop|rap music|reggae|billboard|hot 100|hit single|new single|single release|album release|debut album|solo album|recording artist|record label|touring band)\b/i.test(combinedLower) ||
     (/\b(?:musician|musicians|song|songs|album|albums|concert|concerts|singer|singers|vocalist|vocalists)\b/i.test(combinedLower) &&
      /\b(?:recorded|recording|single|album|tour|concert|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|ac\/dc|oasis|boy george|peter gabriel)\b/i.test(combinedLower));
 
@@ -587,7 +593,7 @@ function categorizeNYT(
   // Fix 6b: If material type is provided and not News/Brief, exclude from major_news.
   // Exclude local/regional business, real estate, construction, corporate personnel/board, society/births/surgery.
   const isExcludedMajorNews =
-    isMaterialTypeBlockedForMajorNews ||
+    isExcludedModernMaterialType ||
     /\b(?:construction|board of trustees|trustees|elected head|elevated|general manager|president of the board|hospital of brooklyn|underwent surgery|a son was born|son to mrs|container corp|named two|names two|doing well|hospital yesterday)\b/i.test(combinedLower);
 
   const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
