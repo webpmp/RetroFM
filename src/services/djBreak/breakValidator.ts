@@ -100,25 +100,41 @@ export function validateSegmentBreakOutput(
     };
   }
 
-  const trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
+  let trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
 
   // 1. Length check.
-  // News breaks (4d): cap is set from the amount of verified NYT material (headline + abstract/lead/snippet),
-  // floor 40, ceiling 75 words, and applies to the model draft (code-added station ID and hand-off are excluded).
-  // Other breaks: scaled to fact packet size (~20-25 words per fact, max +35% padding).
+  // News breaks (4k): Fixed cap of 70 words.
+  // Deterministic trim before rejecting: if draft is over 70 words, drop trailing whole sentences
+  // until it fits, as long as at least 2 complete sentences remain, then validate the trimmed version.
   const factCount = Math.max(1, (context.factPacket.facts || []).length);
   const isNewsTopic = context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news';
-  const words = trimmed.split(/\s+/).filter(Boolean);
+  let words = trimmed.split(/\s+/).filter(Boolean);
 
   if (isNewsTopic) {
     if (context.isModelDraft) {
-      const budget = computeNewsWordBudget(context.factPacket);
-      if (words.length > budget.maxWords) {
-        return {
-          valid: false,
-          rejectedReason: `Segment padded / too long: ${words.length} words (news material of ${budget.materialWords} words supports at most ~${budget.maxWords} words)`,
-          sanitizedText: '',
-        };
+      const NEWS_CAP = 70;
+      if (words.length > NEWS_CAP) {
+        // Try trimming trailing whole sentences
+        const rawSentences = trimmed.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 3);
+        let trimmedCandidate = '';
+        for (let i = rawSentences.length - 1; i >= 2; i--) {
+          const candidate = rawSentences.slice(0, i).join(' ').trim();
+          const candWords = candidate.split(/\s+/).filter(Boolean);
+          if (candWords.length <= NEWS_CAP) {
+            trimmedCandidate = candidate;
+            break;
+          }
+        }
+        if (trimmedCandidate) {
+          trimmed = trimmedCandidate;
+          words = trimmed.split(/\s+/).filter(Boolean);
+        } else {
+          return {
+            valid: false,
+            rejectedReason: `Segment padded / too long: ${words.length} words (fixed news cap: ${NEWS_CAP} words)`,
+            sanitizedText: '',
+          };
+        }
       }
     }
   } else {

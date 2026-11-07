@@ -917,7 +917,7 @@ ${factLines}${newsSectionLine}${timePhraseLine}
 OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
 
 TASK:
-Write the complete spoken radio segment monologue following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
+Write 2-3 short, natural sentences (35-55 words total) following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
 
     let rawDraft = '';
     let modelUsedStep1 = this.modelName;

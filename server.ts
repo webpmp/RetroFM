@@ -38,7 +38,7 @@ import {
   computeSongChartStatusFact,
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
-import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs } from './src/services/news/almanacService.js';
+import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
@@ -1114,15 +1114,25 @@ async function startServer() {
         return facts.filter((f) => !FIGURATIVE_PATTERNS.some((pat) => pat.test(f.text)));
       };
 
-      // 4d: News fact material = NYT headline + abstract/lead/snippet sentences (all verified).
-      // Items with too little material are skipped (never padded) so the next-best item is tried.
-      const buildNewsFacts = (entry: any, baseFacts: any[]) => {
+      // 4k: News fact material = NYT headline + abstract + at most one lead-paragraph sentence.
+      // Compact source prevents over-long drafts and reduces copying.
+      const buildNewsFacts = (entry: any, _baseFacts: any[]) => {
         const headlineFact = entry.headline
           ? [{ text: entry.headline, source: entry.source, printDate: entry.printDate, date: entry.eventDate }]
           : [];
-        const facts = [...headlineFact, ...baseFacts.filter((f: any) => f.text.trim() !== (entry.headline || '').trim())];
-        const budget = computeNewsWordBudget({ headline: entry.headline, facts });
-        return { facts, budget };
+        const compactFacts = [...headlineFact];
+        if (entry.abstract && entry.abstract.trim() && entry.abstract.trim() !== entry.headline?.trim()) {
+          compactFacts.push({ text: entry.abstract.trim(), source: entry.source, printDate: entry.printDate, date: entry.eventDate });
+        }
+        if (entry.leadParagraph && entry.leadParagraph.trim()) {
+          const leadSentences = splitVerbatimSentences(entry.leadParagraph.trim());
+          const firstLead = leadSentences[0];
+          if (firstLead && firstLead !== entry.abstract?.trim() && firstLead !== entry.headline?.trim()) {
+            compactFacts.push({ text: firstLead, source: entry.source, printDate: entry.printDate, date: entry.eventDate });
+          }
+        }
+        const budget = computeNewsWordBudget({ headline: entry.headline, facts: compactFacts });
+        return { facts: compactFacts, budget };
       };
 
       // 4e & 4h: Tiered date window and interest-score ranking for both news categories.
