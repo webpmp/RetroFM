@@ -757,6 +757,8 @@ async function startServer() {
     nextNewsSlot: 'major_news' | 'music_news';
     totalBreaksCount: number;
     recentCategoriesWindow: string[]; // Last up to 6 categories
+    airedArticleIds: Set<string>; // 7f: Session-wide article IDs to prevent repeat stories
+    airedHeadlinesNorm: Set<string>; // 7f: Session-wide normalized headlines to prevent repeat stories
   }
   let serverRotationState: ServerRotationState = {
     selectedDate: '',
@@ -765,6 +767,8 @@ async function startServer() {
     nextNewsSlot: 'major_news',
     totalBreaksCount: 0,
     recentCategoriesWindow: [],
+    airedArticleIds: new Set<string>(),
+    airedHeadlinesNorm: new Set<string>(),
   };
 
   // Helper for natural extractive fallback monologue
@@ -1157,6 +1161,9 @@ async function startServer() {
         for (const e of (almanac.entries || [])) {
           if (e.category !== category) continue;
           if (isKeyBlocked(`almanac:${e.id}`)) continue;
+          if (serverRotationState.airedArticleIds.has(e.id)) continue;
+          const normH = (e.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normH && serverRotationState.airedHeadlinesNorm.has(normH)) continue;
           const artDate = e.printDate || e.eventDate;
           if (!artDate) continue;
           const tierInfo = computeNewsDateTier(artDate, selectedDate, mappedCat);
@@ -1334,6 +1341,8 @@ async function startServer() {
           nextNewsSlot: 'major_news',
           totalBreaksCount: 0,
           recentCategoriesWindow: [],
+          airedArticleIds: new Set<string>(),
+          airedHeadlinesNorm: new Set<string>(),
         };
       }
 
@@ -1969,6 +1978,16 @@ async function startServer() {
       if (chosenTypeStr === 'major_news' || chosenTypeStr === 'music_news') {
         serverRotationState.breaksSinceLastNews = 0;
         serverRotationState.nextNewsSlot = chosenTypeStr === 'major_news' ? 'music_news' : 'major_news';
+        // 7f: Track session aired article IDs and normalized headlines
+        if (chosenCandidate?.itemKey?.startsWith('almanac:')) {
+          const rawId = chosenCandidate.itemKey.replace(/^almanac:/, '');
+          serverRotationState.airedArticleIds.add(rawId);
+        }
+        const hl = chosenCandidate?.packet?.headline || chosenCandidate?.packet?.topicTitle || '';
+        const normH = hl.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normH) {
+          serverRotationState.airedHeadlinesNorm.add(normH);
+        }
       } else {
         // Increment breaks since last news
         serverRotationState.breaksSinceLastNews += 1;
