@@ -265,12 +265,30 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Routine bar admission, carloadings, local zoning, or filler column' };
   }
 
-  // 6. Short summary (< 60 chars)
+  // 6. Fix 6c: Informative abstract required
+  // Both pools: skip any item whose abstract/lead is missing or too thin to say something specific
+  // (at least about 12 words including a concrete name, number, capitalized proper noun, or event).
+  // Column-label headlines ("POP", "JAZZ", "THE POP LIFE", "Concert: Rock", "GOING TO WALL ST.")
+  // are allowed only if the abstract is informative.
   const trimmedSummary = (summary || '').trim();
-  if (trimmedSummary.length < 60) {
+  const summaryWords = trimmedSummary.split(/\s+/).filter(Boolean);
+  const isColumnHeadline = /^(?:pop|jazz|the pop life|concert:\s*rock|going to wall st\.?|music|pop:|jazz:)$/i.test(h);
+  
+  // Check for concrete name (capitalized word), number, or event keyword
+  const hasConcreteEntityOrEvent =
+    /\b(?:[A-Z][a-z]+|[0-9]+|president|senate|congress|court|war|strike|album|tour|concert|record|single|billboard)\b/.test(trimmedSummary);
+
+  if (summaryWords.length < 12 || !hasConcreteEntityOrEvent) {
     return {
       isNonStory: true,
-      reason: `Non-story item: Summary shorter than 60 characters (${trimmedSummary.length} chars)`,
+      reason: `Non-story item: Abstract/lead too thin (${summaryWords.length} words, lacks concrete entity/event)`,
+    };
+  }
+
+  if (isColumnHeadline && summaryWords.length < 15) {
+    return {
+      isNonStory: true,
+      reason: `Non-story item: Column-label headline "${h}" requires informative abstract (>=15 words)`,
     };
   }
 
