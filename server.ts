@@ -1341,9 +1341,9 @@ async function startServer() {
         ? lastTopic
         : serverRotationState.lastCategory;
 
-      // Fix 6d: If the music news candidate pool for a date comes out empty or tiny (< 2 items),
-      // do not air music_news for that date; fall back to next_song_story and do not loosen the filter.
-      const isMusicNewsPoolTiny = musicNewsCandidates.length < 2;
+      // Fix 6d & 7d: If the music news candidate pool for a date comes out tiny (< 3 items),
+      // skip music_news for that date; fall back to next_song_story and do not loosen the filter.
+      const isMusicNewsPoolTiny = musicNewsCandidates.length < 3;
       const filteredMusicNewsCandidates = isMusicNewsPoolTiny ? [] : musicNewsCandidates;
 
       const songStoryQueue = songStoryCandidate.ready ? [songStoryCandidate] : [];

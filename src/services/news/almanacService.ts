@@ -568,22 +568,26 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  // Fix 5b, 5k & 6d: Strict music keyword check.
+  // Fix 5b, 5k, 6d & 7d: Positive pop-oriented test for music_news.
   // Allowed genres: pop, rock, soul/R&B, folk, country, jazz, blues, hip-hop and reggae.
-  // Excluded genres: classical, opera, church/choral, school and children's concerts, and local recital listings unless a famous name appears.
-  // Note: "country" and "dance" as isolated words appear in political news ("across the country", "diplomatic dance").
-  // They only qualify as music when combined with music terms (country music, country song, dance track, dance single, disco, etc.).
+  // Excluded genres: classical, opera, church/choral, early music/madrigals, chamber music, recitals,
+  // symphonies, philharmonic, oratorios, sonatas, and modern academic composition.
+  // Classical, opera, recitals, church, school, and early music items fail even if no negative word is present.
   const isExcludedMusicGenre =
-    /\b(?:classical|opera|operatic|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital)\b/i.test(combinedLower) &&
+    /\b(?:classical|opera|operatic|chamber music|choral|choir|church choir|hymn|philharmonic|symphony|orchestra|school concert|children's concert|recital|recitals|madrigal|madrigals|elizabethan|renaissance band|early music|pro musica|tully hall|carnegie hall recital|composer|composers ensemble|sonata|concerto|trio for|string quartet|motet|modus lascivus)\b/i.test(combinedLower) &&
     !/\b(?:elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|seeger|helen reddy)\b/i.test(combinedLower);
 
+  // Positive pop signal requirement: headline/abstract must contain pop/rock/soul/R&B/folk/country/jazz/blues/hip-hop/reggae signal
+  // or name a recognized artist in the library.
   const isAllowedMusicGenre =
     /\b(?:pop music|pop album|pop single|pop chart|pop artist|pop life|rock music|rock band|rock and roll|rock 'n' roll|rock & roll|rock 'n roll|punk rock|new wave|folk music|folk singer|folk song|country music|country singer|country song|bluegrass|r&b|rhythm and blues|soul music|motown|disco|dance music|dance single|dance club|jazz|blues|hip-hop|hip hop|rap music|reggae|billboard|hot 100|hit single|new single|single release|album release|debut album|solo album|recording artist|record label|touring band)\b/i.test(combinedLower) ||
-    (/\b(?:musician|musicians|song|songs|album|albums|concert|concerts|singer|singers|vocalist|vocalists)\b/i.test(combinedLower) &&
+    (/\b(?:musician|musicians|song|songs|album|albums|concert|concerts|singer|singers|vocalist|vocalists|touring band|rock band)\b/i.test(combinedLower) &&
      /\b(?:recorded|recording|single|album|tour|concert|performer|performers|soundtrack|band|tune|melody|lyrics|instrumental|helen reddy|seeger|elvis|beatles|dylan|springsteen|madonna|jackson|sinatra|aretha|bowie|prince|ac\/dc|oasis|boy george|peter gabriel)\b/i.test(combinedLower));
 
-  // Reject pure movie/TV/theater listings from music_news
-  const isPureTheaterOrMovie = /^(?:theater:|theatre:|film:|movie:|television:|tv:)\b/i.test(hLower) ||
+  // Reject pure movie/TV/theater listings or column labels like "Topics" from music_news
+  const isPureTheaterOrMovie =
+    /^(?:theater:|theatre:|film:|movie:|television:|tv:|topics)\b/i.test(hLower) ||
+    /^topics$/i.test(hLower.trim()) ||
     /\b(?:all the city's film set|movies in new york|theater directory|movie listings)\b/i.test(hLower);
 
   // Specifically prevent "Singer" when referring to Studebaker or Singer co. or baseball pitcher Bill Singer
