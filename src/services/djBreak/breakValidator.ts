@@ -112,6 +112,37 @@ export function validateSegmentBreakOutput(
 
   if (isNewsTopic) {
     if (context.isModelDraft) {
+      // Fix 8e / C4: News drafts need at least 30 words and at least 2 complete sentences
+      if (words.length < 30) {
+        return {
+          valid: false,
+          rejectedReason: `News draft too short: ${words.length} words (minimum required: 30 words)`,
+          sanitizedText: '',
+        };
+      }
+      const draftSentences = trimmed.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 10);
+      if (draftSentences.length < 2) {
+        return {
+          valid: false,
+          rejectedReason: `News draft has only ${draftSentences.length} complete sentence (minimum required: 2)`,
+          sanitizedText: '',
+        };
+      }
+
+      // Fix 8e / C9: Reject first sentence being (nearly) the headline
+      const headline = (context.factPacket.headline || context.factPacket.topicTitle || '').trim();
+      if (headline.length > 10) {
+        const normH = headline.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normFirstS = (draftSentences[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normFirstS === normH || (normH.length > 15 && normFirstS.includes(normH))) {
+          return {
+            valid: false,
+            rejectedReason: `First sentence echoes the headline nearly verbatim ("${draftSentences[0]}")`,
+            sanitizedText: '',
+          };
+        }
+      }
+
       const NEWS_CAP = 70;
       if (words.length > NEWS_CAP) {
         // Try trimming trailing whole sentences
@@ -247,7 +278,7 @@ export function validateSegmentBreakOutput(
     // Protect periods after initials, titles/abbreviations, and numbers so they never split a sentence
     let s = text;
     s = s.replace(/\bU\.S\.(A\.)?/g, (m) => m.replace(/\./g, '§D§'));
-    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|Gov|No|Vol|Inc|Corp|Co|Mt|Ft)\./g, '$1§D§');
+    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|No|Nos|Vol|Op|Inc|Corp|Co|Mt|Ft)\./gi, '$1§D§');
     s = s.replace(/\b([A-Z])\./g, '$1§D§');
     s = s.replace(/\b(\d+)\.(?=\s)/g, '$1§D§');
     const raw = s.split(/(?<=[.!?])\s+(?=[A-Z])/);
@@ -273,6 +304,15 @@ export function validateSegmentBreakOutput(
       }
     }
     const sentWords = cleanS.split(/\s+/).filter(Boolean);
+    // Fix 8e: Check for sentence ending on an abbreviation fragment (No., Nos., Vol., Op., Mr., Col., St., U.S., etc.)
+    const lastWord = sentWords[sentWords.length - 1] || '';
+    if (/\b(?:No|Nos|Vol|Op|Mr|Mrs|Ms|Dr|Jr|Sr|St|Lt|Capt|Prof|Rev|Gov|Col|Gen|Sen|Rep|U\.S|Inc|Corp|Co)\.?$/i.test(lastWord)) {
+      return {
+        valid: false,
+        rejectedReason: `Sentence ends on abbreviation fragment: "${cleanS}" (ends with "${lastWord}")`,
+        sanitizedText: '',
+      };
+    }
     if (sentWords.length < 3) {
       const commonShortComplete = /^(here it is|take a listen|turn it up|here we go|this is retrofm)\.?$/i;
       if (!commonShortComplete.test(cleanS)) {

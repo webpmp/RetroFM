@@ -283,7 +283,7 @@ const OPINION_MATERIAL_TYPES = [
 const COMMON_ABBREVIATIONS = [
   'Aug', 'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Sep', 'Oct', 'Nov', 'Dec',
   'Mr', 'Mrs', 'Ms', 'Dr', 'Jr', 'Sr', 'St', 'Prof', 'Sen', 'Rep', 'Gov', 'Gen', 'Col', 'Capt', 'Lt', 'Pres',
-  'vs', 'etc', 'no', 'vol', 'inc', 'corp', 'dept'
+  'vs', 'etc', 'no', 'nos', 'vol', 'op', 'inc', 'corp', 'dept'
 ];
 
 /**
