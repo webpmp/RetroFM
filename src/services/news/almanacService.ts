@@ -482,9 +482,20 @@ function categorizeNYT(
 
   // Check if sports or secondary games (evaluated BEFORE music keyword guessing so sports terms never match music)
   const isSports = s.includes('sport') || d.includes('sport') ||
-    /\b(?:baseball|basketball|football|hockey|derby|bulls|knicks|yankees|mets|dodgers|defeats|victory over|pinch-hit|inning|intercollegiate|league game|ncaa|yale|harvard|nyu|scored|stadium|pennant|golf|semi-finals in golf|colts|quarterback|pitcher|touchdown|innings|tournament|match play|bogey|birdie|par\b)\b/i.test(hLower);
+    /\b(?:baseball|basketball|football|hockey|derby|bulls|knicks|yankees|mets|dodgers|colts|brewers|blue jays?|cardinals|red sox|white sox|cubs)\b/i.test(combinedLower) ||
+    /\b(?:defeats|victory over|pinch-hit|innings?|intercollegiate|league game|ncaa|yale|harvard|nyu|scored|stadium|pennant|golf|semi-finals in golf|quarterback|pitcher|touchdown|tournament|match play|bogey|birdie|par\b|motorcar sports|speedway|rear-mounted engines|race cars?)\b/i.test(combinedLower);
   if (isSports) {
     return { sectionName: 'Sports', category: 'sports' };
+  }
+
+  // Check society / engagements / weddings / crime / mining / shopping / home features / dining out / restaurants
+  const isSocietyOrCrimeOrIndustry =
+    /\b(?:engaged|engagement|married|wedding|wed to|announced their daughter|have announced the engagement|have made known the engagement)\b/i.test(combinedLower) ||
+    /\b(?:burglaries|burglary|police|arrest|arrested|stolen|robbed|suspect in)\b/i.test(combinedLower) ||
+    /\b(?:mine safety|coal industry|hard rock and metal mines|labor department|interior department)\b/i.test(combinedLower) ||
+    /\b(?:dining out|restaurant|restaurants|cafe|sneakeasy|shopping spree|merchandise|summer home|fire island|died of a brain tumor|marine's prayer|retired, who wrote)\b/i.test(combinedLower);
+  if (isSocietyOrCrimeOrIndustry) {
+    return { sectionName: 'Living & Leisure', category: 'pop_culture' };
   }
 
   // 1. Music items check: must be genuine music topics, NEVER business acquisitions or sports
@@ -504,16 +515,16 @@ function categorizeNYT(
     d === ''
   ) && !isBusinessOrFinancial;
 
-  // Fix 5b: Strict music keyword check. Avoid broad words like "tour" (golf tour), "single" (baseball single),
-  // "band" (headband/armband), "record" (court/temperature record).
-  const isMusicKeyword = /\b(music|musician|musicians|song|songs|album|albums|concert|concerts|orchestra|symphony|opera|rock|jazz|r&b|disco|billboard|grammy|pop life|singer|singers|vocalist|vocalists|record label|recording artist|musical)\b/i.test(combinedLower) ||
-    /\b(touring band|rock band|jazz band|pop band|folk band|musical tour|concert tour)\b/i.test(combinedLower) ||
-    /\b(hot 100|hit single|new single|single release)\b/i.test(combinedLower);
+  // Fix 5b: Strict music keyword check. Require a genuine music signal: Arts/Music desk, music keywords
+  // in headline/abstract, or match to known artist.
+  const isMusicKeyword = /\b(musician|musicians|rock band|jazz band|pop band|folk band|touring band|orchestra|symphony|billboard|grammy|pop life|recording artist|record label|hot 100|hit single|new single|single release|album release|debut album|solo album)\b/i.test(combinedLower) ||
+    (/\b(music|song|songs|album|albums|concert|concerts|opera|rock|jazz|r&b|disco|singer|singers|vocalist|vocalists|musical)\b/i.test(combinedLower) &&
+     /\b(helen reddy|seeger|folk singers|singing|recorded|theater|recital|broadway|performer|performers|show|track|band|tune|melody|lyrics|instrumental|soundtrack)\b/i.test(combinedLower));
 
-  // Specifically prevent "Singer" when referring to Studebaker or Singer co.
-  const isSingerCompany = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(combinedLower);
+  // Specifically prevent "Singer" when referring to Studebaker or Singer co. or baseball pitcher Bill Singer
+  const isNonMusicSinger = /\b(?:singer co|studebaker|sewing|bought by singer|domowatt|bill singer)\b/i.test(combinedLower);
 
-  if (!isSingerCompany && isMusicDeskOrSection && isMusicKeyword) {
+  if (!isNonMusicSinger && isMusicDeskOrSection && isMusicKeyword) {
     return { sectionName: 'Music News', category: 'music' };
   }
 
@@ -546,11 +557,14 @@ function categorizeNYT(
   // 6. Major News (National / World / Front Page)
   // Fix 5a: Stricter major_news gate
   // Require: Front page (isFrontPage), OR National/Foreign/Washington desk, OR strong major-news keyword match.
-  // Items with desk Unspecified/None must be front page or keyword matches.
-  const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
-  const majorNewsKeywordMatch = /\b(president|white house|congress|senate|supreme court|pentagon|state department|war|troops|treaty|summit|strike|election|primary|campaign|assassination|space|nasa|apollo|astronaut|satellite|disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear|ruling|verdict|soviet|vietnam|cambodia|nato|united nations|u\.n\.|hostage|peacekeeping|cease-fire|embargo|civil rights|indict|federal|fbi|cia)\b/i.test(combinedLower);
+  // Exclude local/regional business, real estate, construction, corporate personnel/board, society/births/surgery.
+  const isExcludedMajorNews =
+    /\b(?:construction|board of trustees|trustees|elected head|elevated|general manager|president of the board|hospital of brooklyn|underwent surgery|a son was born|son to mrs|container corp|named two|names two|doing well|hospital yesterday)\b/i.test(combinedLower);
 
-  if (isFrontPage || isNationalOrForeignDesk || majorNewsKeywordMatch) {
+  const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
+  const majorNewsKeywordMatch = /\b(president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|the president\b|president of the united states|white house|congress|senate|supreme court|pentagon|state department|war|troops|treaty|summit|strike|election|primary|campaign|assassination|space|nasa|apollo|astronaut|satellite|disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear|ruling|verdict|soviet|vietnam|cambodia|nato|united nations|u\.n\.|hostage|peacekeeping|cease-fire|embargo|civil rights|indict|federal|fbi|cia)\b/i.test(combinedLower);
+
+  if (!isExcludedMajorNews && (isFrontPage || isNationalOrForeignDesk || majorNewsKeywordMatch)) {
     return { sectionName: isFrontPage ? 'Front Page' : 'National / World', category: 'major_news' };
   }
 
