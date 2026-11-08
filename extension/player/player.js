@@ -2210,6 +2210,7 @@ function checkSilenceDetector() {
   const dur = playbackProgress.duration || 0;
   const rem = dur > 0 ? (dur - cur) : 0;
   const lvl = getCurrentLevel();
+  const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;
 
   // If a new video started, reset the trigger guard and timer
   if (vid && vid !== silenceTriggerFiredForVideoId && silenceTriggerFiredForVideoId !== null) {
