@@ -1540,6 +1540,7 @@ async function startServer() {
             let scriptText = '';
             let unsupportedClaims: string[] = [];
             let valResult: any = null;
+            let candidateOpenerUsed = '';
 
             // Attempt 1: Initial LLM Generation
             const tWriterStart = Date.now();
@@ -1548,6 +1549,7 @@ async function startServer() {
               if (scriptRes.success && scriptRes.scriptText) {
                 scriptText = scriptRes.scriptText;
                 unsupportedClaims = scriptRes.unsupportedClaims || [];
+                candidateOpenerUsed = scriptRes.openerUsed || '';
               }
             }
             const writerMs = Date.now() - tWriterStart;
@@ -1598,6 +1600,7 @@ async function startServer() {
                   if (regenRes.success && regenRes.scriptText) {
                     scriptText = regenRes.scriptText;
                     unsupportedClaims = regenRes.unsupportedClaims || [];
+                    if (regenRes.openerUsed) candidateOpenerUsed = regenRes.openerUsed;
 
                     // Check orphan pronoun again on retry
                     const orphanCheckRetry = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
@@ -1660,6 +1663,7 @@ async function startServer() {
                     if (regenRes.success && regenRes.scriptText) {
                       scriptText = regenRes.scriptText;
                       unsupportedClaims = regenRes.unsupportedClaims || [];
+                      if (regenRes.openerUsed) candidateOpenerUsed = regenRes.openerUsed;
                       const orphanRetryAudit = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
                       if (orphanRetryAudit.replaced) scriptText = orphanRetryAudit.resolvedText;
 
@@ -1713,8 +1717,11 @@ async function startServer() {
                 const stationIdPhrase = allowRetroFm
                   ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now()) + ' '
                   : '';
+                const leadInPhrase = (cand.type === 'major_news' || cand.type === 'music_news') && candidateOpenerUsed && candidateOpenerUsed !== 'None'
+                  ? candidateOpenerUsed + ' '
+                  : '';
                 const rawModelBody = scriptText;
-                scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
+                scriptText = `${stationIdPhrase}${leadInPhrase}${scriptText} ${closerText}`.trim();
 
                 // 5h & 9e: Convert any remaining '!' to '.' in final code before TTS,
                 // while exempting artist/song names that genuinely contain exclamation marks (e.g. Wham!, P!nk, Panic! at the Disco).

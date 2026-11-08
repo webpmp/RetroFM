@@ -956,12 +956,14 @@ export function validateSegmentBreakOutput(
   const properNames = extractProperNames(trimmed);
   for (const name of properNames) {
     const nameLower = name.toLowerCase();
-    // Allow standard radio phrasing words that might be capitalized at beginning of sentences
+    // Allow standard radio phrasing words that might be capitalized at beginning of sentences,
+    // as well as common civic / institutional / journalistic titles
     const commonRadioWords = new Set([
       'the', 'this', 'that', 'here', 'now', 'well', 'and', 'right', 'so', 'from', 'stay', 'coming', 'next',
       'billboard', 'hot', 'rock', 'music', 'album', 'single', 'song', 'chart', 'times', 'records', 'studio',
       'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
-      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
+      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+      'united', 'nations', 'president', 'governor', 'senator', 'representative', 'mayor', 'secretary', 'general', 'admiral', 'minister', 'police', 'council', 'commissioner', 'court', 'judge'
     ]);
     if (commonRadioWords.has(nameLower)) continue;
 

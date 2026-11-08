@@ -1157,8 +1157,10 @@ VERDICTS:`;
     if (input.topic === 'major_news' || input.topic === 'music_news') {
       auditedBody = stripModelPublicationPhrases(auditedBody);
     }
-    // Code-added hook is prepended only after the audit, so it is never audited as a model claim.
-    const finalScript = prependHook(hook, auditedBody);
+    // Return audited body as scriptText WITHOUT prepending hook.
+    // The code lead-in hook is stored in openerUsed and prepended in server.ts upon acceptance,
+    // ensuring the model draft is validated against isModelDraft: true without self-rejecting for "Times".
+    const finalScript = auditedBody;
 
     const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
     return {
