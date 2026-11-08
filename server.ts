@@ -1145,11 +1145,12 @@ async function startServer() {
 
       // 4k: News fact material = NYT headline + abstract + at most one lead-paragraph sentence.
       // Compact source prevents over-long drafts and reduces copying.
+      // 10b: If article date != selectedDate, drop any fact sentence containing relative-day words.
       const buildNewsFacts = (entry: any, _baseFacts: any[]) => {
         const headlineFact = entry.headline
           ? [{ text: entry.headline, source: entry.source, printDate: entry.printDate, date: entry.eventDate }]
           : [];
-        const compactFacts = [...headlineFact];
+        let compactFacts = [...headlineFact];
         if (entry.abstract && entry.abstract.trim() && entry.abstract.trim() !== entry.headline?.trim()) {
           compactFacts.push({ text: entry.abstract.trim(), source: entry.source, printDate: entry.printDate, date: entry.eventDate });
         }
@@ -1159,6 +1160,11 @@ async function startServer() {
           if (firstLead && firstLead !== entry.abstract?.trim() && firstLead !== entry.headline?.trim()) {
             compactFacts.push({ text: firstLead, source: entry.source, printDate: entry.printDate, date: entry.eventDate });
           }
+        }
+        const artDate = entry.printDate || entry.eventDate;
+        if (artDate && artDate !== selectedDate) {
+          const RELATIVE_DAY_PATTERN = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+          compactFacts = compactFacts.filter((f) => !RELATIVE_DAY_PATTERN.test(f.text));
         }
         const budget = computeNewsWordBudget({ headline: entry.headline, facts: compactFacts });
         return { facts: compactFacts, budget };

@@ -1135,11 +1135,11 @@ export async function getOrBuildAlmanac(broadcastDate: string): Promise<AlmanacS
         let sentences = splitVerbatimSentences(resolvedSummary).filter((s) => s.length > 20);
         if (sentences.length === 0) continue;
 
-        // Fix 8b: If article date != broadcast date, drop from the packet any sentence containing a relative-day word.
-        // (tomorrow, tonight, today, yesterday, this/next/last week, this weekend, bare weekday names).
+        // Fix 8b & 10b: If article date != broadcast date, drop from the packet any sentence containing a relative-day word.
+        // (tomorrow, tonight, today, yesterday, this/next/last week, this weekend, this morning, this afternoon, this evening, last night, later today, bare weekday names).
         // If fewer than 2 facts remain, skip the item.
         if (a.pubDate !== broadcastDate) {
-          const RELATIVE_DAY_PATTERN = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+          const RELATIVE_DAY_PATTERN = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
           sentences = sentences.filter((s) => !RELATIVE_DAY_PATTERN.test(s));
           if (sentences.length < 2) continue;
         }
