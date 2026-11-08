@@ -150,14 +150,12 @@ function computeChecksForBreak(
   }
 
   // C1: Exactly one time/publication phrase in the whole script
-  let pubPhraseMatches = 0;
-  for (const pat of TIME_PUB_PATTERNS) {
-    const found = spoken.match(new RegExp(pat.source, 'gi')) || [];
-    pubPhraseMatches += found.length;
-  }
+  const COMBINED_TIME_PUB_PATTERN = /(?:front pages? of (?:today['’]s )?times|today['’]s times|yesterday['’]s times|in the news|in the headlines|last week, the times reported|last week in the times|a couple of days ago, the times reported|a couple of days ago in the times|the times reported|according to (?:the |today['’]s )?times|from today['’]s times|from yesterday['’]s times)/gi;
+  const pubMatches = spoken.match(COMBINED_TIME_PUB_PATTERN) || [];
+  const pubPhraseMatches = pubMatches.length;
   if (pubPhraseMatches !== 1) {
     checks.c1 = false;
-    failures.push(`C1 FAIL: Found ${pubPhraseMatches} time/publication phrase(s) in script (expected exactly 1)`);
+    failures.push(`C1 FAIL: Found ${pubPhraseMatches} time/publication phrase(s) in script (expected exactly 1) [matches: ${JSON.stringify(pubMatches)}]`);
   }
 
   // C2: The lead-in matches the article's age
