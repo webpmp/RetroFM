@@ -1170,9 +1170,13 @@ async function startServer() {
         return { facts: compactFacts, budget };
       };
 
-      // 4e, 5j & 5l: Tiered relative-time candidate selection
+      // 4e, 5j & 5l & 11a: Tiered relative-time candidate selection
       // - Older items (>7 days for music, >3 days for major_news) are dropped; future items are dropped.
       // - Computes exact relative-time phrase in code ("in today's Times", "in yesterday's Times", "a couple of days ago", "last week").
+      // - Fix 11a: For major_news: Require front page (print_page 1), or National/Foreign/Washington desk,
+      //   or strong major-news keyword match.
+      //   Exclude consumer products, food/dining, fashion, lifestyle, cosmetics, recalls of minor products,
+      //   and product seizures, unless a keyword above is present.
       // - Sorts by interestScore descending, breaking ties by isFrontPage then recency (pubDate descending).
       // - Fix 5j: Capped at top ~40 per window.
       interface TieredNewsEntry {
@@ -1182,6 +1186,9 @@ async function startServer() {
       const selectTieredNewsEntries = (category: 'major_news' | 'music'): TieredNewsEntry[] => {
         const pool: TieredNewsEntry[] = [];
         const mappedCat = category === 'music' ? 'music_news' : 'major_news';
+        const STRONG_MAJOR_KEYWORD = /\b(?:president|congress|court|war|treaty|strike|election|disaster|crash|ruling|summit|resignation|(?:died|dead|death)\b.*\b(?:famous|leader|senator|governor|general|president|pope|king|queen|premier|minister|justice))\b/i;
+        const CONSUMER_LIFESTYLE = /\b(?:consumer products?|caviar|champagne reception|cosmetics?|lotion\b|wrinkle-smoothing|skin lotion|beauty\b|fashion\b|lifestyle|dining out|restaurants?|food and wine|product seizures?|seizes cosmetic|seizure of (?:cosmetic|food|goods|products?)|product recalls?|recalls of (?:minor|products?))\b/i;
+
         for (const e of (almanac.entries || [])) {
           if (e.category !== category) continue;
           if (isKeyBlocked(`almanac:${e.id}`)) continue;
@@ -1192,6 +1199,19 @@ async function startServer() {
           if (!artDate) continue;
           const tierInfo = computeNewsDateTier(artDate, selectedDate, mappedCat);
           if (!tierInfo) continue;
+
+          if (category === 'major_news') {
+            const page1 = e.isFrontPage || e.printPage === '1' || e.printPage === '01' || e.printPage === 'A1';
+            const d = (e.newsDesk || '').toLowerCase();
+            const s = (e.sectionName || e.section || '').toLowerCase();
+            const natDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
+            const combined = `${e.headline || ''} ${e.summary || ''}`.toLowerCase();
+            const hasKey = STRONG_MAJOR_KEYWORD.test(combined);
+
+            if (!page1 && !natDesk && !hasKey) continue;
+            if (CONSUMER_LIFESTYLE.test(combined) && !hasKey) continue;
+          }
+
           pool.push({ entry: e, tierInfo });
         }
         pool.sort((a, b) => {

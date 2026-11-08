@@ -628,23 +628,32 @@ function categorizeNYT(
   }
 
   // 6. Major News (National / World / Front Page)
-  // Fix 5a & 6b: Stricter major_news gate
+  // Fix 5a & 6b & 11a: Stricter major_news gate
   // Require: Front page (isFrontPage), OR National/Foreign/Washington desk, OR strong major-news keyword match.
   // Fix 6b: If material type is provided and not News/Brief, exclude from major_news.
   // Exclude local/regional business, real estate, construction, corporate personnel/board, society/births/surgery.
   // Fix 7g: Exclude feature headline patterns
   // (e.g. "The Man Behind...", "Inside...", "A Look at...", "Why...", "Writing Memoir...", "...Found a Narrative for Life")
+  // Fix 11a: Exclude consumer products, food/dining, fashion, lifestyle, cosmetics, recalls of minor products and product seizures,
+  // unless a strong major-news keyword is present (president, congress, court, war, treaty, strike, election, disaster, crash, ruling, summit, resignation, death of a famous person).
   const isFeatureHeadline =
     /^(?:the (?:man|woman) behind|inside\b|a look at\b|why\b|writing memoir\b)/i.test(hLower) ||
     /\bfound a narrative for life\b/i.test(hLower);
 
+  const strongMajorKeywordRegex = /\b(?:president|congress|court|war|treaty|strike|election|disaster|crash|ruling|summit|resignation|(?:died|dead|death)\b.*\b(?:famous|leader|senator|governor|general|president|pope|king|queen|premier|minister|justice))\b/i;
+  const hasStrongMajorKeyword = strongMajorKeywordRegex.test(combinedLower);
+
+  const isConsumerOrLifestyle =
+    /\b(?:consumer products?|caviar|champagne reception|cosmetics?|lotion\b|wrinkle-smoothing|skin lotion|beauty\b|fashion\b|lifestyle|dining out|restaurants?|food and wine|product seizures?|seizes cosmetic|seizure of (?:cosmetic|food|goods|products?)|product recalls?|recalls of (?:minor|products?))\b/i.test(combinedLower);
+
   const isExcludedMajorNews =
     isExcludedModernMaterialType ||
     isFeatureHeadline ||
+    (isConsumerOrLifestyle && !hasStrongMajorKeyword) ||
     /\b(?:construction|board of trustees|trustees|elected head|elevated|general manager|president of the board|hospital of brooklyn|underwent surgery|a son was born|son to mrs|container corp|named two|names two|doing well|hospital yesterday)\b/i.test(combinedLower);
 
   const isNationalOrForeignDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
-  const majorNewsKeywordMatch = /\b(president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|the president\b|president of the united states|white house|congress|senate|supreme court|pentagon|state department|war|troops|treaty|summit|strike|election|primary|campaign|assassination|space|nasa|apollo|astronaut|satellite|disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear|ruling|verdict|soviet|vietnam|cambodia|nato|united nations|u\.n\.|hostage|peacekeeping|cease-fire|embargo|civil rights|indict|federal|fbi|cia)\b/i.test(combinedLower);
+  const majorNewsKeywordMatch = hasStrongMajorKeyword || /\b(president (?:reagan|carter|ford|nixon|johnson|kennedy|eisenhower|truman)|the president\b|president of the united states|white house|congress|senate|supreme court|pentagon|state department|war|troops|treaty|summit|strike|election|primary|campaign|assassination|space|nasa|apollo|astronaut|satellite|disaster|earthquake|flood|hurricane|tornado|crash|hijack|nuclear|ruling|verdict|soviet|vietnam|cambodia|nato|united nations|u\.n\.|hostage|peacekeeping|cease-fire|embargo|civil rights|indict|federal|fbi|cia)\b/i.test(combinedLower);
 
   if (!isExcludedMajorNews && (isFrontPage || isNationalOrForeignDesk || majorNewsKeywordMatch)) {
     return { sectionName: isFrontPage ? 'Front Page' : 'National / World', category: 'major_news' };
