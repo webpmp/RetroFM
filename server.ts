@@ -1716,11 +1716,24 @@ async function startServer() {
                 const rawModelBody = scriptText;
                 scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
 
-                // 5h: Log raw model output next to final spoken text to verify origin of exclamation points.
-                // Convert any remaining '!' to '.' in final code before TTS.
+                // 5h & 9e: Convert any remaining '!' to '.' in final code before TTS,
+                // while exempting artist/song names that genuinely contain exclamation marks (e.g. Wham!, P!nk, Panic! at the Disco).
                 if (scriptText.includes('!') || rawModelBody.includes('!')) {
                   console.log(`[Exclamation Point Detected] rawModel="${rawModelBody}" -> finalSpeechBeforeFix="${scriptText}"`);
+                  const PROTECTED = [
+                    { pattern: /\bP!nk\b/g, placeholder: '__PROTECTED_EXCLAMATION_PINK__' },
+                    { pattern: /\bWham!/g, placeholder: '__PROTECTED_EXCLAMATION_WHAM__' },
+                    { pattern: /\bPanic!\s+at\s+the\s+Disco\b/gi, placeholder: '__PROTECTED_EXCLAMATION_PANIC__' },
+                  ];
+                  for (const { pattern, placeholder } of PROTECTED) {
+                    scriptText = scriptText.replace(pattern, placeholder);
+                  }
                   scriptText = scriptText.replace(/!+/g, '.');
+                  for (const { placeholder } of PROTECTED) {
+                    if (placeholder === '__PROTECTED_EXCLAMATION_PINK__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'P!nk');
+                    if (placeholder === '__PROTECTED_EXCLAMATION_WHAM__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'Wham!');
+                    if (placeholder === '__PROTECTED_EXCLAMATION_PANIC__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'Panic! at the Disco');
+                  }
                 }
 
                 // Final post-handoff validation:
