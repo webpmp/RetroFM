@@ -251,13 +251,37 @@ function computeChecksForBreak(
     }
   }
 
-  // C9: The first sentence is not just the headline
+  // C9: First sentence not echoing headline (Fix 8e / 11b)
   if (b.headline && sentences.length > 0) {
     const normH = b.headline.toLowerCase().replace(/[^a-z0-9]/g, '');
     const normS0 = (sentences[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (normH.length > 10 && (normS0 === normH || (normH.length > 20 && normS0.includes(normH)))) {
       checks.c9 = false;
-      failures.push(`C9 FAIL: First sentence echoes headline: "${sentences[0]}" vs "${b.headline}"`);
+      failures.push(`C9 FAIL: First sentence echoes headline nearly verbatim: "${sentences[0]}" vs "${b.headline}"`);
+    } else {
+      const hlWords = b.headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      const fsWords = (sentences[0] || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      const fsStr = fsWords.join(' ');
+
+      for (let i = 0; i <= hlWords.length - 5; i++) {
+        const fiveWords = hlWords.slice(i, i + 5).join(' ');
+        if (fsStr.includes(fiveWords)) {
+          checks.c9 = false;
+          failures.push(`C9 FAIL: First sentence reuses 5+ consecutive words from headline ("${fiveWords}")`);
+          break;
+        }
+      }
+
+      const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'as', 'it', 'its']);
+      const contentHlWords = hlWords.filter((w) => !STOPWORDS.has(w) && w.length > 2);
+      if (checks.c9 && contentHlWords.length >= 3) {
+        const matchedWords = contentHlWords.filter((w) => fsWords.includes(w));
+        const ratio = matchedWords.length / contentHlWords.length;
+        if (ratio >= 0.60) {
+          checks.c9 = false;
+          failures.push(`C9 FAIL: First sentence echoes headline content words (${matchedWords.length}/${contentHlWords.length} words: "${matchedWords.join(' ')}")`);
+        }
+      }
     }
   }
 

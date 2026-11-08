@@ -129,7 +129,10 @@ export function validateSegmentBreakOutput(
         };
       }
 
-      // Fix 8e / C9: Reject first sentence being (nearly) the headline
+      // Fix 8e / 11b / C9: Reject first sentence that echoes the headline:
+      // (1) nearly verbatim normalized text
+      // (2) reuses 5+ consecutive words from the headline
+      // (3) reuses most (>=60%) of the headline's content words
       const headline = (context.factPacket.headline || context.factPacket.topicTitle || '').trim();
       if (headline.length > 10) {
         const normH = headline.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -140,6 +143,37 @@ export function validateSegmentBreakOutput(
             rejectedReason: `First sentence echoes the headline nearly verbatim ("${draftSentences[0]}")`,
             sanitizedText: '',
           };
+        }
+
+        const hlWords = headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const fsWords = (draftSentences[0] || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const fsStr = fsWords.join(' ');
+
+        // Check 5+ consecutive words from the headline
+        for (let i = 0; i <= hlWords.length - 5; i++) {
+          const fiveWords = hlWords.slice(i, i + 5).join(' ');
+          if (fsStr.includes(fiveWords)) {
+            return {
+              valid: false,
+              rejectedReason: `First sentence reuses 5+ consecutive words from headline ("${fiveWords}")`,
+              sanitizedText: '',
+            };
+          }
+        }
+
+        // Check if most (>=60%) of the headline's content words are reused
+        const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'as', 'it', 'its']);
+        const contentHlWords = hlWords.filter((w) => !STOPWORDS.has(w) && w.length > 2);
+        if (contentHlWords.length >= 3) {
+          const matchedWords = contentHlWords.filter((w) => fsWords.includes(w));
+          const ratio = matchedWords.length / contentHlWords.length;
+          if (ratio >= 0.60) {
+            return {
+              valid: false,
+              rejectedReason: `First sentence echoes headline content words (${matchedWords.length}/${contentHlWords.length} words: "${matchedWords.join(' ')}")`,
+              sanitizedText: '',
+            };
+          }
         }
       }
 
