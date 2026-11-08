@@ -6236,12 +6236,12 @@ console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Ma
   const contentYtJs = fs.readFileSync(path.join(process.cwd(), 'extension/content_youtube.js'), 'utf-8');
   const vcTs = fs.readFileSync(path.join(process.cwd(), 'src/services/audio/VolumeController.ts'), 'utf-8');
 
-  // 1. Verify yt_main_world.js runs a continuous CSP-safe fallbackTimer (setInterval 33ms) alongside workerTicker
+  // 1. Verify yt_main_world.js runs a continuous Trusted-Types-safe 33ms setInterval loop
   assert(
     mainWorldJs.includes('function runMainWorldTick()') &&
-    mainWorldJs.includes('const fallbackTimer = setInterval(runMainWorldTick, 33);') &&
-    mainWorldJs.includes('workerTicker.onerror = (err) =>'),
-    'yt_main_world.js runs a CSP-safe 33ms fallbackTimer and cleans up workerTicker.onerror so YouTube CSP blocking blob: workers never stalls volume ramps'
+    mainWorldJs.includes('const intervalTimer = setInterval(runMainWorldTick, 33);') &&
+    mainWorldJs.includes('YouTube enforces Trusted Types'),
+    'yt_main_world.js runs a Trusted-Types-safe 33ms intervalTimer so YouTube Trusted Types enforcement never stalls volume ramps'
   );
   assert(
     mainWorldJs.includes('function schedulePostRampVerify(targetPercent, rampId)') &&

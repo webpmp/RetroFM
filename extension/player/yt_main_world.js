@@ -306,7 +306,6 @@
 
   function runMainWorldTick() {
     const now = performance.now();
-    // Deduplicate if both workerTicker and baseline setInterval fire within < 15ms
     if (now - lastVuSampleTickTs < 15) {
       try { tickMainWorldVolumeRamp(); } catch (e) {}
       return;
@@ -318,60 +317,14 @@
 
   function startVuSamplingLoop() {
     if (vuSamplingInterval) return;
-    // Always run a baseline 33ms setInterval so that if YouTube's CSP (worker-src) blocks
-    // the inline Blob Worker asynchronously via worker.onerror, VU sampling and volume ramps
-    // still run reliably on the audible YouTube tab without stalling.
-    const fallbackTimer = setInterval(runMainWorldTick, 33);
-
-    let workerTicker = null;
-    let workerUrl = null;
-    try {
-      const blob = new Blob([
-        `let timer = null;
-        onmessage = function(e) {
-          if (e.data === 'start') {
-            if (!timer) timer = setInterval(function() { postMessage('tick'); }, 33);
-          } else if (e.data === 'stop') {
-            if (timer) { clearInterval(timer); timer = null; }
-          }
-        };`
-      ], { type: 'application/javascript' });
-      workerUrl = URL.createObjectURL(blob);
-      workerTicker = new Worker(workerUrl);
-      workerTicker.onmessage = () => {
-        runMainWorldTick();
-      };
-      workerTicker.onerror = (err) => {
-        try {
-          if ( err && typeof err.preventDefault === 'function' ) err.preventDefault();
-          workerTicker.terminate();
-        } catch (e) {}
-        if (workerUrl) {
-          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-          workerUrl = null;
-        }
-        workerTicker = null;
-      };
-      workerTicker.postMessage('start');
-    } catch (workerErr) {
-      if (workerUrl) {
-        try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-        workerUrl = null;
-      }
-      workerTicker = null;
-    }
+    // YouTube enforces Trusted Types, so inline Blob Worker creation fails with
+    // "This document requires 'TrustedScriptURL' assignment".
+    // We run a 33ms setInterval directly which safely handles VU sampling and volume ramps.
+    const intervalTimer = setInterval(runMainWorldTick, 33);
 
     vuSamplingInterval = {
       stop: () => {
-        clearInterval(fallbackTimer);
-        if (workerTicker) {
-          try { workerTicker.postMessage('stop'); workerTicker.terminate(); } catch (e) {}
-          workerTicker = null;
-        }
-        if (workerUrl) {
-          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-          workerUrl = null;
-        }
+        clearInterval(intervalTimer);
       }
     };
   }
