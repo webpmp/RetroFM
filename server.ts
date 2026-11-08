@@ -1494,6 +1494,7 @@ async function startServer() {
       }
 
       let chosenCandidate: CandidateEval | null = null;
+      let chosenOpenerUsed: string = '';
       let finalSpeech = '';
       let validatorResult = 'N/A';
       let auditResult = 'N/A';
@@ -1761,6 +1762,7 @@ async function startServer() {
                     newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
                   }
                   chosenCandidate = cand;
+                  chosenOpenerUsed = candidateOpenerUsed;
                   finalSpeech = scriptText;
                   validatorResult = 'PASS';
                   auditResult = 'PASS(0 unsupported)';
@@ -2137,6 +2139,7 @@ async function startServer() {
         breakId,
         decision: chosenCandidate ? 'speak' : 'silence',
         breakType: chosenCandidate?.type || null,
+        openerUsed: chosenOpenerUsed || undefined,
         candidate: chosenCandidate?.packet ? {
           type: chosenCandidate.type,
           topic: chosenCandidate.packet.topic,
@@ -2145,6 +2148,15 @@ async function startServer() {
           factText: chosenCandidate.packet.facts?.[0]?.text || '',
           facts: chosenCandidate.packet.facts || [],
           wikiPageTitle: chosenCandidate.type === 'next_song_story' ? songCard?.wikiPageTitle : undefined,
+          printDate: chosenCandidate.packet.printDate,
+          isFrontPage: chosenCandidate.packet.isFrontPage,
+          printPage: chosenCandidate.packet.printPage,
+          printSection: chosenCandidate.packet.printSection,
+          newsDesk: chosenCandidate.packet.newsDesk,
+          sectionName: chosenCandidate.packet.sectionName,
+          typeOfMaterial: chosenCandidate.packet.typeOfMaterial,
+          timePhrase: chosenCandidate.packet.timePhrase,
+          section: chosenCandidate.packet.section,
         } : null,
         finalSpeech,
         targetSong: 'next',
