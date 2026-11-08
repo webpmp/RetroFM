@@ -1438,10 +1438,25 @@ async function startServer() {
         serverRotationState.breaksSinceLastNews >= MIN_BREAKS_BETWEEN_NEWS &&
         recentNewsCountInSix < MAX_NEWS_IN_SIX_BREAKS;
 
-      // 7c: When news is NOT due, try next_song_story first, then credit_fallback, then plain_intro.
-      // Candidate queues when news is not due: try song story -> credit fallback -> plain intro. (DO NOT fall back to news!)
+      // 10c: Plain intros reduction:
+      // When news is NOT due and the next song has fewer than 3 facts (songStoryCandidate.ready is false),
+      // a news break may fill the slot only if the previous break was not news and the 6-break cap isn't hit.
+      const allowNewsFillSlot =
+        !newsIsDue &&
+        !songStoryCandidate.ready &&
+        hasEligibleNews &&
+        !isLastBreakNews &&
+        recentNewsCountInSix < MAX_NEWS_IN_SIX_BREAKS;
+
+      // Candidate queues:
+      // - If news is due: try news first, then song story, then short fallback.
+      // - If news is not due but song story has < 3 facts and rotation constraints are satisfied (10c):
+      //   try song story -> news queues -> short fallback.
+      // - Otherwise: try song story -> short fallback.
       const candidateQueues: CandidateEval[][] = newsIsDue
         ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
+        : allowNewsFillSlot
+        ? [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue]
         : [songStoryQueue, shortFallbackQueue];
 
       // Summary list for logging
