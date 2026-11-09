@@ -4,6 +4,8 @@
 (function () {
   if (window.__retroFmMainWorldLoaded) return;
   window.__retroFmMainWorldLoaded = true;
+  window.__retroFmMainWorldVersion = '1.0.16';
+  console.log('[RetroFM] yt_main_world.js loaded v1.0.16');
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_RAMP_VOLUME = 'RETROFM_RAMP_YT_VOLUME';
@@ -585,7 +587,7 @@
     const clampedTarget = Math.max(0, Math.min(100, rawTarget));
     const dur = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 400;
 
-    // Ensure the unthrottled Web Worker ticker is running
+    // Ensure the 33ms sampling and ramp ticker is running
     startVuSamplingLoop();
 
     const player = getPlayer();
