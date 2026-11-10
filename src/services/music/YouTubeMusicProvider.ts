@@ -26,6 +26,72 @@ export class YouTubeMusicProvider implements MusicProvider {
   private ytTabActivatedListeners: Set<() => void> = new Set();
   private boomBoxDjSpeechFinishedListeners: Set<(payload: any) => void> = new Set();
 
+  // Cached YouTube player diagnostics from extension messages
+  public latestYtState: {
+    state: number | null;
+    currentTime: number;
+    duration: number;
+    videoId: string | null;
+    title: string;
+    ytVisibility: string;
+  } = {
+    state: null,
+    currentTime: 0,
+    duration: 0,
+    videoId: null,
+    title: '',
+    ytVisibility: 'unknown'
+  };
+
+  // Deduplication cache for incoming extension messages (dedupes by unique message ID, action+timestamp, or rampId+event)
+  private static processedMessageIds: Map<string, number> = new Map();
+  private static readonly DEDUPE_TTL_MS = 2000;
+
+  public static isDuplicateMessage(msgKey: string): boolean {
+    const now = Date.now();
+    // Prune stale entries
+    for (const [key, ts] of YouTubeMusicProvider.processedMessageIds.entries()) {
+      if (now - ts > YouTubeMusicProvider.DEDUPE_TTL_MS) {
+        YouTubeMusicProvider.processedMessageIds.delete(key);
+      }
+    }
+    if (YouTubeMusicProvider.processedMessageIds.has(msgKey)) {
+      return true;
+    }
+    YouTubeMusicProvider.processedMessageIds.set(msgKey, now);
+    return false;
+  }
+
+  public getActiveListenerCounts(): {
+    boomBoxAction: number;
+    stateRequest: number;
+    ytStateChanged: number;
+    reveal: number;
+    needsUserClick: number;
+    ytTabActivated: number;
+    boomBoxDjSpeechFinished: number;
+    total: number;
+  } {
+    const counts = {
+      boomBoxAction: this.boomBoxActionListeners.size,
+      stateRequest: this.stateRequestListeners.size,
+      ytStateChanged: this.ytStateChangedListeners.size,
+      reveal: this.revealListeners.size,
+      needsUserClick: this.needsUserClickListeners.size,
+      ytTabActivated: this.ytTabActivatedListeners.size,
+      boomBoxDjSpeechFinished: this.boomBoxDjSpeechFinishedListeners.size,
+      total:
+        this.boomBoxActionListeners.size +
+        this.stateRequestListeners.size +
+        this.ytStateChangedListeners.size +
+        this.revealListeners.size +
+        this.needsUserClickListeners.size +
+        this.ytTabActivatedListeners.size +
+        this.boomBoxDjSpeechFinishedListeners.size
+    };
+    return counts;
+  }
+
   constructor() {
     if (typeof window !== 'undefined') {
       // Post app hello on load
@@ -42,20 +108,45 @@ export class YouTubeMusicProvider implements MusicProvider {
             this.reportedExtensionVersion = event.data.version;
           }
           if (event.data.type === 'BOOMBOX_ACTION' && event.data.payload) {
+            const p = event.data.payload;
+            const actionId = p.msgId || `${p.action}_${p.date || ''}_${p.genre || ''}_${p.decade || ''}_${p.volume || ''}_${p.balance || ''}_${p.t_boombox_click || p.t_boombox_perf || ''}`;
+            const dedupeKey = `BOOMBOX_ACTION_${actionId}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(dedupeKey)) {
+              return; // Silently drop identical duplicate action
+            }
+
             const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-            console.log(`[Transport Timing] [RetroFM App] BOOMBOX_ACTION received in app tab: ${event.data.payload.action} (visibility=${vis})`);
+            const actionSource = p.source || (p.action === 'PAUSE' || p.action === 'END_OF_SONG_TRIGGER' ? 'unknown' : undefined);
+            const sourceStr = actionSource ? ` source=${actionSource}` : '';
+            console.log(`[Transport Timing] [RetroFM App] BOOMBOX_ACTION received in app tab: ${p.action}${sourceStr} (visibility=${vis})`);
             for (const listener of this.boomBoxActionListeners) {
-              try { listener(event.data.payload); } catch (e) {}
+              try { listener(p); } catch (e) {}
             }
           }
           if (event.data.type === 'GET_RADIO_STATE_REQUEST') {
+            const reqKey = `GET_RADIO_STATE_REQUEST_${event.data.reqId || Math.floor(Date.now() / 250)}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(reqKey)) {
+              return;
+            }
             for (const listener of this.stateRequestListeners) {
               try { listener(); } catch (e) {}
             }
           }
           if (event.data.type === 'YT_STATE_CHANGED' && event.data.payload) {
+            const p = event.data.payload;
+            if (typeof p.state === 'number') this.latestYtState.state = p.state;
+            if (typeof p.currentTime === 'number') this.latestYtState.currentTime = p.currentTime;
+            if (typeof p.duration === 'number' && p.duration > 0) this.latestYtState.duration = p.duration;
+            if (p.videoId) this.latestYtState.videoId = p.videoId;
+            if (p.title) this.latestYtState.title = p.title;
+            if (p.ytVisibility) this.latestYtState.ytVisibility = p.ytVisibility;
+
+            const stateKey = `YT_STATE_CHANGED_${p.state}_${p.videoId || ''}_${p.currentTime || ''}_${p.duration || ''}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(stateKey)) {
+              return;
+            }
             for (const listener of this.ytStateChangedListeners) {
-              try { listener(event.data.payload); } catch (e) {}
+              try { listener(p); } catch (e) {}
             }
           }
           if (event.data.type === 'YT_PAGE_READY' && event.data.payload) {
@@ -74,17 +165,30 @@ export class YouTubeMusicProvider implements MusicProvider {
             }
           }
           if (event.data.type === 'YT_TAB_ACTIVATED') {
+            const tabActKey = `YT_TAB_ACTIVATED_${Math.floor(Date.now() / 500)}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(tabActKey)) {
+              return;
+            }
             for (const listener of this.ytTabActivatedListeners) {
               try { listener(); } catch (e) {}
             }
           }
           if (event.data.type === 'BOOMBOX_DJ_SPEECH_FINISHED') {
+            const p = event.data.payload;
+            const speechKey = `BOOMBOX_DJ_SPEECH_FINISHED_${p?.endedTs || ''}_${p?.durationSec || ''}_${p?.eventType || ''}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(speechKey)) {
+              return;
+            }
             for (const listener of this.boomBoxDjSpeechFinishedListeners) {
-              try { listener(event.data.payload); } catch (e) {}
+              try { listener(p); } catch (e) {}
             }
           }
           if (event.data.type === 'YT_VOLUME_RAMP_REACHED' && event.data.payload) {
             const p = event.data.payload;
+            const rampKey = `YT_VOLUME_RAMP_REACHED_${p.event}_${p.rampId || ''}_${p.targetPercent || ''}_${p.ts || ''}`;
+            if (YouTubeMusicProvider.isDuplicateMessage(rampKey)) {
+              return; // Drop duplicate ramp completion log
+            }
             const appVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
             const label = p.event === 'YT_VOLUME_REACHED_DUCK' ? '2b. YT_VOLUME_REACHED_DUCK' : '4b. YT_VOLUME_REACHED_NORMAL';
             console.log(
@@ -524,19 +628,19 @@ export class YouTubeMusicProvider implements MusicProvider {
   }
 
   public async pause(): Promise<boolean> {
-    const res = await this.pauseDetailed();
+    const res = await this.pauseDetailed('app_pause');
     return res.success;
   }
 
-  public async pauseDetailed(): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
+  public async pauseDetailed(source: string = 'app_pause'): Promise<{ success: boolean; status?: MusicPlaybackStatus; error?: string }> {
     const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-    console.log(`[Transport Timing] [RetroFM App] pauseDetailed invoked (visibility=${vis})`);
+    console.log(`[Transport Timing] [RetroFM App] pauseDetailed invoked (source=${source}, visibility=${vis})`);
     const tabId = await this.ensureConnected();
     if (!tabId) return { success: false, error: 'No YouTube tab connected' };
     try {
       const res = await this.sendExtensionMessage('COMMAND_YOUTUBE', {
         tabId,
-        command: { action: 'PAUSE' },
+        command: { action: 'PAUSE', source },
       });
       return {
         success: !!res?.success,

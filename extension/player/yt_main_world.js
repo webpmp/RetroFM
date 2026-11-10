@@ -526,21 +526,26 @@
     }
   }
 
+  const INTERNAL_REASON = /^(ramp|RAMP_|duck|event:|navigationStart|yt-|playerReady)/;
+
   function applyVolume(vol, reason = 'direct') {
     if (typeof vol !== 'number' || isNaN(vol)) return;
     const clampedVol = Math.max(0, Math.min(100, Math.round(vol)));
+
+    const isInternal = INTERNAL_REASON.test(String(reason));
+    const isRampDriver = /^(ramp|duck)/.test(String(reason));
+    if (isInternal && !isRampDriver && activeMainWorldRamp) {
+      return;
+    }
+
     queuedVolume = clampedVol;
 
-    const isRampReason = typeof reason === 'string' && (reason.startsWith('ramp') || reason.startsWith('duck'));
-    // If this is a direct SET_VOLUME (not a ramp step), cancel any active ramp and persist user master volume
-    if (!isRampReason) {
+    if (!isInternal) {
       activeMainWorldRamp = null;
-      if (!reason.startsWith('event:')) {
-        userMasterVolume = clampedVol;
-        try {
-          localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
-        } catch (e) {}
-      }
+      userMasterVolume = clampedVol;
+      try {
+        localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
+      } catch (e) {}
     }
 
     const player = getPlayer();
@@ -855,7 +860,8 @@
 
     const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
     const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-    console.log(`[Transport Timing] [YouTube MW] Executing direct player command: ${cmd} (visibility=${vis}, stateBefore=${stateBefore})`);
+    const source = payload?.source || 'unknown';
+    console.log(`[Transport Timing] [YouTube MW] Executing direct player command: ${cmd} (source=${source}, visibility=${vis}, stateBefore=${stateBefore})`);
 
     if (cmd === 'PLAY') {
       const t_mw_play_call = Date.now();
@@ -1054,16 +1060,28 @@
     media.addEventListener('pause', () => {
       try {
         const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-        console.log(`[Transport Timing] [YouTube MW] video 'pause' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime})`);
-        const now = Date.now();
+        const isConfirmDialogVisible = Boolean(
+          document.querySelector('yt-confirm-dialog-renderer, ytd-popup-container ytd-modal-with-dimmed-background-renderer') ||
+          Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytd-dialog, yt-confirm-dialog-renderer')).some(el => {
+            const txt = el.textContent || '';
+            return (txt.includes('Continue watching?') || txt.includes('Video paused.')) && (el.offsetWidth > 0 || el.offsetHeight > 0 || !el.hasAttribute('aria-hidden'));
+          })
+        );
+        if (isConfirmDialogVisible) {
+          console.warn(`[YouTube MW] DETECTED "Video paused. Continue watching?" confirmation dialog!`);
+          recordError('continueWatchingDialog', { ts: now, currentTime: media.currentTime });
+        }
+        console.log(`[Transport Timing] [YouTube MW] video 'pause' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime}, continueWatchingDialog=${isConfirmDialogVisible})`);
         const unmutedRecently = (now - lastUnmuteTime) <= 3000;
         recordError('videoPause', {
           ts: now,
           pausedRightAfterUnmute: unmutedRecently,
+          continueWatchingDialog: isConfirmDialogVisible,
           timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
         });
         trace('VIDEO_PAUSE_EVENT', {
           pausedRightAfterUnmute: unmutedRecently,
+          continueWatchingDialog: isConfirmDialogVisible,
           timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
         });
         syncPlaybackProgress(false);

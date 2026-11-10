@@ -6159,12 +6159,12 @@ console.log('\n--- Test Suite 68: DJ Speech Ducking & Post-Speech Volume Release
     'ttsClient.ts trims trailing WAV silence on TTS responses before returning audio'
   );
 
-  // 2. Verify unthrottled volume ramp in YouTube main world (driven by Blob Web Worker, separating userMasterVolume from ducking)
+  // 2. Verify unthrottled volume ramp in YouTube main world (driven by setInterval ticker, separating userMasterVolume from ducking)
   assert(
     mainWorldJs.includes('const EVENT_RAMP_VOLUME = \'RETROFM_RAMP_YT_VOLUME\';') &&
     mainWorldJs.includes('function startMainWorldVolumeRamp(') &&
     mainWorldJs.includes('function tickMainWorldVolumeRamp()') &&
-    mainWorldJs.includes('const isRampReason = typeof reason === \'string\' && (reason.startsWith(\'ramp\') || reason.startsWith(\'duck\'));'),
+    mainWorldJs.includes('INTERNAL_REASON'),
     'yt_main_world.js executes volume ramps on the unthrottled Web Worker ticker and keeps userMasterVolume separate from ducked ramp steps'
   );
   assert(

@@ -21,6 +21,7 @@ if (!window.__retroFmContentLoaded) {
   let rampInterval = null;
   let activeRampId = null;
   let ensureVolumeInterval = null;
+  let lastObservedVideo = null;
 
   function isContextValid() {
     try {
@@ -163,7 +164,8 @@ if (!window.__retroFmContentLoaded) {
           videoId: data.videoId || getVideoId(),
           title: data.title || '',
           currentTime: typeof data.currentTime === 'number' ? data.currentTime : 0,
-          duration: typeof data.duration === 'number' ? data.duration : 0
+          duration: typeof data.duration === 'number' ? data.duration : 0,
+          ytVisibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown'
         }
       }, () => {
         if (chrome.runtime?.lastError) {}
@@ -687,13 +689,14 @@ if (!window.__retroFmContentLoaded) {
       }
       case 'PAUSE': {
         const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-        console.log(`[Transport Timing] [YouTube CS] RECV_PAUSE_COMMAND (visibility=${vis}, hasVideo=${!!video}, paused=${video?.paused})`);
-        trace('RECV_PAUSE_COMMAND', { hasVideo: !!video, isPaused: video ? video.paused : null });
+        const source = message?.source || 'unknown';
+        console.log(`[Transport Timing] [YouTube CS] RECV_PAUSE_COMMAND (source=${source}, visibility=${vis}, hasVideo=${!!video}, paused=${video?.paused})`);
+        trace('RECV_PAUSE_COMMAND', { source, hasVideo: !!video, isPaused: video ? video.paused : null });
         if (!video) {
           sendResponse({ success: false, state: 'no_video', error: 'Video element not found' });
           break;
         }
-        sendPlayerCommandToMainWorld('PAUSE');
+        sendPlayerCommandToMainWorld('PAUSE', { source });
         video.pause();
         const isPaused = video.paused;
         const status = getPlaybackStatus();
