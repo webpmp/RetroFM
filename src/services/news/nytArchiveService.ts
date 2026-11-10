@@ -15,6 +15,8 @@ export interface ReducedNYTArticle {
   pubDate: string; // YYYY-MM-DD
   headline: string;
   abstract: string;
+  leadParagraph?: string;
+  snippet?: string;
   section: string;
   desk: string;
   typeOfMaterial: string;
@@ -71,8 +73,17 @@ async function throttleNytCall(): Promise<void> {
   lastNytCallTimestamp = Date.now();
 }
 
+const inMemoryArchiveCache = new Map<string, MonthlyArchiveCache>();
+const inFlightArchiveFetches = new Map<string, Promise<{ articles: ReducedNYTArticle[]; error?: string; status: 'OK' | 'CACHED' | 'RATE_LIMIT' | 'ERROR' }>>();
+const lastFetchDiagnostics = new Map<string, { fetchAttempted: boolean; httpStatus: string; rateLimited: boolean; errored: boolean; fromCache: boolean }>();
+
+export function getLastNytFetchMeta(year: number, month: number) {
+  const monthStr = month < 10 ? `0${month}` : `${month}`;
+  return lastFetchDiagnostics.get(`${year}-${monthStr}`);
+}
+
 /**
- * Fetches and reduces monthly NYT archive articles (or reads from cache/nyt/YYYY-MM.json).
+ * Fetches and reduces monthly NYT archive articles (or reads from in-memory / disk cache/nyt/YYYY-MM.json).
  * Handles rate limits (5/min), backoff on 429, and bounded retries.
  */
 export async function getReducedMonthlyArchive(
@@ -81,27 +92,125 @@ export async function getReducedMonthlyArchive(
   forceFresh = false
 ): Promise<{ articles: ReducedNYTArticle[]; error?: string; status: 'OK' | 'CACHED' | 'RATE_LIMIT' | 'ERROR' }> {
   const monthStr = month < 10 ? `0${month}` : `${month}`;
-  const fileName = `${year}-${monthStr}.json`;
+  const key = `${year}-${monthStr}`;
+  const fileName = `${key}.json`;
   const dir = ensureNytCacheDir();
   const filePath = path.join(dir, fileName);
+
+  if (!forceFresh && inMemoryArchiveCache.has(key)) {
+    const cached = inMemoryArchiveCache.get(key)!;
+    lastFetchDiagnostics.set(key, { fetchAttempted: false, httpStatus: '200 (Memory Cache)', rateLimited: false, errored: false, fromCache: true });
+    return { articles: cached.articles, status: 'CACHED' };
+  }
 
   if (!forceFresh && fs.existsSync(filePath)) {
     try {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) as MonthlyArchiveCache;
-      recordNewsCacheHit('nyt');
-      return { articles: data.articles, status: 'CACHED' };
+      if (Array.isArray(data.articles) && data.articles.length > 0) {
+        inMemoryArchiveCache.set(key, data);
+        recordNewsCacheHit('nyt');
+        lastFetchDiagnostics.set(key, { fetchAttempted: false, httpStatus: '200 (Disk Cache)', rateLimited: false, errored: false, fromCache: true });
+        return { articles: data.articles, status: 'CACHED' };
+      }
     } catch (err) {
       console.warn(`[nytArchive] Error reading cache file ${filePath}:`, err);
     }
   }
 
-  // Also check legacy cache/news/nyt_archive_YYYY_M.json for backwards compatibility
-  const legacyPath = path.resolve(getNytCacheDir(), '..', 'news', `nyt_archive_${year}_${month}.json`);
-  if (!forceFresh && fs.existsSync(legacyPath)) {
-    try {
-      const legacyRaw = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
-      const rawDocs = legacyRaw?.response?.docs;
-      if (Array.isArray(rawDocs)) {
+  // Deduplicate concurrent fetches for the same month
+  if (!forceFresh && inFlightArchiveFetches.has(key)) {
+    return inFlightArchiveFetches.get(key)!;
+  }
+
+  const fetchPromise = (async (): Promise<{ articles: ReducedNYTArticle[]; error?: string; status: 'OK' | 'CACHED' | 'RATE_LIMIT' | 'ERROR' }> => {
+    // Also check legacy cache/news/nyt_archive_YYYY_M.json for backwards compatibility
+    const legacyPath = path.resolve(getNytCacheDir(), '..', 'news', `nyt_archive_${year}_${month}.json`);
+    if (!forceFresh && fs.existsSync(legacyPath)) {
+      try {
+        const legacyRaw = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+        const rawDocs = legacyRaw?.response?.docs;
+        if (Array.isArray(rawDocs) && rawDocs.length > 0) {
+          const reduced = reduceDocs(rawDocs);
+          const cacheObj: MonthlyArchiveCache = {
+            year,
+            month,
+            fetchedAt: new Date().toISOString(),
+            articles: reduced,
+          };
+          fs.writeFileSync(filePath, JSON.stringify(cacheObj, null, 2), 'utf8');
+          inMemoryArchiveCache.set(key, cacheObj);
+          recordNewsCacheHit('nyt');
+          lastFetchDiagnostics.set(key, { fetchAttempted: false, httpStatus: '200 (Legacy Cache)', rateLimited: false, errored: false, fromCache: true });
+          return { articles: reduced, status: 'CACHED' };
+        }
+      } catch (err) {
+        console.warn(`[nytArchive] Error migrating legacy cache for ${year}-${month}:`, err);
+      }
+    }
+
+    const apiKey = (process.env.NYT_API_KEY || '').trim();
+    if (!apiKey) {
+      console.warn(`[nytArchive] WARNING: NYT_API_KEY is not configured; cannot fetch ${key} from NYT Archive API.`);
+      lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: 'ERROR (Missing NYT_API_KEY)', rateLimited: false, errored: true, fromCache: false });
+      return {
+        articles: [],
+        error: 'NYT_API_KEY is not configured in server environment.',
+        status: 'ERROR',
+      };
+    }
+
+    // Remote fetch with throttle & backoff on 429
+    const url = `https://api.nytimes.com/svc/archive/v1/${year}/${month}.json?api-key=${encodeURIComponent(apiKey)}`;
+    const maxRetries = 2;
+    const backoffDelays = [4000, 8000];
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      await throttleNytCall();
+      recordNewsApiCall('nyt');
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'RetroFM/1.0.6 (Historical Radio Simulation)',
+            Accept: 'application/json',
+          },
+        });
+
+        if (res.status === 429) {
+          if (attempt < maxRetries) {
+            const waitMs = backoffDelays[attempt];
+            console.warn(`[nytArchive] NYT 429 Rate Limit hit for ${key}. Backing off ${waitMs / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          } else {
+            console.warn(`[nytArchive] NYT 429 Rate Limit persisted for ${key} after ${maxRetries} retries. Falling back without caching empty almanac.`);
+            lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: '429 Too Many Requests', rateLimited: true, errored: false, fromCache: false });
+            return {
+              articles: [],
+              error: 'NYT Rate limit reached (429). Max retries exceeded.',
+              status: 'RATE_LIMIT',
+            };
+          }
+        }
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          console.warn(`[nytArchive] HTTP ${res.status} error fetching NYT archive for ${key}: ${res.statusText}`);
+          lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: `${res.status} ${res.statusText}`, rateLimited: false, errored: true, fromCache: false });
+          return {
+            articles: [],
+            error: `HTTP ${res.status}: ${res.statusText} ${errText}`.trim(),
+            status: 'ERROR',
+          };
+        }
+
+        const data = await res.json().catch(() => null);
+        const rawDocs = data?.response?.docs;
+        if (!Array.isArray(rawDocs) || rawDocs.length === 0) {
+          lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: '200 OK (0 docs)', rateLimited: false, errored: false, fromCache: false });
+          return { articles: [], status: 'OK' };
+        }
+
         const reduced = reduceDocs(rawDocs);
         const cacheObj: MonthlyArchiveCache = {
           year,
@@ -110,96 +219,37 @@ export async function getReducedMonthlyArchive(
           articles: reduced,
         };
         fs.writeFileSync(filePath, JSON.stringify(cacheObj, null, 2), 'utf8');
-        recordNewsCacheHit('nyt');
-        return { articles: reduced, status: 'CACHED' };
-      }
-    } catch (err) {
-      console.warn(`[nytArchive] Error migrating legacy cache for ${year}-${month}:`, err);
-    }
-  }
+        inMemoryArchiveCache.set(key, cacheObj);
+        lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: '200 OK (Fetched from NYT API)', rateLimited: false, errored: false, fromCache: false });
+        console.log(`[nytArchive] Fetched and cached ${reduced.length} NYT articles for ${key}.`);
 
-  const apiKey = (process.env.NYT_API_KEY || '').trim();
-  if (!apiKey) {
-    return {
-      articles: [],
-      error: 'NYT_API_KEY is not configured in server environment.',
-      status: 'ERROR',
-    };
-  }
-
-  // Remote fetch with throttle & backoff on 429
-  const url = `https://api.nytimes.com/svc/archive/v1/${year}/${month}.json?api-key=${encodeURIComponent(apiKey)}`;
-  const maxRetries = 2;
-  const backoffDelays = [4000, 8000];
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    await throttleNytCall();
-    recordNewsApiCall('nyt');
-
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': 'RetroFM/1.0.6 (Historical Radio Simulation)',
-          Accept: 'application/json',
-        },
-      });
-
-      if (res.status === 429) {
+        return { articles: reduced, status: 'OK' };
+      } catch (err: any) {
         if (attempt < maxRetries) {
           const waitMs = backoffDelays[attempt];
-          console.warn(`[nytArchive] NYT 429 Rate Limit hit. Backing off ${waitMs / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+          console.warn(`[nytArchive] Network error fetching NYT ${key}: ${err?.message}. Retrying in ${waitMs / 1000}s...`);
           await new Promise((r) => setTimeout(r, waitMs));
-          continue;
         } else {
+          console.warn(`[nytArchive] Failed connecting to NYT Archive API for ${key}: ${err?.message}`);
+          lastFetchDiagnostics.set(key, { fetchAttempted: true, httpStatus: `Network Error (${err?.message})`, rateLimited: false, errored: true, fromCache: false });
           return {
             articles: [],
-            error: 'NYT Rate limit reached (429). Max retries exceeded.',
-            status: 'RATE_LIMIT',
+            error: err?.message || 'Failed connecting to NYT Archive API',
+            status: 'ERROR',
           };
         }
       }
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        return {
-          articles: [],
-          error: `HTTP ${res.status}: ${res.statusText} ${errText}`.trim(),
-          status: 'ERROR',
-        };
-      }
-
-      const data = await res.json().catch(() => null);
-      const rawDocs = data?.response?.docs;
-      if (!Array.isArray(rawDocs)) {
-        return { articles: [], status: 'OK' };
-      }
-
-      const reduced = reduceDocs(rawDocs);
-      const cacheObj: MonthlyArchiveCache = {
-        year,
-        month,
-        fetchedAt: new Date().toISOString(),
-        articles: reduced,
-      };
-      fs.writeFileSync(filePath, JSON.stringify(cacheObj, null, 2), 'utf8');
-
-      return { articles: reduced, status: 'OK' };
-    } catch (err: any) {
-      if (attempt < maxRetries) {
-        const waitMs = backoffDelays[attempt];
-        console.warn(`[nytArchive] Network error fetching NYT: ${err?.message}. Retrying in ${waitMs / 1000}s...`);
-        await new Promise((r) => setTimeout(r, waitMs));
-      } else {
-        return {
-          articles: [],
-          error: err?.message || 'Failed connecting to NYT Archive API',
-          status: 'ERROR',
-        };
-      }
     }
-  }
 
-  return { articles: [], error: 'Failed to fetch NYT Archive', status: 'ERROR' };
+    return { articles: [], error: 'Failed to fetch NYT Archive', status: 'ERROR' };
+  })();
+
+  inFlightArchiveFetches.set(key, fetchPromise);
+  try {
+    return await fetchPromise;
+  } finally {
+    inFlightArchiveFetches.delete(key);
+  }
 }
 
 function reduceDocs(rawDocs: any[]): ReducedNYTArticle[] {
@@ -207,6 +257,8 @@ function reduceDocs(rawDocs: any[]): ReducedNYTArticle[] {
     const pubDate = extractDateString(doc.pub_date) || '';
     const headline = (doc.headline?.main || doc.headline?.print_headline || '').trim();
     const abstract = (doc.abstract || doc.snippet || doc.lead_paragraph || '').trim();
+    const leadParagraph = (doc.lead_paragraph || '').trim() || undefined;
+    const snippet = (doc.snippet || '').trim() || undefined;
     const section = (doc.section_name || '').trim();
     const desk = (doc.news_desk || '').trim();
     const typeOfMaterial = (doc.type_of_material || '').trim();
@@ -221,6 +273,8 @@ function reduceDocs(rawDocs: any[]): ReducedNYTArticle[] {
       pubDate,
       headline,
       abstract,
+      leadParagraph,
+      snippet,
       section,
       desk,
       typeOfMaterial,

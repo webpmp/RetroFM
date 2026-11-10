@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { computeNewsDateTier } from './src/services/news/relativeTime.js';
 import { GeminiTTSProvider } from './src/services/tts/GeminiTTSProvider.js';
 import { KokoroTTSProvider } from './src/services/tts/KokoroTTSProvider.js';
 import { createZipFromDirectory } from './src/server/zipUtil.js';
@@ -37,9 +38,9 @@ import {
   computeSongChartStatusFact,
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
-import { getOrBuildAlmanac, resolveRelativeTimeWords } from './src/services/news/almanacService.js';
+import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
-import { validateSegmentBreakOutput } from './src/services/djBreak/breakValidator.js';
+import { validateSegmentBreakOutput, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
 import { getEffectiveAppUrl, logStartupEnvironmentStatus, resolveLmStudioEndpoint } from './src/services/envUtil.js';
@@ -419,9 +420,19 @@ async function startServer() {
     }
   });
 
-  // API Route: Trigger background prefetch for news (Cleaned up - old news writer removed)
+  // Purge any stale or Wikipedia-tainted cached almanac files at startup
+  purgeInvalidCachedAlmanacs();
+
+  // API Route: Trigger background prefetch for NYT archive & almanac at session start
   app.post('/api/news/prefetch', async (req, res) => {
-    return res.json({ success: true, message: 'Legacy news prefetch removed. Segment pipeline active.' });
+    const targetDate = req.body?.targetDate || req.body?.selectedDate;
+    if (targetDate && typeof targetDate === 'string') {
+      // Fire and forget in the background so no break waits on it
+      prefetchAlmanacForDate(targetDate).catch((err) => {
+        console.warn(`[API /api/news/prefetch] Background prefetch error for ${targetDate}:`, err);
+      });
+    }
+    return res.json({ success: true, message: 'NYT background prefetch started.' });
   });
 
   // API Route: Poll status of news prefetch (Cleaned up - old news writer removed)
@@ -733,6 +744,35 @@ async function startServer() {
   const chartFactRepo = new ChartFactRepository();
   const songCreditRepo = new SongCreditRepository(undefined, chartFactRepo);
 
+  // 7c: Rotation tuning: Cap news at ~1 in 3 breaks.
+  // Never 2 news breaks in a row, and at most 2 news breaks in any 6 consecutive breaks.
+  const MAX_NEWS_IN_SIX_BREAKS = 2;
+  const MIN_BREAKS_BETWEEN_NEWS = 2;
+
+  // Per-session rotation tracking on the server (Fix 2 & 7c & 7i):
+  interface ServerRotationState {
+    selectedDate: string;
+    breaksSinceLastNews: number;
+    lastCategory: string | null;
+    nextNewsSlot: 'major_news' | 'music_news';
+    totalBreaksCount: number;
+    recentCategoriesWindow: string[]; // Last up to 6 categories
+    airedArticleIds: Set<string>; // 7f: Session-wide article IDs to prevent repeat stories
+    airedHeadlinesNorm: Set<string>; // 7f: Session-wide normalized headlines to prevent repeat stories
+    breaksSinceLastRetroFm: number; // 7i: Breaks since last station ID
+  }
+  let serverRotationState: ServerRotationState = {
+    selectedDate: '',
+    breaksSinceLastNews: 2, // Start eligible so news can air within the first couple of breaks
+    lastCategory: null,
+    nextNewsSlot: 'major_news',
+    totalBreaksCount: 0,
+    recentCategoriesWindow: [],
+    airedArticleIds: new Set<string>(),
+    airedHeadlinesNorm: new Set<string>(),
+    breaksSinceLastRetroFm: 0,
+  };
+
   // Helper for natural extractive fallback monologue
   function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {
     const sentences = (packet.facts || []).map((f: any) => {
@@ -750,6 +790,21 @@ async function startServer() {
     return sentences.join(' ');
   }
 
+  // In-memory registry of prepared break metadata for lifecycle logging (4h & 7h)
+  const preparedBreakMeta = new Map<string, {
+    type: string;
+    headline?: string;
+    articleDate?: string;
+    section?: string;
+    timePhrase?: string;
+    printPage?: string;
+    printSection?: string;
+    newsDesk?: string;
+    sectionName?: string;
+    typeOfMaterial?: string;
+    isFrontPage?: boolean;
+  }>();
+
   // Segment Lifecycle & Status Reporting Endpoint
   app.post('/api/dj/segment-status', (req, res) => {
     const { breakId, event, reason } = req.body;
@@ -760,8 +815,13 @@ async function startServer() {
       console.log(`[Segment Queued] id=${breakId}`);
     } else if (event === 'aired') {
       console.log(`[Segment Aired] id=${breakId}`);
+      const meta = preparedBreakMeta.get(breakId);
+      if (meta && (meta.type === 'major_news' || meta.type === 'music_news')) {
+        console.log(`[News Aired] type=${meta.type} headline="${meta.headline}" articleDate=${meta.articleDate} section="${meta.section}" isFrontPage=${Boolean(meta.isFrontPage)} rawPrintPage="${meta.printPage || ''}" rawPrintSection="${meta.printSection || ''}" rawDesk="${meta.newsDesk || ''}" rawSectionName="${meta.sectionName || ''}" rawMaterial="${meta.typeOfMaterial || ''}" timePhrase="${meta.timePhrase}"`);
+      }
     } else if (event === 'discarded') {
       console.log(`[Segment Discarded] id=${breakId} reason="${reason || 'unknown'}"`);
+      preparedBreakMeta.delete(breakId);
     }
     return res.json({ success: true });
   });
@@ -810,11 +870,15 @@ async function startServer() {
       const roll = Math.random();
       const rollPassed = roll <= freqSetting;
 
-      const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number' ? breaksSinceLastRetroFm : 4;
-      const allowRetroFm = sinceRetroFm >= 4;
+      const isFirstBreak = (typeof totalBreaksSession === 'number' ? totalBreaksSession : 0) === 0;
+
+      // Fix 7i: Station ID fires on break 1, and then once every ~5 breaks thereafter
+      const sinceRetroFm = typeof breaksSinceLastRetroFm === 'number'
+        ? breaksSinceLastRetroFm
+        : serverRotationState.breaksSinceLastRetroFm;
+      const allowRetroFm = isFirstBreak || sinceRetroFm >= 5;
       const sinceMusicNews = typeof breaksSinceLastMusicNews === 'number' ? breaksSinceLastMusicNews : 8;
       const allowMusicNewsPast = sinceMusicNews >= 8;
-      const isFirstBreak = (typeof totalBreaksSession === 'number' ? totalBreaksSession : 0) === 0;
 
       const usedKeysSet = new Set<string>(Array.isArray(usedFactKeys) ? usedFactKeys : []);
       const blacklistedKeysSet = new Set<string>(Array.isArray(blacklistedFactKeys) ? blacklistedFactKeys : []);
@@ -836,15 +900,17 @@ async function startServer() {
         ? await getOrBuildSongStoryCard(nextSong, selectedDate, undefined, { runLLMCheck: false })
         : null;
 
-      // Setup ScriptWriterProvider
+      // Setup ScriptWriterProvider (per-candidate timeout of 18s so one slow candidate never starves later categories)
       const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
       let writer: any;
       if (provider === 'lmstudio' || (!process.env.GEMINI_API_KEY && resolvedEndpoint)) {
-        writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 35000 });
+        writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 18000 });
+        console.log(`[DJ Break Writer] Using LMStudioScriptWriterProvider (model: ${model || 'default'}, endpoint: ${resolvedEndpoint})`);
       } else {
         const defaultModel = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
         const fallbackModel = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || 'gemini-2.5-flash';
         writer = new GeminiScriptWriterProvider(process.env.GEMINI_API_KEY, defaultModel, fallbackModel);
+        console.log(`[DJ Break Writer] Using GeminiScriptWriterProvider (primary: ${defaultModel}, fallback: ${fallbackModel})`);
       }
 
       // Collect candidates
@@ -1065,25 +1131,6 @@ async function startServer() {
         };
       }
 
-      // 2. Music News Candidates (Up to 3 distinct items from almanac music category)
-      // Freshness: Must be within 14 days before the broadcast date, unless phrased as a dated past event, at most 1 in 8 breaks.
-      const musicNewsCandidates: CandidateEval[] = [];
-      const bDateMs = new Date(selectedDate + 'T00:00:00Z').getTime();
-
-      const musicAlmanacEntries = (almanac.entries || [])
-        .filter((e) => {
-          if (e.category !== 'music' || isKeyBlocked(`almanac:${e.id}`)) return false;
-          if (!e.eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(e.eventDate)) return false;
-          const eDateMs = new Date(e.eventDate + 'T00:00:00Z').getTime();
-          const diffDays = (bDateMs - eDateMs) / (1000 * 60 * 60 * 24);
-          if (diffDays < 0) return false; // future event
-          if (diffDays <= 14) return true; // recent event within 14 days
-          // If > 14 days, allowed ONLY if rate-limit allows (at most 1 in 8 breaks)
-          return allowMusicNewsPast;
-        })
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 3);
-
       // Helper to strip evaluative/figurative language from review sentences
       const cleanFigurativeSentences = (facts: Array<{ text: string; source: string; printDate?: string; date: string }>) => {
         const FIGURATIVE_PATTERNS = [
@@ -1096,11 +1143,108 @@ async function startServer() {
         return facts.filter((f) => !FIGURATIVE_PATTERNS.some((pat) => pat.test(f.text)));
       };
 
-      for (const entry of musicAlmanacEntries) {
+      // 4k: News fact material = NYT headline + abstract + at most one lead-paragraph sentence.
+      // Compact source prevents over-long drafts and reduces copying.
+      // 10b: If article date != selectedDate, drop any fact sentence containing relative-day words.
+      const buildNewsFacts = (entry: any, _baseFacts: any[]) => {
+        const headlineFact = entry.headline
+          ? [{ text: entry.headline, source: entry.source, printDate: entry.printDate, date: entry.eventDate }]
+          : [];
+        let compactFacts = [...headlineFact];
+        if (entry.abstract && entry.abstract.trim() && entry.abstract.trim() !== entry.headline?.trim()) {
+          compactFacts.push({ text: entry.abstract.trim(), source: entry.source, printDate: entry.printDate, date: entry.eventDate });
+        }
+        if (entry.leadParagraph && entry.leadParagraph.trim()) {
+          const leadSentences = splitVerbatimSentences(entry.leadParagraph.trim());
+          const firstLead = leadSentences[0];
+          if (firstLead && firstLead !== entry.abstract?.trim() && firstLead !== entry.headline?.trim()) {
+            compactFacts.push({ text: firstLead, source: entry.source, printDate: entry.printDate, date: entry.eventDate });
+          }
+        }
+        const artDate = entry.printDate || entry.eventDate;
+        if (artDate && artDate !== selectedDate) {
+          const RELATIVE_DAY_PATTERN = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+          compactFacts = compactFacts.filter((f) => !RELATIVE_DAY_PATTERN.test(f.text));
+        }
+        const budget = computeNewsWordBudget({ headline: entry.headline, facts: compactFacts });
+        return { facts: compactFacts, budget };
+      };
+
+      // 4e, 5j & 5l & 11a: Tiered relative-time candidate selection
+      // - Older items (>7 days for music, >3 days for major_news) are dropped; future items are dropped.
+      // - Computes exact relative-time phrase in code ("in today's Times", "in yesterday's Times", "a couple of days ago", "last week").
+      // - Fix 11a: For major_news: Require front page (print_page 1), or National/Foreign/Washington desk,
+      //   or strong major-news keyword match.
+      //   Exclude consumer products, food/dining, fashion, lifestyle, cosmetics, recalls of minor products,
+      //   and product seizures, unless a keyword above is present.
+      // - Sorts by interestScore descending, breaking ties by isFrontPage then recency (pubDate descending).
+      // - Fix 5j: Capped at top ~40 per window.
+      interface TieredNewsEntry {
+        entry: any;
+        tierInfo: NonNullable<ReturnType<typeof computeNewsDateTier>>;
+      }
+      const selectTieredNewsEntries = (category: 'major_news' | 'music'): TieredNewsEntry[] => {
+        const pool: TieredNewsEntry[] = [];
+        const mappedCat = category === 'music' ? 'music_news' : 'major_news';
+        const STRONG_MAJOR_KEYWORD = /\b(?:president|congress|court|war|treaty|strike|election|disaster|crash|ruling|summit|resignation|(?:died|dead|death)\b.*\b(?:famous|leader|senator|governor|general|president|pope|king|queen|premier|minister|justice))\b/i;
+        const CONSUMER_LIFESTYLE = /\b(?:consumer products?|caviar|champagne reception|cosmetics?|lotion\b|wrinkle-smoothing|skin lotion|beauty\b|fashion\b|lifestyle|dining out|restaurants?|food and wine|product seizures?|seizes cosmetic|seizure of (?:cosmetic|food|goods|products?)|product recalls?|recalls of (?:minor|products?))\b/i;
+
+        for (const e of (almanac.entries || [])) {
+          if (e.category !== category) continue;
+          if (isKeyBlocked(`almanac:${e.id}`)) continue;
+          if (serverRotationState.airedArticleIds.has(e.id)) continue;
+          const normH = (e.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normH && serverRotationState.airedHeadlinesNorm.has(normH)) continue;
+          const artDate = e.printDate || e.eventDate;
+          if (!artDate) continue;
+          const tierInfo = computeNewsDateTier(artDate, selectedDate, mappedCat);
+          if (!tierInfo) continue;
+
+          if (category === 'major_news') {
+            const page1 = e.isFrontPage || e.printPage === '1' || e.printPage === '01' || e.printPage === 'A1';
+            const d = (e.newsDesk || '').toLowerCase();
+            const s = (e.sectionName || e.section || '').toLowerCase();
+            const natDesk = d.includes('national') || d.includes('foreign') || d.includes('washington') || s.includes('national') || s.includes('foreign') || s.includes('washington');
+            const combined = `${e.headline || ''} ${e.summary || ''}`.toLowerCase();
+            const hasKey = STRONG_MAJOR_KEYWORD.test(combined);
+
+            if (!page1 && !natDesk && !hasKey) continue;
+            if (CONSUMER_LIFESTYLE.test(combined) && !hasKey) continue;
+          }
+
+          pool.push({ entry: e, tierInfo });
+        }
+        pool.sort((a, b) => {
+          // Sort primarily by interestScore descending
+          const scoreA = a.entry.interestScore || 50;
+          const scoreB = b.entry.interestScore || 50;
+          if (scoreB !== scoreA) return scoreB - scoreA;
+          // Break ties by front page
+          const fpA = (a.entry.isFrontPage || a.entry.printPage === '1' || a.entry.printPage === '01' || a.entry.printPage === 'A1') ? 1 : 0;
+          const fpB = (b.entry.isFrontPage || b.entry.printPage === '1' || b.entry.printPage === '01' || b.entry.printPage === 'A1') ? 1 : 0;
+          if (fpB !== fpA) return fpB - fpA;
+          // Break ties by recency (pubDate / printDate descending)
+          const dateA = a.entry.printDate || a.entry.eventDate || '';
+          const dateB = b.entry.printDate || b.entry.eventDate || '';
+          return dateB.localeCompare(dateA);
+        });
+        // Fix 5j: Cap candidate pool at top ~40 per window
+        return pool.slice(0, 40);
+      };
+
+      // 2. Music News Candidates
+      const musicNewsCandidates: CandidateEval[] = [];
+      for (const { entry, tierInfo } of selectTieredNewsEntries('music')) {
         const itemKey = `almanac:${entry.id}`;
         let subFacts = splitEntryIntoFacts(entry);
         subFacts = cleanFigurativeSentences(subFacts);
         if (subFacts.length === 0) continue;
+        const musicMaterial = buildNewsFacts(entry, subFacts);
+        if (musicMaterial.budget.tooThin) {
+          console.log(`[News Candidate Skipped] type=music_news key=${itemKey} reason="too little verified material (${musicMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
+          continue;
+        }
+        subFacts = musicMaterial.facts;
         musicNewsCandidates.push({
           type: 'music_news',
           category: 'music_news',
@@ -1110,24 +1254,39 @@ async function startServer() {
           packet: {
             topic: 'music_news',
             topicTitle: entry.headline,
-            targetSongTitle: nextSong?.title,
-            targetSongArtist: nextSong?.artist,
+            headline: entry.headline,
+            abstract: entry.abstract,
+            leadParagraph: entry.leadParagraph,
+            snippet: entry.snippet,
+            section: entry.section,
+            printDate: entry.printDate,
+            diffDays: tierInfo.diffDays,
+            timePhrase: tierInfo.timePhrase,
+            isFrontPage: Boolean(entry.isFrontPage),
+            printPage: entry.printPage,
+            printSection: entry.printSection,
+            newsDesk: entry.newsDesk,
+            sectionName: entry.sectionName,
+            typeOfMaterial: entry.typeOfMaterial,
+            targetSongTitle: undefined,
+            targetSongArtist: undefined,
             facts: subFacts,
             factKeys: [itemKey],
           },
         });
+        if (musicNewsCandidates.length >= 8) break;
       }
 
-      // 3. Major News Candidates (Up to 3 distinct items from almanac major_news category)
+      // 3. Major News Candidates
       const majorNewsCandidates: CandidateEval[] = [];
-      const majorNewsEntries = (almanac.entries || [])
-        .filter((e) => e.category === 'major_news' && !isKeyBlocked(`almanac:${e.id}`))
-        .sort((a, b) => (b.interestScore || 50) - (a.interestScore || 50))
-        .slice(0, 3);
-
-      for (const entry of majorNewsEntries) {
+      for (const { entry, tierInfo } of selectTieredNewsEntries('major_news')) {
         const itemKey = `almanac:${entry.id}`;
-        const subFacts = splitEntryIntoFacts(entry);
+        const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
+        if (majorMaterial.budget.tooThin) {
+          console.log(`[News Candidate Skipped] type=major_news key=${itemKey} reason="too little verified material (${majorMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
+          continue;
+        }
+        const subFacts = majorMaterial.facts;
         majorNewsCandidates.push({
           type: 'major_news',
           category: 'major_news',
@@ -1137,12 +1296,27 @@ async function startServer() {
           packet: {
             topic: 'major_news',
             topicTitle: entry.headline,
-            targetSongTitle: nextSong?.title,
-            targetSongArtist: nextSong?.artist,
+            headline: entry.headline,
+            abstract: entry.abstract,
+            leadParagraph: entry.leadParagraph,
+            snippet: entry.snippet,
+            section: entry.section,
+            printDate: entry.printDate,
+            diffDays: tierInfo.diffDays,
+            timePhrase: tierInfo.timePhrase,
+            isFrontPage: Boolean(entry.isFrontPage),
+            printPage: entry.printPage,
+            printSection: entry.printSection,
+            newsDesk: entry.newsDesk,
+            sectionName: entry.sectionName,
+            typeOfMaterial: entry.typeOfMaterial,
+            targetSongTitle: undefined,
+            targetSongArtist: undefined,
             facts: subFacts,
             factKeys: [itemKey],
           },
         });
+        if (majorNewsCandidates.length >= 8) break;
       }
 
       // 4. Short Fallback Candidates: chart status or credits (1-2 facts short fallback)
@@ -1209,18 +1383,101 @@ async function startServer() {
         });
       }
 
-      // Group candidate categories in strict user requirement order:
-      // (1) next_song_story (needs 3+ facts)
-      // (2) music_news (cap 3 items)
-      // (3) major_news (cap 3 items)
-      // (4) short fallback: chart or credits
-      // (5) plain intro (when all above fail)
-      const candidateQueues: CandidateEval[][] = [
-        songStoryCandidate.ready ? [songStoryCandidate] : [],
-        musicNewsCandidates.slice(0, 3),
-        majorNewsCandidates.slice(0, 3),
-        fallbackCandidates.slice(0, 3),
-      ];
+      // FIX 2: Content rotation in /api/dj/segment-break
+      // - Never choose the same category twice in a row.
+      // - Guarantee a news break (major_news or music_news) at least once every 3 breaks when eligible news exists.
+      // - Alternate major_news and music_news as the primary news slot.
+      if (isFirstBreak || serverRotationState.selectedDate !== selectedDate) {
+        serverRotationState = {
+          selectedDate,
+          breaksSinceLastNews: 2, // Start eligible so news can air within the first couple of breaks
+          lastCategory: null,
+          nextNewsSlot: 'major_news',
+          totalBreaksCount: 0,
+          recentCategoriesWindow: [],
+          airedArticleIds: new Set<string>(),
+          airedHeadlinesNorm: new Set<string>(),
+          breaksSinceLastRetroFm: 0,
+        };
+      }
+
+      const effectiveLastCategory = (typeof lastTopic === 'string' && lastTopic)
+        ? lastTopic
+        : serverRotationState.lastCategory;
+
+      // Fix 6d & 7d: If the music news candidate pool for a date comes out tiny (< 3 items),
+      // skip music_news for that date; fall back to next_song_story and do not loosen the filter.
+      const isMusicNewsPoolTiny = musicNewsCandidates.length < 3;
+      const filteredMusicNewsCandidates = isMusicNewsPoolTiny ? [] : musicNewsCandidates;
+
+      const songStoryQueue = songStoryCandidate.ready ? [songStoryCandidate] : [];
+      // Fix 8g: Variety - choose randomly among the top ~8 eligible items by score instead of always taking #1
+      const shuffleTopCandidates = (list: CandidateEval[], topN = 8): CandidateEval[] => {
+        if (list.length <= 1) return list;
+        const pool = list.slice(0, Math.min(list.length, topN));
+        const rest = list.slice(topN);
+        // Fisher-Yates shuffle
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        return [...pool, ...rest];
+      };
+
+      const majorQueue = shuffleTopCandidates(majorNewsCandidates, 8).slice(0, 3);
+      const musicQueue = shuffleTopCandidates(filteredMusicNewsCandidates, 8).slice(0, 3);
+      const shortFallbackQueue = fallbackCandidates.slice(0, 3);
+
+      // Order the two news queues by alternating slot, avoiding repeating effectiveLastCategory
+      let primaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? majorQueue : musicQueue;
+      let secondaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? musicQueue : majorQueue;
+      if (effectiveLastCategory === 'major_news' && musicQueue.length > 0) {
+        primaryNewsQueue = musicQueue;
+        secondaryNewsQueue = majorQueue;
+      } else if (effectiveLastCategory === 'music_news' && majorQueue.length > 0) {
+        primaryNewsQueue = majorQueue;
+        secondaryNewsQueue = musicQueue;
+      }
+
+      const hasEligibleNews = majorQueue.length > 0 || musicQueue.length > 0;
+
+      // 7c: Cap news at ~1 in 3 breaks:
+      // Never 2 news breaks in a row, and at most 2 news breaks in any 6 consecutive breaks.
+      const recentNewsCountInSix = (serverRotationState.recentCategoriesWindow || []).filter(
+        (c) => c === 'major_news' || c === 'music_news'
+      ).length;
+      const isLastBreakNews =
+        effectiveLastCategory === 'major_news' ||
+        effectiveLastCategory === 'music_news' ||
+        serverRotationState.lastCategory === 'major_news' ||
+        serverRotationState.lastCategory === 'music_news';
+
+      const newsIsDue =
+        hasEligibleNews &&
+        !isLastBreakNews &&
+        serverRotationState.breaksSinceLastNews >= MIN_BREAKS_BETWEEN_NEWS &&
+        recentNewsCountInSix < MAX_NEWS_IN_SIX_BREAKS;
+
+      // 10c: Plain intros reduction:
+      // When news is NOT due and the next song has fewer than 3 facts (songStoryCandidate.ready is false),
+      // a news break may fill the slot only if the previous break was not news and the 6-break cap isn't hit.
+      const allowNewsFillSlot =
+        !newsIsDue &&
+        !songStoryCandidate.ready &&
+        hasEligibleNews &&
+        !isLastBreakNews &&
+        recentNewsCountInSix < MAX_NEWS_IN_SIX_BREAKS;
+
+      // Candidate queues:
+      // - If news is due: try news first, then song story, then short fallback.
+      // - If news is not due but song story has < 3 facts and rotation constraints are satisfied (10c):
+      //   try song story -> news queues -> short fallback.
+      // - Otherwise: try song story -> short fallback.
+      const candidateQueues: CandidateEval[][] = newsIsDue
+        ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
+        : allowNewsFillSlot
+        ? [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue]
+        : [songStoryQueue, shortFallbackQueue];
 
       // Summary list for logging
       const allEvaluatedSummary: string[] = [
@@ -1228,6 +1485,7 @@ async function startServer() {
         `music_news:${musicNewsCandidates.length}items`,
         `major_news:${majorNewsCandidates.length}items`,
         `short_fallback:${fallbackCandidates.length}items`,
+        `rotation(sinceNews=${serverRotationState.breaksSinceLastNews},last=${effectiveLastCategory || 'none'},newsDue=${newsIsDue},slot=${serverRotationState.nextNewsSlot})`,
       ];
 
       const fellThroughReasons: string[] = [];
@@ -1240,11 +1498,18 @@ async function startServer() {
       const prevTitle = prevSong?.title || 'none';
       const nextTitle = nextSong?.title || 'none';
 
+      const nytFunnel = getNYTFunnelDiagnostics(selectedDate);
+
       // If roll did not pass frequency check, log and return silence
       if (!rollPassed) {
         const elapsedMs = Date.now() - startTime;
         const candidatesSummary = allEvaluatedSummary.join(' ');
         const reasonStr = `roll exceeded frequency threshold (${roll.toFixed(2)} > ${freqSetting.toFixed(2)}) [preset=${freqPreset || 'custom'}, source=${freqSource}]`;
+        console.log(`[DJ Break Diagnostics] 1. SelectedDate=${selectedDate} ChosenType=silence Why="${reasonStr}"`);
+        console.log(`[DJ Break Diagnostics] 2. NewsPath: fetchAttempted=${nytFunnel.fetchAttempted} httpStatus="${nytFunnel.httpStatus}" rateLimited=${nytFunnel.rateLimited} errored=${nytFunnel.errored} totalArticles=${nytFunnel.totalArticlesReturned} fromCache=${nytFunnel.fromCache}`);
+        console.log(`[DJ Break Diagnostics] 3. FilterFunnel: total=${nytFunnel.totalArticlesReturned} -> dateEligible=${nytFunnel.afterDateEligibility} -> nationalFocus=${nytFunnel.afterNationalFocusFilter} -> interestThreshold=${nytFunnel.afterInterestScoringThreshold} | topRejected=${JSON.stringify(nytFunnel.topRejectedItems.slice(0, 3))}`);
+        console.log(`[DJ Break Diagnostics] 4. ValidatorAudit: newsDraftWritten=false rejected=N/A reason="N/A"`);
+        console.log(`[DJ Break Diagnostics] 5. NewsSkippedReason: frequency setting (${reasonStr})`);
         console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=silence facts=0 validator=N/A audit=N/A elapsed=${elapsedMs}ms reason="${reasonStr}"`);
         return res.json({
           decision: 'silence',
@@ -1264,31 +1529,50 @@ async function startServer() {
             nextSong: nextTitle,
             candidatesSummary: allEvaluatedSummary,
             fellThroughReasons,
+            nytFunnel,
           },
         });
       }
 
       let chosenCandidate: CandidateEval | null = null;
+      let chosenOpenerUsed: string = '';
       let finalSpeech = '';
       let validatorResult = 'N/A';
       let auditResult = 'N/A';
+      const newsDraftAttempts: Array<{ type: string; key: string; rejected: boolean; reason: string }> = [];
 
-      // Latency check: Give each song change a total budget of about 25 seconds across candidates,
-      // and on timeout use the best ready break. A break that takes over 30 seconds must be logged as "not ready".
-      const isOverBudget = (Date.now() - startTime) >= 25000;
+      // Single source of truth for writer input. News packets never carry the next song's title (4f).
+      const buildWriterInput = (packet: any, failureReason?: string) => {
+        const isNewsPacket = packet.topic === 'major_news' || packet.topic === 'music_news';
+        return {
+          targetDate: selectedDate,
+          personality: 'mike' as const,
+          topic: packet.topic,
+          topicTitle: packet.topicTitle,
+          targetSongTitle: isNewsPacket ? undefined : packet.targetSongTitle,
+          targetSongArtist: isNewsPacket ? undefined : packet.targetSongArtist,
+          facts: packet.facts,
+          isFrontPage: packet.isFrontPage,
+          diffDays: packet.diffDays,
+          timePhrase: packet.timePhrase,
+          headline: packet.headline,
+          section: packet.section,
+          articleDate: packet.printDate,
+          failureReason,
+          allowRetroFm,
+        };
+      };
 
-      // Evaluate categories in order, capping at 3 attempts per category
+      // Evaluate categories in order, capping at 2 attempts per category.
+      // Give each candidate its own time budget via the provider timeout rather than a shared 25s cutoff
+      // that would starve later categories when an earlier candidate fails slowly.
       categoryLoop:
       for (const queue of candidateQueues) {
         if (queue.length === 0) continue;
         let attemptsThisCategory = 0;
 
         for (const cand of queue) {
-          if (Date.now() - startTime >= 25000) {
-            fellThroughReasons.push('candidate budget timed out (25s reached)');
-            break categoryLoop;
-          }
-          if (attemptsThisCategory >= 3) break;
+          if (attemptsThisCategory >= 2) break;
           attemptsThisCategory++;
 
           const packet = cand.packet;
@@ -1298,23 +1582,16 @@ async function startServer() {
             let scriptText = '';
             let unsupportedClaims: string[] = [];
             let valResult: any = null;
+            let candidateOpenerUsed = '';
 
             // Attempt 1: Initial LLM Generation
             const tWriterStart = Date.now();
             if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
-              const scriptRes = await writer.writeSegmentBreakScript({
-                targetDate: selectedDate,
-                personality: 'mike',
-                topic: packet.topic,
-                topicTitle: packet.topicTitle,
-                targetSongTitle: packet.targetSongTitle,
-                targetSongArtist: packet.targetSongArtist,
-                facts: packet.facts,
-                allowRetroFm,
-              });
+              const scriptRes = await writer.writeSegmentBreakScript(buildWriterInput(packet));
               if (scriptRes.success && scriptRes.scriptText) {
                 scriptText = scriptRes.scriptText;
                 unsupportedClaims = scriptRes.unsupportedClaims || [];
+                candidateOpenerUsed = scriptRes.openerUsed || '';
               }
             }
             const writerMs = Date.now() - tWriterStart;
@@ -1355,20 +1632,17 @@ async function startServer() {
 
                 if (writer.writeSegmentBreakScript) {
                   const tRegenStart = Date.now();
-                  const regenRes = await writer.writeSegmentBreakScript({
-                    targetDate: selectedDate,
-                    personality: 'mike',
-                    topic: packet.topic,
-                    topicTitle: packet.topicTitle,
-                    targetSongTitle: packet.targetSongTitle,
-                    targetSongArtist: packet.targetSongArtist,
-                    facts: packet.facts,
-                    failureReason: `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`,
-                    allowRetroFm,
-                  });
+                  // 4l: On retry, quote the exact offending phrase to the writer and tell it to rewrite that sentence in different words
+                  let retryPromptReason = `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`;
+                  const copyMatch = offendingReason.match(/reproduces \d+ consecutive words \("([^"]+)"\)/);
+                  if (copyMatch) {
+                    retryPromptReason = `You copied the exact phrase "${copyMatch[1]}" from the source. Rewrite that sentence completely in your own different words without copying that phrase.`;
+                  }
+                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, retryPromptReason));
                   if (regenRes.success && regenRes.scriptText) {
                     scriptText = regenRes.scriptText;
                     unsupportedClaims = regenRes.unsupportedClaims || [];
+                    if (regenRes.openerUsed) candidateOpenerUsed = regenRes.openerUsed;
 
                     // Check orphan pronoun again on retry
                     const orphanCheckRetry = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
@@ -1427,20 +1701,11 @@ async function startServer() {
                   // Fewer than 2 supported sentences remain: regenerate once with exact unsupported claims in prompt
                   if (writer.writeSegmentBreakScript) {
                     const exactAuditClaims = unsupportedClaims.join('; ');
-                    const regenRes = await writer.writeSegmentBreakScript({
-                      targetDate: selectedDate,
-                      personality: 'mike',
-                      topic: packet.topic,
-                      topicTitle: packet.topicTitle,
-                      targetSongTitle: packet.targetSongTitle,
-                      targetSongArtist: packet.targetSongArtist,
-                      facts: packet.facts,
-                      failureReason: `UNSUPPORTED CLAIMS: ${exactAuditClaims}. Use ONLY the stated facts. Do NOT write a song handoff.`,
-                      allowRetroFm,
-                    });
+                    const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, `UNSUPPORTED CLAIMS: ${exactAuditClaims}. Use ONLY the stated facts. Do NOT write a song handoff.`));
                     if (regenRes.success && regenRes.scriptText) {
                       scriptText = regenRes.scriptText;
                       unsupportedClaims = regenRes.unsupportedClaims || [];
+                      if (regenRes.openerUsed) candidateOpenerUsed = regenRes.openerUsed;
                       const orphanRetryAudit = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
                       if (orphanRetryAudit.replaced) scriptText = orphanRetryAudit.resolvedText;
 
@@ -1494,23 +1759,60 @@ async function startServer() {
                 const stationIdPhrase = allowRetroFm
                   ? getStationIdPhrase(selectedDate, isFirstBreak, Date.now()) + ' '
                   : '';
-                scriptText = `${stationIdPhrase}${scriptText} ${closerText}`.trim();
+                const leadInPhrase = (cand.type === 'major_news' || cand.type === 'music_news') && candidateOpenerUsed && candidateOpenerUsed !== 'None'
+                  ? candidateOpenerUsed + ' '
+                  : '';
+                const rawModelBody = scriptText;
+                scriptText = `${stationIdPhrase}${leadInPhrase}${scriptText} ${closerText}`.trim();
 
-                // Final post-handoff validation
+                // 5h & 9e: Convert any remaining '!' to '.' in final code before TTS,
+                // while exempting artist/song names that genuinely contain exclamation marks (e.g. Wham!, P!nk, Panic! at the Disco).
+                if (scriptText.includes('!') || rawModelBody.includes('!')) {
+                  console.log(`[Exclamation Point Detected] rawModel="${rawModelBody}" -> finalSpeechBeforeFix="${scriptText}"`);
+                  const PROTECTED = [
+                    { pattern: /\bP!nk\b/g, placeholder: '__PROTECTED_EXCLAMATION_PINK__' },
+                    { pattern: /\bWham!/g, placeholder: '__PROTECTED_EXCLAMATION_WHAM__' },
+                    { pattern: /\bPanic!\s+at\s+the\s+Disco\b/gi, placeholder: '__PROTECTED_EXCLAMATION_PANIC__' },
+                  ];
+                  for (const { pattern, placeholder } of PROTECTED) {
+                    scriptText = scriptText.replace(pattern, placeholder);
+                  }
+                  scriptText = scriptText.replace(/!+/g, '.');
+                  for (const { placeholder } of PROTECTED) {
+                    if (placeholder === '__PROTECTED_EXCLAMATION_PINK__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'P!nk');
+                    if (placeholder === '__PROTECTED_EXCLAMATION_WHAM__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'Wham!');
+                    if (placeholder === '__PROTECTED_EXCLAMATION_PANIC__') scriptText = scriptText.replace(new RegExp(placeholder, 'g'), 'Panic! at the Disco');
+                  }
+                }
+
+                // Final post-handoff validation:
+                // 4i: Code-added handoff must NEVER be rejected against news packet facts.
+                // Always provide targetSongTitle and targetSongArtist in the validation context for post-handoff check.
                 const finalVal = validateSegmentBreakOutput(scriptText, {
                   selectedDate,
-                  factPacket: packet,
+                  factPacket: {
+                    ...packet,
+                    targetSongTitle: nextSong?.title,
+                    targetSongArtist: nextSong?.artist,
+                  },
                   isModelDraft: false,
                 });
 
                 if (finalVal.valid) {
+                  if (cand.type === 'major_news' || cand.type === 'music_news') {
+                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
+                  }
                   chosenCandidate = cand;
+                  chosenOpenerUsed = candidateOpenerUsed;
                   finalSpeech = scriptText;
                   validatorResult = 'PASS';
                   auditResult = 'PASS(0 unsupported)';
                   break categoryLoop;
                 } else {
                   const failReason = `post-handoff validator rejected: ${finalVal.rejectedReason}`;
+                  if (cand.type === 'major_news' || cand.type === 'music_news') {
+                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                  }
                   cand.failureReason = failReason;
                   fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
                   if (itemKey) {
@@ -1522,6 +1824,9 @@ async function startServer() {
                 const failReason = !valResult?.valid
                   ? `validator rejected: ${valResult?.rejectedReason}`
                   : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+                if (cand.type === 'major_news' || cand.type === 'music_news') {
+                  newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                }
                 cand.failureReason = failReason;
                 fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
 
@@ -1533,6 +1838,9 @@ async function startServer() {
               }
             } else {
               const failReason = 'script generation returned empty';
+              if (cand.type === 'major_news' || cand.type === 'music_news') {
+                newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+              }
               cand.failureReason = failReason;
               fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
               if (itemKey) {
@@ -1542,6 +1850,9 @@ async function startServer() {
             }
           } catch (err: any) {
             const failReason = `generation error: ${err?.message}`;
+            if (cand.type === 'major_news' || cand.type === 'music_news') {
+              newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+            }
             cand.failureReason = failReason;
             fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
             if (itemKey) {
@@ -1765,6 +2076,76 @@ async function startServer() {
         ? undefined
         : `All candidates rejected: ${fellThroughReasons.join('; ') || 'No eligible candidates'}`;
 
+      // Update server-side rotation state after choosing a candidate
+      const chosenTypeStr = chosenCandidate?.type || 'silence';
+      const prevRotationSinceNews = serverRotationState.breaksSinceLastNews;
+      const prevRotationSlot = serverRotationState.nextNewsSlot;
+      if (chosenTypeStr === 'major_news' || chosenTypeStr === 'music_news') {
+        serverRotationState.breaksSinceLastNews = 0;
+        serverRotationState.nextNewsSlot = chosenTypeStr === 'major_news' ? 'music_news' : 'major_news';
+        // 7f: Track session aired article IDs and normalized headlines
+        if (chosenCandidate?.itemKey?.startsWith('almanac:')) {
+          const rawId = chosenCandidate.itemKey.replace(/^almanac:/, '');
+          serverRotationState.airedArticleIds.add(rawId);
+        }
+        const hl = chosenCandidate?.packet?.headline || chosenCandidate?.packet?.topicTitle || '';
+        const normH = hl.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normH) {
+          serverRotationState.airedHeadlinesNorm.add(normH);
+        }
+      } else {
+        // Increment breaks since last news
+        serverRotationState.breaksSinceLastNews += 1;
+      }
+
+      // Fix 7i: Update station ID counter
+      if (/RetroFM/i.test(finalSpeech)) {
+        serverRotationState.breaksSinceLastRetroFm = 0;
+      } else {
+        serverRotationState.breaksSinceLastRetroFm += 1;
+      }
+
+      serverRotationState.lastCategory = chosenTypeStr;
+      serverRotationState.totalBreaksCount += 1;
+      serverRotationState.recentCategoriesWindow.push(chosenTypeStr);
+      if (serverRotationState.recentCategoriesWindow.length > 6) {
+        serverRotationState.recentCategoriesWindow.shift();
+      }
+
+      // Step 1 Diagnostic Console Logging (5 required fields for every DJ break)
+      let whyChosenStr = '';
+      if (chosenTypeStr === 'next_song_story') {
+        whyChosenStr = newsIsDue
+          ? `News was due (sinceNews=${prevRotationSinceNews}), but all news candidates failed validation/audit (${newsDraftAttempts.length} tried), so fell back to next_song_story (facts=${factCount})`
+          : `Rotation placed next_song_story first (sinceNews=${prevRotationSinceNews}, last=${effectiveLastCategory || 'none'}) and it passed validation (facts=${factCount})`;
+      } else if (chosenTypeStr === 'music_news' || chosenTypeStr === 'major_news') {
+        const src = chosenCandidate?.packet?.facts?.[0]?.source || 'unknown';
+        whyChosenStr = newsIsDue
+          ? `Rotation prioritized news (${chosenTypeStr}, sinceNews=${prevRotationSinceNews}, last=${effectiveLastCategory || 'none'}, slot=${prevRotationSlot}) [source=${src}]`
+          : `next_song_story was not ready (${songStoryCandidate.failureReason || 'failed'}), rotated to ${chosenTypeStr} [source=${src}]`;
+      } else {
+        whyChosenStr = `Fallback to ${chosenTypeStr} (${fellThroughReasons.join('; ') || 'higher-priority queues empty'})`;
+      }
+
+      let newsSkippedReason = 'N/A (news was selected)';
+      if (chosenTypeStr !== 'major_news' && chosenTypeStr !== 'music_news') {
+        if (!newsIsDue && chosenTypeStr === 'next_song_story') {
+          newsSkippedReason = `Rotation scheduled next_song_story this turn (breaksSinceLastNews=${prevRotationSinceNews} < 2 and lastCategory="${effectiveLastCategory || 'none'}" !== "next_song_story")`;
+        } else if (nytFunnel.totalArticlesReturned === 0) {
+          newsSkippedReason = `Missing NYT data: NYT archive returned 0 articles for ${nytFunnel.monthFile}`;
+        } else if (newsDraftAttempts.length > 0) {
+          newsSkippedReason = `Validator/audit rejected all ${newsDraftAttempts.length} news draft(s): ${newsDraftAttempts.map(a => `${a.type}(${a.key}): ${a.reason}`).join(' | ')}`;
+        } else {
+          newsSkippedReason = `No eligible news candidates remained (${fellThroughReasons.join('; ')})`;
+        }
+      }
+
+      console.log(`[DJ Break Diagnostics] 1. SelectedDate=${selectedDate} ChosenType=${chosenTypeStr} Why="${whyChosenStr}"`);
+      console.log(`[DJ Break Diagnostics] 2. NewsPath: fetchAttempted=${nytFunnel.fetchAttempted} httpStatus="${nytFunnel.httpStatus}" rateLimited=${nytFunnel.rateLimited} errored=${nytFunnel.errored} totalArticles=${nytFunnel.totalArticlesReturned} fromCache=${nytFunnel.fromCache}`);
+      console.log(`[DJ Break Diagnostics] 3. FilterFunnel: total=${nytFunnel.totalArticlesReturned} -> dateEligible=${nytFunnel.afterDateEligibility} -> nationalFocus=${nytFunnel.afterNationalFocusFilter} -> interestThreshold=${nytFunnel.afterInterestScoringThreshold} (almanac major_news=${nytFunnel.almanacAcceptedMajorNews}, music_news=${nytFunnel.almanacAcceptedMusicNews}) | topRejected=${JSON.stringify(nytFunnel.topRejectedItems.slice(0, 3))}`);
+      console.log(`[DJ Break Diagnostics] 4. ValidatorAudit: newsDraftWritten=${newsDraftAttempts.length > 0} attempts=${JSON.stringify(newsDraftAttempts)}`);
+      console.log(`[DJ Break Diagnostics] 5. NewsSkippedReason: ${newsSkippedReason}`);
+
       if (chosenCandidate?.type === 'plain_intro') {
         console.log(`[Segment] setting=${freqSetting.toFixed(2)} roll=${roll.toFixed(2)} [preset=${freqPreset || 'custom'}, source=${freqSource}] prevSong="${prevTitle}" nextSong="${nextTitle}" candidates=[${candidatesSummary}] selected=plain_intro facts=${factCount} validator=${validatorResult} audit=${auditResult} elapsed=${elapsedMs}ms ${readyStatus} reason="every other candidate failed"${failureReasonLog}`);
       } else if (chosenCandidate) {
@@ -1776,12 +2157,30 @@ async function startServer() {
       // Part 1: Log [Segment Prepared] id=<id> when a break is generated and validated
       if (finalSpeech) {
         console.log(`[Segment Prepared] id=${breakId}`);
+        if (chosenCandidate?.type === 'major_news' || chosenCandidate?.type === 'music_news') {
+          const pkt = chosenCandidate.packet || {};
+          preparedBreakMeta.set(breakId, {
+            type: chosenCandidate.type,
+            headline: pkt.headline || pkt.topicTitle,
+            articleDate: pkt.printDate,
+            section: pkt.section,
+            timePhrase: pkt.timePhrase,
+            printPage: pkt.printPage,
+            printSection: pkt.printSection,
+            newsDesk: pkt.newsDesk,
+            sectionName: pkt.sectionName,
+            typeOfMaterial: pkt.typeOfMaterial,
+            isFrontPage: pkt.isFrontPage,
+          });
+          console.log(`[News Break Chosen] type=${chosenCandidate.type} headline="${pkt.headline || pkt.topicTitle}" articleDate=${pkt.printDate} section="${pkt.section}" isFrontPage=${Boolean(pkt.isFrontPage)} rawPrintPage="${pkt.printPage || ''}" rawPrintSection="${pkt.printSection || ''}" rawDesk="${pkt.newsDesk || ''}" rawSectionName="${pkt.sectionName || ''}" rawMaterial="${pkt.typeOfMaterial || ''}" timePhrase="${pkt.timePhrase}"`);
+        }
       }
 
       return res.json({
         breakId,
         decision: chosenCandidate ? 'speak' : 'silence',
         breakType: chosenCandidate?.type || null,
+        openerUsed: chosenOpenerUsed || undefined,
         candidate: chosenCandidate?.packet ? {
           type: chosenCandidate.type,
           topic: chosenCandidate.packet.topic,
@@ -1790,6 +2189,15 @@ async function startServer() {
           factText: chosenCandidate.packet.facts?.[0]?.text || '',
           facts: chosenCandidate.packet.facts || [],
           wikiPageTitle: chosenCandidate.type === 'next_song_story' ? songCard?.wikiPageTitle : undefined,
+          printDate: chosenCandidate.packet.printDate,
+          isFrontPage: chosenCandidate.packet.isFrontPage,
+          printPage: chosenCandidate.packet.printPage,
+          printSection: chosenCandidate.packet.printSection,
+          newsDesk: chosenCandidate.packet.newsDesk,
+          sectionName: chosenCandidate.packet.sectionName,
+          typeOfMaterial: chosenCandidate.packet.typeOfMaterial,
+          timePhrase: chosenCandidate.packet.timePhrase,
+          section: chosenCandidate.packet.section,
         } : null,
         finalSpeech,
         targetSong: 'next',
@@ -1806,10 +2214,14 @@ async function startServer() {
           nextSong: nextTitle,
           candidatesSummary: allEvaluatedSummary,
           fellThroughReasons,
+          nytFunnel,
+          newsDraftAttempts,
+          newsSkippedReason,
         },
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,
         shortCloser: chosenShortCloser,
+        breaksSinceLastRetroFm: serverRotationState.breaksSinceLastRetroFm,
       });
     } catch (err: any) {
       const elapsedMs = Date.now() - startTime;

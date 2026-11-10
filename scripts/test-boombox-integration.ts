@@ -6159,12 +6159,12 @@ console.log('\n--- Test Suite 68: DJ Speech Ducking & Post-Speech Volume Release
     'ttsClient.ts trims trailing WAV silence on TTS responses before returning audio'
   );
 
-  // 2. Verify unthrottled volume ramp in YouTube main world (driven by Blob Web Worker, separating userMasterVolume from ducking)
+  // 2. Verify unthrottled volume ramp in YouTube main world (driven by setInterval ticker, separating userMasterVolume from ducking)
   assert(
     mainWorldJs.includes('const EVENT_RAMP_VOLUME = \'RETROFM_RAMP_YT_VOLUME\';') &&
     mainWorldJs.includes('function startMainWorldVolumeRamp(') &&
     mainWorldJs.includes('function tickMainWorldVolumeRamp()') &&
-    mainWorldJs.includes('const isRampReason = typeof reason === \'string\' && (reason.startsWith(\'ramp\') || reason.startsWith(\'duck\'));'),
+    mainWorldJs.includes('INTERNAL_REASON'),
     'yt_main_world.js executes volume ramps on the unthrottled Web Worker ticker and keeps userMasterVolume separate from ducked ramp steps'
   );
   assert(
@@ -6236,12 +6236,12 @@ console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Ma
   const contentYtJs = fs.readFileSync(path.join(process.cwd(), 'extension/content_youtube.js'), 'utf-8');
   const vcTs = fs.readFileSync(path.join(process.cwd(), 'src/services/audio/VolumeController.ts'), 'utf-8');
 
-  // 1. Verify yt_main_world.js runs a continuous CSP-safe fallbackTimer (setInterval 33ms) alongside workerTicker
+  // 1. Verify yt_main_world.js runs a continuous Trusted-Types-safe 33ms setInterval loop
   assert(
     mainWorldJs.includes('function runMainWorldTick()') &&
-    mainWorldJs.includes('const fallbackTimer = setInterval(runMainWorldTick, 33);') &&
-    mainWorldJs.includes('workerTicker.onerror = (err) =>'),
-    'yt_main_world.js runs a CSP-safe 33ms fallbackTimer and cleans up workerTicker.onerror so YouTube CSP blocking blob: workers never stalls volume ramps'
+    mainWorldJs.includes('const intervalTimer = setInterval(runMainWorldTick, 33);') &&
+    mainWorldJs.includes('YouTube enforces Trusted Types'),
+    'yt_main_world.js runs a Trusted-Types-safe 33ms intervalTimer so YouTube Trusted Types enforcement never stalls volume ramps'
   );
   assert(
     mainWorldJs.includes('function schedulePostRampVerify(targetPercent, rampId)') &&
@@ -6336,6 +6336,157 @@ console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Ma
   );
 
   console.log('✓ 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Main-World Ramp Ticker, and Fast Active Watchdog Repair verified.');
+
+  console.log('\n--- 70. Silence Detector & checkSilenceDetector() Error-Free Playback ---');
+  {
+    const playerJsPath = path.resolve(__dirname, '../extension/player/player.js');
+    const playerJsCode = fs.readFileSync(playerJsPath, 'utf8');
+
+    // 1. Verify player.js declares isJingle inside checkSilenceDetector
+    assert(
+      playerJsCode.includes("const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;"),
+      'player.js defines isJingle in checkSilenceDetector() matching jingle video ID or initial startup state'
+    );
+
+    // 2. Mock browser VM environment to test checkSilenceDetector() under active playback
+    const mockElement = () => {
+      const el: any = {
+        value: '1985-07-13',
+        textContent: '',
+        children: [] as any[],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        classList: { add: () => {}, remove: () => {}, contains: () => false, toggle: () => {} },
+        style: { removeProperty: () => {}, setProperty: () => {} },
+        dataset: {},
+        setAttribute: () => {},
+        getAttribute: () => '',
+        removeAttribute: () => {},
+        appendChild: (child: any) => { el.children.push(child); return child; },
+        removeChild: () => {},
+        firstElementChild: null,
+        focus: () => {},
+        click: () => {},
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+        getContext: () => ({
+          clearRect: () => {}, fillRect: () => {}, strokeRect: () => {},
+          beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {}, fill: () => {},
+          arc: () => {}, save: () => {}, restore: () => {}, translate: () => {}, rotate: () => {},
+          scale: () => {}, fillText: () => {}, measureText: () => ({ width: 10 })
+        })
+      };
+      return el;
+    };
+
+    const docEl = mockElement();
+    const sentActions: any[] = [];
+    let runtimeMessageListener: any = null;
+
+    const sandbox: any = {
+      window: {},
+      Image: class { onload: any = null; },
+      Audio: class { play() { return Promise.resolve(); } },
+      SpeechSynthesisUtterance: class {},
+      Set: Set,
+      Map: Map,
+      document: {
+        getElementById: () => mockElement(),
+        createElement: () => mockElement(),
+        querySelectorAll: () => [],
+        querySelector: () => mockElement(),
+        body: mockElement(),
+        title: '',
+        documentElement: docEl,
+        dispatchEvent: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {}
+      },
+      CustomEvent: class {},
+      ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: () => {},
+      clearTimeout: () => {},
+      requestAnimationFrame: () => {},
+      cancelAnimationFrame: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      console: console,
+      Math: Math,
+      Date: Date,
+      performance: performance,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Array: Array,
+      Object: Object,
+      isNaN: isNaN,
+      isFinite: isFinite,
+      parseInt: parseInt,
+      parseFloat: parseFloat,
+      chrome: {
+        runtime: {
+          connect: () => ({ onMessage: { addListener: () => {} }, onDisconnect: { addListener: () => {} } }),
+          sendMessage: (msg: any) => { sentActions.push(msg); },
+          onMessage: { addListener: (cb: any) => { runtimeMessageListener = cb; } }
+        }
+      },
+      AudioContext: class { createAnalyser() { return { connect() {} }; } },
+      webkitAudioContext: class { createAnalyser() { return { connect() {} }; } },
+      navigator: { userAgent: 'test' }
+    };
+    sandbox.window = sandbox;
+
+    const vm = await import('vm');
+    vm.runInNewContext(playerJsCode, sandbox);
+
+    // Call checkSilenceDetector while stopped - must not throw
+    let errorWhileStopped: any = null;
+    try {
+      sandbox.checkSilenceDetector();
+    } catch (e) {
+      errorWhileStopped = e;
+    }
+    assert(errorWhileStopped === null, 'checkSilenceDetector() runs without error while stopped/idle');
+
+    // Simulate active playback of normal song
+    sandbox.RetroFM.setTransport('playing');
+    runtimeMessageListener({
+      type: 'YT_STATE_CHANGED',
+      payload: {
+        state: 1,
+        videoId: 'f-BDCwxBF9Q',
+        currentTime: 195,
+        duration: 200,
+        title: 'Take on Me'
+      }
+    }, {}, () => {});
+
+    // Call checkSilenceDetector during active playback - must not throw ReferenceError: isJingle is not defined
+    let errorDuringPlayback: any = null;
+    try {
+      sandbox.checkSilenceDetector();
+    } catch (e) {
+      errorDuringPlayback = e;
+    }
+    assert(errorDuringPlayback === null, 'checkSilenceDetector() executes without ReferenceError during active playback');
+
+    // Simulate silence hold time passing (2100ms)
+    const baseNow = Date.now();
+    const origDateNow = Date.now;
+    Date.now = () => baseNow + 2100;
+    try {
+      sandbox.checkSilenceDetector();
+    } finally {
+      Date.now = origDateNow;
+    }
+
+    const endOfSongActions = sentActions.filter(a => a?.payload?.action === 'END_OF_SONG_TRIGGER');
+    assert(endOfSongActions.length === 1, 'checkSilenceDetector() successfully dispatches END_OF_SONG_TRIGGER after silence hold');
+    assert(endOfSongActions[0].payload.reason === 'silence', 'END_OF_SONG_TRIGGER reason is silence');
+
+    console.log('✓ 70. Silence Detector & checkSilenceDetector() Error-Free Playback verified.');
+  }
 }
 
 // --- Summary ---

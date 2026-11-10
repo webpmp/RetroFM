@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
+import { buildNewsLeadIn, prependHook, stripModelPublicationPhrases } from './newsHooks.js';
 import {
   ScriptWriterProvider,
   BreakGeneratorInput,
@@ -601,13 +602,14 @@ Fact: "${input.factPacket.factText}"
 
 CRITICAL RULES:
 1. Write EXACTLY ONE plain spoken sentence (~15 to 25 words max).
-2. Always attribute news to "The Times". Use one of these rotating openers: "The Times reports...", "In the news this morning, The Times reports...", "According to The Times...".
-3. Use ONLY facts and names provided in the packet. Never invent details or outcomes.
-4. Do NOT use the words "yesterday" or "today".
-5. Do NOT include personal opinions, reactions, commentary, or humor.
-6. Do NOT mention upcoming songs or say "coming up".
-7. No exclamation points (!). Use periods only. No hype words or interjections.
-8. Output ONLY the raw spoken radio script.
+2. Report the news fact factually. Do not invent details or outcomes.
+3. Use ONLY facts and names provided in the packet.
+4. Do NOT mention when or where the story was published (station automation adds the lead-in).
+5. Do NOT use relative-day words like "yesterday", "today", or "tomorrow".
+6. Do NOT include personal opinions, reactions, commentary, or humor.
+7. Do NOT mention upcoming songs or say "coming up".
+8. No exclamation points (!). Use periods only. No hype words or interjections.
+9. Output ONLY the raw spoken radio script.
 `.trim();
 
     } else if (isChartFact) {
@@ -835,6 +837,9 @@ CRITICAL RULES:
     }
 
     const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
+    // 4d: news breaks also get the NYT section as context (headline is Fact [1]).
+    const newsSectionLine = (input.topic === 'major_news' || input.topic === 'music_news') && input.section ? `\nSECTION: ${input.section}` : '';
+    const timePhraseLine = input.timePhrase ? `\nTIME OF EVENT: ${input.timePhrase} (use this exact phrase if mentioning when it happened; do not use any other relative-time words)` : '';
 
     // Code-chosen hook matched strictly to content type (at least 50% have NO opener)
     // Requirement 3: 15+ natural variants, many of them none at all. Deleted invented framing phrases like "music ledger".
@@ -864,26 +869,6 @@ CRITICAL RULES:
           'Here is the history behind this sound.',
         ];
         hook = SONG_OPENERS[seed % SONG_OPENERS.length];
-      } else if (input.topic === 'music_news') {
-        const MUSIC_NEWS_OPENERS = [
-          'In music news this week,',
-          'Across the music world,',
-          'From the music wires,',
-          'In the headlines across the music scene,',
-          'Turning to the music beat this week,',
-          'Checking the news wire in music,',
-        ];
-        hook = MUSIC_NEWS_OPENERS[seed % MUSIC_NEWS_OPENERS.length];
-      } else if (input.topic === 'major_news') {
-        const NEWS_OPENERS = [
-          'The Times reports this week,',
-          'In national news,',
-          'From the front pages of The Times,',
-          'Across the country this week,',
-          'In headlines from The Times,',
-          'Checking the national news wire,',
-        ];
-        hook = NEWS_OPENERS[seed % NEWS_OPENERS.length];
       } else if (input.topic === 'sports') {
         const SPORTS_OPENERS = [
           'In sports action,',
@@ -892,6 +877,11 @@ CRITICAL RULES:
         ];
         hook = SPORTS_OPENERS[seed % SPORTS_OPENERS.length];
       }
+    }
+
+    // News lead-ins are chosen strictly by code matching story age and front page status (Fix 7a).
+    if (input.topic === 'major_news' || input.topic === 'music_news') {
+      hook = buildNewsLeadIn(input.topic, input.isFrontPage, typeof input.diffDays === 'number' ? input.diffDays : 0);
     }
 
     const failureCorrection = input.failureReason
@@ -907,31 +897,31 @@ Exemplar 1:
 "Checking in on the Hot 100, Kenny Rogers climbs into the top forty this week with 'She Believes In Me.' He recorded the track in Nashville with producer Larry Butler earlier this spring."
 
 Exemplar 2:
-"The Times reports twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze."
+"Twelve people died Thursday morning in an apartment hotel fire in Hoboken. Fire officials suspect arson in the predawn blaze."
 
 Exemplar 3:
 "Smokey Robinson penned this next one for Mary Wells back in 1964. He produced the session at Motown's Hitsville U.S.A. studio in Detroit."
 
-STRICT STYLE RULES:
-1. Short spoken sentences with direct address and varied rhythm. Talk straight to the listener.
-2. ABSOLUTELY NO CONNECTOR WORDS. Never use: "Furthermore", "Meanwhile", "In addition", "At the same time", "On that note", "Along with that", "Adding to that", "Beyond that".
-3. STRICTLY BANNED PHRASES: Never use "making waves", "latest news", "music scene", "epic", "insane", "mind-blowing", "whopping", "heartfelt", "you might be surprised", "showcasing its lasting appeal", "himself", "lasting appeal", "a feat unmatched". Never use "record-breaking" unless the word "record-breaking" appears directly in the Fact Sheet. Never say a band or group was "formed" unless the word "formed" appears directly in the Fact Sheet.
-4. PARAPHRASE ALL SOURCE FACTS: Never copy more than 6 consecutive words from the Fact Sheet (or 12 for short credits). Put facts into your own natural spoken words.
-5. LOCKED CHART SENTENCES: Any chart sentence (e.g. "It reached number one on the Hot 100 in May 1975." or "It spent 21 weeks on the chart.") is code-locked: you MUST keep it verbatim or omit it entirely. NEVER paraphrase or merge chart facts. Never say "topped the charts" or "staying there for X weeks". Weeks at number one and weeks on the chart must never be mixed.
-6. In any news or review break, name the person or event in your very first sentence.
-7. Use full artist and person names at least once (e.g. "P.M. Dawn", "C.C. Lemonhead", "Robin S.", "Jay Ski", "Mr. Big", "R.E.M."). Never truncate names.
-8. Use ONLY the verified facts in the Fact Sheet. NEVER add outside names, studios, characterizations ("pioneering", "legendary", "virtuoso"), or future knowledge.
-9. No hindsight language (never say what a song "went on to do" or "later became").
-10. If the hook is given, open with it; otherwise jump right into the first fact.
-11. NEVER write a song handoff or announce the upcoming track title. The station automation adds the upcoming song hand-off by code.
-12. Fix punctuation: never leave double periods (..) after abbreviations, and never capitalize after a comma unless it is a proper name.
+STRICT RULES (Must follow all):
+1. PARAPHRASE: Put all facts in your own spoken words. Never copy more than 5 consecutive words from the Fact Sheet.
+2. NO SONG INTRO / NO HANDOFF: Never name the upcoming song or artist. Never write handoff phrases like "next up", "coming up", "here is", "let's hear". Station automation handles the handoff.
+3. STATION IDENTITY: Never mention radio formats, "Top 40", "FM radio", frequencies, dial numbers, or call letters. Never say "on FM radio". Only "RetroFM" is permitted.
+4. BANNED HYPE WORDS: Never use astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, banger, epic, smash hit, or legendary.
+5. NO OUTSIDE FACTS: Use ONLY what is in the Fact Sheet. Never invent facts, people, or background.
+6. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
+7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
+8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
+9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
+10. NO PUBLICATION OR TIME OPENERS: In news breaks, NEVER mention when or where the story was published. Never say "The Times", "today's Times", "yesterday's Times", "in the headlines", "in today's", or "reported that". The station lead-in already handles the publication and timing.
+11. NO EXCLAMATION MARKS: Never use exclamation marks (!). Always use periods.
+12. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.
 
 FACT SHEET:
-${factLines}
-${hook ? `CHOSEN HOOK: "${hook}"` : `CHOSEN HOOK: None (start immediately with the facts)`}${failureCorrection}
+${factLines}${newsSectionLine}${timePhraseLine}
+OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
 
 TASK:
-Write the complete spoken radio segment monologue following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
+Write 2-3 short, natural sentences (35-55 words total) following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
 
     let rawDraft = '';
     let modelUsedStep1 = this.modelName;
@@ -960,7 +950,7 @@ Write the complete spoken radio segment monologue following all rules. Output ON
     }
 
     if (!rawDraft) {
-      rawDraft = `${hook ? hook + ' ' : ''}${factItems.map(f => f.text).join(' ')}`.trim();
+      rawDraft = factItems.map(f => f.text).join(' ').trim();
     }
 
     // Fix comma capitalization bug
@@ -1004,10 +994,11 @@ Write the complete spoken radio segment monologue following all rules. Output ON
 Verify each numbered claim sentence against the fact sheet.
 
 CRITICAL RULES:
-1. If a claim contains ANY detail, adjective, title, praise, or characterization (such as "pioneering", "legendary", "iconic", "virtuoso", studio name, location, number of stories, or drum name) that is NOT explicitly stated in the fact sheet, you MUST output:
-[Claim N]: UNSUPPORTED: <reason>
-2. General cultural knowledge, external facts, or historical inferences outside the fact sheet are STRICTLY FORBIDDEN.
-3. If every detail in the claim is explicitly supported by a fact, output:
+1. Flag factual claims (invented names, figures, dates, numbers, places, specific events, or motives) not supported by the fact sheet.
+2. Flag causal claims ("leading to", "because", "as a result", "in order to") and any figure, name or motive not explicitly stated in the fact sheet. Output:
+[Claim N]: UNSUPPORTED: <reason naming the unverified fact, causal link, or motive>
+3. DO NOT REJECT harmless conversational framing, natural transitions, or time phrases (like "today" or "a couple of days ago").
+4. If the facts reasonably support the statement without unverified inferences, output:
 [Claim N]: SUPPORTED (Fact <id>)
 
 FACT SHEET:
@@ -1069,7 +1060,14 @@ VERDICTS:`;
       finalSentences.pop();
     }
 
-    const finalScript = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    let auditedBody = finalSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+    if (input.topic === 'major_news' || input.topic === 'music_news') {
+      auditedBody = stripModelPublicationPhrases(auditedBody);
+    }
+    // Return audited body as scriptText WITHOUT prepending hook.
+    // The code lead-in hook is stored in openerUsed and prepended in server.ts upon acceptance,
+    // ensuring the model draft is validated against isModelDraft: true without self-rejecting for "Times".
+    const finalScript = auditedBody;
 
     const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
     return {

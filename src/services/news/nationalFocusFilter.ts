@@ -49,6 +49,32 @@ const NON_STORY_HEADLINE_PHRASES = [
   'most issues drop',
   'trading session',
   'treasury bills',
+  'office building begun',
+  'builder advises',
+  'settles suit',
+  'settles antitrust',
+  'settle suit',
+  'settles case',
+  'tonsorial guide',
+  'did you know',
+  'began in 1914',
+  'began in 19',
+  'a guide for',
+  'how-to',
+  'how to ',
+  // Fix 5k: Roundup, column, and listing formats
+  'news summary',
+  'in brief',
+  'notes on people',
+  'all the city',
+  'movies in new york',
+  'carloadings',
+  'admitted by supreme court',
+  'admitted to bar',
+  'ads stressing',
+  'ever optimistic',
+  'hold the jojoba',
+  'try out chemistry',
 ];
 
 /**
@@ -109,6 +135,18 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Table-like headline or "News of" column title' };
   }
 
+  // Fix 7g: Exclude feature headline patterns
+  // (e.g. "The Man Behind...", "Inside...", "A Look at...", "Why...", "Writing Memoir...", "...Found a Narrative for Life")
+  if (
+    /^(?:the (?:man|woman) behind|inside\b|a look at\b|why\b|writing memoir\b)/i.test(hLower) ||
+    /\bfound a narrative for life\b/i.test(hLower)
+  ) {
+    return {
+      isNonStory: true,
+      reason: 'Non-story item: Feature headline pattern (Inside / Why / A Look at / The Man Behind / Writing Memoir)',
+    };
+  }
+
   // 1. Specific non-story headline phrases
   for (const phrase of NON_STORY_HEADLINE_PHRASES) {
     if (hLower.includes(phrase)) {
@@ -145,16 +183,25 @@ export function isNonStoryItem(
   const section = (doc?.section_name || '').toLowerCase();
 
   // 2. Cultural desk listings, reviews, guides, ballet, theater, and dance items
-  // Exclude Cultural Desk listings, reviews, and guides ("Going Out Guide", "Books of The Times", ballet, theater, and dance items)
+  // Exclude non-music Cultural Desk listings, guides, ballet, theater, and dance items
+  // ("Going Out Guide", "Books of The Times", ballet, theater, dance),
+  // EXCEPT let music/concert/pop/rock/jazz/album/singer stories through even on Cultural/Weekend desks.
+  const isMusicOrConcertStory =
+    /\b(music|song|songs|album|albums|single|concert|concerts|musician|band|bands|rock|pop|jazz|soul|r&b|disco|country|folk|blues|billboard|grammy|singer|singers|vocalist|tour|festival)\b/i.test(
+      `${hLower} ${(summary || '').toLowerCase()}`
+    ) && !/\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(hLower);
+
   if (
-    desk.includes('cultural') ||
-    desk === 'culture' ||
-    desk.includes('weekend') ||
-    section.includes('weekend') ||
-    typeOfMaterial === 'review' ||
-    typeOfMaterial === 'guide' ||
-    /^(?:going out guide|books of the times|ballet:|the dance:|dance:|theater:|theatre:)/i.test(h) ||
-    /\b(?:going out guide|books of the times)\b/i.test(hLower)
+    /^(?:going out guide|books of the times|ballet:|the dance:|dance:|theater:|theatre:|art:|opera:)/i.test(h) ||
+    /\b(?:going out guide|books of the times)\b/i.test(hLower) ||
+    (!isMusicOrConcertStory && (
+      desk.includes('cultural') ||
+      desk === 'culture' ||
+      desk.includes('weekend') ||
+      section.includes('weekend') ||
+      typeOfMaterial === 'review' ||
+      typeOfMaterial === 'guide'
+    ))
   ) {
     return {
       isNonStory: true,
@@ -172,12 +219,100 @@ export function isNonStoryItem(
     return { isNonStory: true, reason: 'Non-story item: Obituary / memorial notice' };
   }
 
-  // 3. Short summary (< 60 chars)
+  // 4. Retrospectives, history essays, and column/editorial labels are NOT news (Fix 5f & 7e)
+  // Skip items whose abstract or headline is a column label, editorial, or topic label ("Topics", "Preventing Economic Chaos", etc.)
+  const absLower = (summary || '').trim().toLowerCase();
+  if (
+    /^topics\b/i.test(hLower) ||
+    /^topics\b/i.test(absLower) ||
+    /\btopics (?:ed|editorial|column)\b/i.test(absLower) ||
+    /^(?:editorial|op-ed|news analysis|the editor's notebook|editor's notebook)\b/i.test(hLower) ||
+    /^(?:editorial|op-ed|news analysis)\b/i.test(absLower)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Column label, editorial, or topic label ("Topics")' };
+  }
+
+  // Exclude essay/series formats: "The Early Days of...", "A History of...", "Looking Back", "Remember when", anniversary pieces
+  if (
+    /\b(?:the early days of|a history of|looking back|remember when|anniversary)\b/i.test(hLower) ||
+    /^(?:the early days of|a history of|looking back|remember when)\b/i.test(h)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Retrospective / history series essay' };
+  }
+
+  // Exclude article whose headline/abstract places main events > 5 years before print date (year, decade or century like 1740s, 19th century, etc.)
+  // unless the text shows a current event (death, ruling, discovery, reissue, auction).
+  const pubDateStr = doc?.pub_date || doc?.pubDate || '';
+  const printYear = pubDateStr ? parseInt(pubDateStr.slice(0, 4), 10) : NaN;
+  const combinedAll = `${h} ${summary}`.toLowerCase();
+  const hasCurrentAnchor = /\b(died|dies|death|dead|ruling|verdict|discovered|discovery|reissue|reissued|auction|auctioned|sentenced|indicted|unveiled|announced today|announced yesterday)\b/i.test(combinedAll);
+
+  if (!hasCurrentAnchor) {
+    // Century / historical era matches: 1600s, 1700s, 1800s, 1740s, 1850s, 19th century, 18th century, etc.
+    if (/\b(?:1[5-8]\d\d'?s?|19[0-4]\d'?s?|\d{1,2}(?:th|st|nd|rd) century)\b/i.test(combinedAll)) {
+      return { isNonStory: true, reason: 'Non-story item: Historical retrospective (>5 years in past without current anchor)' };
+    }
+    // Specific year > 5 years before printYear
+    if (!isNaN(printYear)) {
+      const yearMatches = combinedAll.match(/\b(1[5-9]\d\d|20\d\d)\b/g);
+      if (yearMatches) {
+        const pastYears = yearMatches.map(Number).filter((y) => printYear - y > 5);
+        // If headline or opening summary explicitly focuses on a distant past year
+        const distantYearInHeadline = (h.match(/\b(1[5-9]\d\d|20\d\d)\b/g) || []).map(Number).some((y) => printYear - y > 5);
+        if (distantYearInHeadline || (pastYears.length > 0 && /\b(?:in the mid-|in the early|in late|back in|during)\s+(?:1[5-9]\d\d|20\d\d)/i.test(combinedAll))) {
+          return { isNonStory: true, reason: 'Non-story item: Historical retrospective (>5 years in past without current anchor)' };
+        }
+      }
+    }
+  }
+
+  // Science/Health/Style features not tied to a current event
+  if ((desk.includes('science') || desk.includes('health') || desk.includes('style') || section.includes('science') || section.includes('health') || section.includes('style')) &&
+      !hasCurrentAnchor &&
+      !/\b(study|researchers?|scientists?|fda|report|trial|published|approved|outbreak|cdc|virus|epidemic)\b/i.test(combinedAll)) {
+    return { isNonStory: true, reason: 'Non-story item: Science/Health/Style feature without current event anchor' };
+  }
+
+  // 5. Fix 5k: Local accidents, routine crime, routine economic indicators, bar admissions, local construction/zoning
+  // Exclude local traffic accidents and routine crime (require plane/train disaster, multiple deaths, or famous person)
+  const isRoutineAccidentOrCrime = /\b(?:car crash|auto crash|traffic accident|car collision|hit-and-run|holdup|mugging|robbed of|burglary|stolen car)\b/i.test(combinedAll);
+  const isMajorDisasterOrCrime = /\b(?:plane crash|train crash|airliner|multiple deaths|dozens dead|scores dead|\d{2,}\s+(?:dead|killed)|assassination|governor|senator|mayor|celebrity)\b/i.test(combinedAll);
+  if (isRoutineAccidentOrCrime && !isMajorDisasterOrCrime) {
+    return { isNonStory: true, reason: 'Non-story item: Local traffic accident or routine crime' };
+  }
+
+  // Exclude bar/court admissions, routine economic indicators, local construction/zoning, marketing/ad campaigns
+  if (
+    /\b(?:admitted by supreme court|admitted to bar|carloadings|freight carloadings|construction begun|zoning board|zoning variance|advertising campaign|ad campaign|marketing campaign|ads stressing)\b/i.test(combinedAll) ||
+    /^(?:in north dakota, too|in [a-z\s]+, too)\b/i.test(h)
+  ) {
+    return { isNonStory: true, reason: 'Non-story item: Routine bar admission, carloadings, local zoning, or filler column' };
+  }
+
+  // 6. Fix 6c: Informative abstract required
+  // Both pools: skip any item whose abstract/lead is missing or too thin to say something specific
+  // (at least about 12 words including a concrete name, number, capitalized proper noun, or event).
+  // Column-label headlines ("POP", "JAZZ", "THE POP LIFE", "Concert: Rock", "GOING TO WALL ST.")
+  // are allowed only if the abstract is informative.
   const trimmedSummary = (summary || '').trim();
-  if (trimmedSummary.length < 60) {
+  const summaryWords = trimmedSummary.split(/\s+/).filter(Boolean);
+  const isColumnHeadline = /^(?:pop|jazz|the pop life|concert:\s*rock|going to wall st\.?|music|pop:|jazz:)$/i.test(h);
+  
+  // Check for concrete name (capitalized word), number, or event keyword
+  const hasConcreteEntityOrEvent =
+    /\b(?:[A-Z][a-z]+|[0-9]+|president|senate|congress|court|war|strike|album|tour|concert|record|single|billboard)\b/.test(trimmedSummary);
+
+  if (summaryWords.length < 12 || !hasConcreteEntityOrEvent) {
     return {
       isNonStory: true,
-      reason: `Non-story item: Summary shorter than 60 characters (${trimmedSummary.length} chars)`,
+      reason: `Non-story item: Abstract/lead too thin (${summaryWords.length} words, lacks concrete entity/event)`,
+    };
+  }
+
+  if (isColumnHeadline && summaryWords.length < 15) {
+    return {
+      isNonStory: true,
+      reason: `Non-story item: Column-label headline "${h}" requires informative abstract (>=15 words)`,
     };
   }
 
@@ -338,6 +473,15 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
 
   // Rule 3: Metro desk / section or NYC location tag check:
   // "unless it also meets a 'keep' condition above because it ran on the front page or the National or Foreign desk"
+  const isPre1980UnspecifiedDesk =
+    desk === '' || desk === 'unspecified' || desk === 'none' || desk === 'archives' || section === 'archives';
+  const majorNewsKeywordsRegex =
+    /\b(president|white house|congress|senate|house of representatives|supreme court|pentagon|state department|war|troops|treaty|peace|cease-fire|strike|union|soviet|moscow|vietnam|saigon|cambodia|china|peking|nato|united nations|u\.n\.|election|primary|campaign|assassination|space|nasa|apollo|gemini|mercury|astronaut|satellite|launch|disaster|earthquake|flood|hurricane|tornado|crash|hijack|embargo|oil|inflation|energy|civil rights|segregation|integration|demonstration|protest|nuclear|summit|governor|federal|fbi|cia|indict|trial|verdict|ruling|premier|chancellor|minister|embassy|diplomat|hostage|blockade|invasion)\b/i;
+  const musicCultureKeywordsRegex =
+    /\b(music|song|songs|album|albums|single|concert|concerts|musician|band|bands|rock|pop|jazz|soul|r&b|disco|country|folk|blues|billboard|grammy|singer|singers|vocalist|record|recording|festival|film|movie|movies|cinema|box office|oscar|academy award|hollywood|television|tv|emmy)\b/i;
+  const localNycExclusionRegex =
+    /\b(borough|city council|mayor|transit authority|subway|commuter|port authority|board of estimate|con edison|zoning|yonkers|nassau|suffolk|albany legislature|police precinct|housing authority)\b/i;
+
   if (isMetroDeskOrSection || hasNycLocation) {
     if (isFrontPage) {
       return {
@@ -354,6 +498,23 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
       return {
         keep: true,
         reason: `National/Foreign desk (${rawDesk}) overrides local NYC tag`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+        matchedNycLocation,
+      };
+    }
+
+    // For pre-1980 Unspecified/None desk items that happen to carry a location tag (e.g., United Nations in NYC, or major music/concert stories)
+    if (
+      isPre1980UnspecifiedDesk &&
+      !isMetroDeskOrSection &&
+      !localNycExclusionRegex.test(combinedText) &&
+      (majorNewsKeywordsRegex.test(combinedText) || musicCultureKeywordsRegex.test(combinedText))
+    ) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified desk with national/music keyword match overriding location tag`,
         isFrontPage: false,
         desk: rawDesk,
         section: rawSection,
@@ -394,6 +555,31 @@ export function evaluateNYTNationalFocus(doc: any): NationalFocusEvaluation {
       desk: rawDesk,
       section: rawSection,
     };
+  }
+
+  // Rule 5 (Fix 3 & Fix 5a): When news_desk is "Unspecified", "None", or empty (pre-1980 NYT archives),
+  // do NOT reject on desk alone. Items with desk Unspecified/None must be front page or keyword matches.
+  // Interest score alone is NOT enough for them (Fix 5a).
+  if (isPre1980UnspecifiedDesk && !localNycExclusionRegex.test(combinedText)) {
+    if (majorNewsKeywordsRegex.test(combinedText)) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified/None desk matched major-news keywords`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+      };
+    }
+    if (musicCultureKeywordsRegex.test(combinedText) && !/\b(?:singer co|studebaker|sewing|bought by singer|domowatt)\b/i.test(headline)) {
+      return {
+        keep: true,
+        reason: `Pre-1980 Unspecified/None desk matched music/pop-culture keywords`,
+        isFrontPage: false,
+        desk: rawDesk,
+        section: rawSection,
+      };
+    }
+    // Fix 5a: Unspecified/None items without front page or keyword match are rejected
   }
 
   // Default non-national items (society desks, local classifieds, regional entries, etc.)

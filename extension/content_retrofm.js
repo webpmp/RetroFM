@@ -223,31 +223,35 @@
   window.addEventListener('message', onWindowMessage);
 
   // Relay push messages from background service worker to web page window
-  try {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      try {
-        if (!isContextValid()) {
-          cleanupInvalidatedContext();
-          return;
-        }
-        if (message && typeof message === 'object') {
-          const payload = {
-            source: SOURCE_EXT,
-            ...message
-          };
-          try {
-            window.postMessage(payload, '*');
-          } catch (e) {
-            reportError(e, 'chrome.runtime.onMessage.postMessage');
+  // Guard with window singleton to prevent duplicate listeners if content script is re-injected
+  if (!window.__retroFmOnMessageAttached) {
+    window.__retroFmOnMessageAttached = true;
+    try {
+      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        try {
+          if (!isContextValid()) {
+            cleanupInvalidatedContext();
+            return;
           }
+          if (message && typeof message === 'object') {
+            const payload = {
+              source: SOURCE_EXT,
+              ...message
+            };
+            try {
+              window.postMessage(payload, '*');
+            } catch (e) {
+              reportError(e, 'chrome.runtime.onMessage.postMessage');
+            }
+          }
+          sendResponse({ received: true });
+        } catch (err) {
+          reportError(err, 'chrome.runtime.onMessage');
         }
-        sendResponse({ received: true });
-      } catch (err) {
-        reportError(err, 'chrome.runtime.onMessage');
-      }
-    });
-  } catch (e) {
-    reportError(e, 'chrome.runtime.onMessage.addListener');
+      });
+    } catch (e) {
+      reportError(e, 'chrome.runtime.onMessage.addListener');
+    }
   }
 })();
 

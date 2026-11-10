@@ -62,7 +62,7 @@ export const HANDOFF_GROUPS: HandoffGroup[] = [
     id: 3,
     name: 'Enthusiastic DJ',
     templates: [
-      { template: "Turn it up! ArtistName with SongTitle." },
+      { template: "Turn it up. ArtistName with SongTitle." },
       { template: "Get ready for SongTitle by ArtistName." },
       { template: "Coming your way, ArtistName and SongTitle." },
       { template: "Don't touch that dial. Here's ArtistName with SongTitle." },

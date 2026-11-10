@@ -186,6 +186,16 @@ export interface SegmentBreakScriptInput {
   exactPrompt?: string;
   allowRetroFm?: boolean;
   allowNowOnRetroFm?: boolean;
+  /** NYT news only: true when the article ran on page 1 / section A (enables a front-page hook). */
+  isFrontPage?: boolean;
+  /** NYT news only: age of article in days relative to broadcast date. */
+  diffDays?: number;
+  /** NYT news only: code-computed relative-time phrase ("today", "yesterday", ...). */
+  timePhrase?: string;
+  /** NYT news only: article metadata given to the writer as fact material. */
+  headline?: string;
+  section?: string;
+  articleDate?: string;
 }
 
 export interface DJBreakSessionStats {

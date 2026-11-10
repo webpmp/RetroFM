@@ -25,6 +25,34 @@ export function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Minimum verified material (words) for a news item to be worth a break. Thinner items are skipped, never padded. */
+export const NEWS_MIN_MATERIAL_WORDS = 20;
+const NEWS_WORD_FLOOR = 40;
+const NEWS_WORD_CEILING = 75;
+
+/**
+ * 4d: Word budget for a news break, set from the amount of verified material
+ * (headline + deduplicated fact sentences). Floor ~40, ceiling ~75 words.
+ */
+export function computeNewsWordBudget(packet: {
+  headline?: string;
+  topicTitle?: string;
+  facts?: Array<{ text: string }>;
+}): { materialWords: number; maxWords: number; tooThin: boolean } {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const t of [packet.headline || packet.topicTitle || '', ...(packet.facts || []).map((f) => f.text || '')]) {
+    const key = t.trim().toLowerCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      parts.push(t.trim());
+    }
+  }
+  const materialWords = parts.join(' ').split(/\s+/).filter(Boolean).length;
+  const maxWords = Math.min(NEWS_WORD_CEILING, Math.max(NEWS_WORD_FLOOR, materialWords + 15));
+  return { materialWords, maxWords, tooThin: materialWords < NEWS_MIN_MATERIAL_WORDS };
+}
+
 export interface FactPacketData {
   factText: string;
   source: string;
@@ -35,6 +63,16 @@ export interface SegmentValidationContext {
   selectedDate: string; // YYYY-MM-DD
   factPacket: {
     topic?: string;
+    topicTitle?: string;
+    headline?: string;
+    abstract?: string;
+    leadParagraph?: string;
+    snippet?: string;
+    section?: string;
+    desk?: string;
+    printDate?: string;
+    timePhrase?: string;
+    isFrontPage?: boolean;
     facts: Array<{ text: string; source?: string; date?: string; eventDate?: string; printDate?: string }>;
     targetSongTitle?: string;
     targetSongArtist?: string;
@@ -62,20 +100,117 @@ export function validateSegmentBreakOutput(
     };
   }
 
-  const trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
+  let trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
 
-  // 1. Length check: Scaled to fact packet size (~20-25 words per fact, max +35% padding)
+  // 1. Length check.
+  // News breaks (4k): Fixed cap of 70 words.
+  // Deterministic trim before rejecting: if draft is over 70 words, drop trailing whole sentences
+  // until it fits, as long as at least 2 complete sentences remain, then validate the trimmed version.
   const factCount = Math.max(1, (context.factPacket.facts || []).length);
-  const minExpectedWords = Math.max(25, factCount * 18);
-  const maxExpectedWords = Math.round(factCount * 25 * 1.35) + 15;
-  const words = trimmed.split(/\s+/).filter(Boolean);
+  const isNewsTopic = context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news';
+  let words = trimmed.split(/\s+/).filter(Boolean);
 
-  if (words.length > maxExpectedWords) {
-    return {
-      valid: false,
-      rejectedReason: `Segment padded / too long: ${words.length} words (packet with ${factCount} facts supports at most ~${maxExpectedWords} words)`,
-      sanitizedText: '',
-    };
+  if (isNewsTopic) {
+    if (context.isModelDraft) {
+      // Fix 8e / C4: News drafts need at least 30 words and at least 2 complete sentences
+      if (words.length < 30) {
+        return {
+          valid: false,
+          rejectedReason: `News draft too short: ${words.length} words (minimum required: 30 words)`,
+          sanitizedText: '',
+        };
+      }
+      const draftSentences = trimmed.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 10);
+      if (draftSentences.length < 2) {
+        return {
+          valid: false,
+          rejectedReason: `News draft has only ${draftSentences.length} complete sentence (minimum required: 2)`,
+          sanitizedText: '',
+        };
+      }
+
+      // Fix 8e / 11b / C9: Reject first sentence that echoes the headline:
+      // (1) nearly verbatim normalized text
+      // (2) reuses 5+ consecutive words from the headline
+      // (3) reuses most (>=60%) of the headline's content words
+      const headline = (context.factPacket.headline || context.factPacket.topicTitle || '').trim();
+      if (headline.length > 10) {
+        const normH = headline.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normFirstS = (draftSentences[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normFirstS === normH || (normH.length > 15 && normFirstS.includes(normH))) {
+          return {
+            valid: false,
+            rejectedReason: `First sentence echoes the headline nearly verbatim ("${draftSentences[0]}")`,
+            sanitizedText: '',
+          };
+        }
+
+        const hlWords = headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const fsWords = (draftSentences[0] || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+        const fsStr = fsWords.join(' ');
+
+        // Check 5+ consecutive words from the headline
+        for (let i = 0; i <= hlWords.length - 5; i++) {
+          const fiveWords = hlWords.slice(i, i + 5).join(' ');
+          if (fsStr.includes(fiveWords)) {
+            return {
+              valid: false,
+              rejectedReason: `First sentence reuses 5+ consecutive words from headline ("${fiveWords}")`,
+              sanitizedText: '',
+            };
+          }
+        }
+
+        // Check if most (>=60%) of the headline's content words are reused
+        const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'as', 'it', 'its']);
+        const contentHlWords = hlWords.filter((w) => !STOPWORDS.has(w) && w.length > 2);
+        if (contentHlWords.length >= 3) {
+          const matchedWords = contentHlWords.filter((w) => fsWords.includes(w));
+          const ratio = matchedWords.length / contentHlWords.length;
+          if (ratio >= 0.60) {
+            return {
+              valid: false,
+              rejectedReason: `First sentence echoes headline content words (${matchedWords.length}/${contentHlWords.length} words: "${matchedWords.join(' ')}")`,
+              sanitizedText: '',
+            };
+          }
+        }
+      }
+
+      const NEWS_CAP = 70;
+      if (words.length > NEWS_CAP) {
+        // Try trimming trailing whole sentences
+        const rawSentences = trimmed.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 3);
+        let trimmedCandidate = '';
+        for (let i = rawSentences.length - 1; i >= 2; i--) {
+          const candidate = rawSentences.slice(0, i).join(' ').trim();
+          const candWords = candidate.split(/\s+/).filter(Boolean);
+          if (candWords.length <= NEWS_CAP) {
+            trimmedCandidate = candidate;
+            break;
+          }
+        }
+        if (trimmedCandidate) {
+          trimmed = trimmedCandidate;
+          words = trimmed.split(/\s+/).filter(Boolean);
+        } else {
+          return {
+            valid: false,
+            rejectedReason: `Segment padded / too long: ${words.length} words (fixed news cap: ${NEWS_CAP} words)`,
+            sanitizedText: '',
+          };
+        }
+      }
+    }
+  } else {
+    const maxExpectedWords = Math.round(factCount * 25 * 1.35) + 15;
+    if (words.length > maxExpectedWords) {
+      return {
+        valid: false,
+        rejectedReason: `Segment padded / too long: ${words.length} words (packet with ${factCount} facts supports at most ~${maxExpectedWords} words)`,
+        sanitizedText: '',
+      };
+    }
   }
 
   // 3a. Check repeated sentences in segment
@@ -106,6 +241,18 @@ export function validateSegmentBreakOutput(
   ];
 
   if (context.isModelDraft) {
+    // Fix 8h: If the topic is next_song_story (or any model draft) and the LAST sentence is a hand-off phrase,
+    // strip it in code and validate the rest instead of rejecting.
+    const rawSentences = trimmed.split(/(?<=[.!?])\s+/);
+    if (rawSentences.length >= 3) {
+      const lastSentence = rawSentences[rawSentences.length - 1];
+      const isLastSentenceHandoff = HANDOFF_PHRASE_PATTERNS.some((hp) => hp.test(lastSentence));
+      if (isLastSentenceHandoff) {
+        trimmed = rawSentences.slice(0, -1).join(' ').trim();
+        words = trimmed.split(/\s+/).filter(Boolean);
+      }
+    }
+
     // If the topic is next_song_story, the fact packet itself is about the song, so mentioning the song title
     // in commentary (e.g. "Michael Jackson released 'Don't Stop 'Til You Get Enough' in 1979") is natural,
     // but hand-off phrases or placing the title at the end as an intro must be rejected.
@@ -131,6 +278,31 @@ export function validateSegmentBreakOutput(
         };
       }
     }
+
+    // 7a: Reject news drafts containing "Times", "in the headlines", "today's", "yesterday's" or other time/publication phrases (the code adds them)
+    if (context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news') {
+      const BANNED_NEWS_DRAFT_PHRASES = [
+        /\b(?:the\s+)?times\b/i,
+        /\bin\s+the\s+headlines\b/i,
+        /\btoday['’]s\b/i,
+        /\byesterday['’]s\b/i,
+        /\breported\s+that\b/i,
+        /\bfrom\s+today['’]s\b/i,
+        /\bfrom\s+yesterday['’]s\b/i,
+        /\bon\s+the\s+front\s+page\b/i,
+        /\bfrom\s+the\s+front\s+page\b/i,
+      ];
+      for (const bp of BANNED_NEWS_DRAFT_PHRASES) {
+        const m = trimmed.match(bp);
+        if (m) {
+          return {
+            valid: false,
+            rejectedReason: `Model news draft contains publication/time lead-in phrase ("${m[0]}"); only code adds lead-ins`,
+            sanitizedText: '',
+          };
+        }
+      }
+    }
   }
 
   // 3a3. Check: No break contains the song title more than once
@@ -149,8 +321,14 @@ export function validateSegmentBreakOutput(
   // 3a4. Incomplete sentence check (e.g. bare artist name like "Ray Parker Jr." on its own)
   // Split also on periods before capitalized sentence starters to catch bare names ending with abbreviations like "Jr."
   const splitCandidateSentences = (text: string): string[] => {
-    const raw = text.split(/(?<=[.!?])\s+(?=[A-Z])/);
-    return raw.map(s => s.trim()).filter(Boolean);
+    // Protect periods after initials, titles/abbreviations, and numbers so they never split a sentence
+    let s = text;
+    s = s.replace(/\bU\.S\.(A\.)?/g, (m) => m.replace(/\./g, '§D§'));
+    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|No|Nos|Vol|Op|Inc|Corp|Co|Mt|Ft)\./gi, '$1§D§');
+    s = s.replace(/\b([A-Z])\./g, '$1§D§');
+    s = s.replace(/\b(\d+)\.(?=\s)/g, '$1§D§');
+    const raw = s.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    return raw.map((p) => p.replace(/§D§/g, '.').trim()).filter(Boolean);
   };
   const allSentences = splitCandidateSentences(trimmed);
   for (const s of allSentences) {
@@ -172,6 +350,15 @@ export function validateSegmentBreakOutput(
       }
     }
     const sentWords = cleanS.split(/\s+/).filter(Boolean);
+    // Fix 8e: Check for sentence ending on an abbreviation fragment (No., Nos., Vol., Op., Mr., Col., St., U.S., etc.)
+    const lastWord = sentWords[sentWords.length - 1] || '';
+    if (/\b(?:No|Nos|Vol|Op|Mr|Mrs|Ms|Dr|Jr|Sr|St|Lt|Capt|Prof|Rev|Gov|Col|Gen|Sen|Rep|U\.S|Inc|Corp|Co)\.?$/i.test(lastWord)) {
+      return {
+        valid: false,
+        rejectedReason: `Sentence ends on abbreviation fragment: "${cleanS}" (ends with "${lastWord}")`,
+        sanitizedText: '',
+      };
+    }
     if (sentWords.length < 3) {
       const commonShortComplete = /^(here it is|take a listen|turn it up|here we go|this is retrofm)\.?$/i;
       if (!commonShortComplete.test(cleanS)) {
@@ -303,6 +490,28 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 7e. Reject filler phrases in news breaks
+  const FILLER_PHRASES = [
+    /\bexciting developments\b/i,
+    /\bcontinue to shape\b/i,
+    /\bas we know it\b/i,
+    /\bthis analysis comes from\b/i,
+    /\bnotes shared\b/i,
+    /\bis highlighted\b/i,
+    /\bis featured\b/i,
+    /\bit['’]s reported that\b/i,
+  ];
+  for (const fp of FILLER_PHRASES) {
+    const m = trimmed.match(fp);
+    if (m) {
+      return {
+        valid: false,
+        rejectedReason: `Contains generic filler phrase ("${m[0]}")`,
+        sanitizedText: '',
+      };
+    }
+  }
+
   // Check "record-breaking" unless it appears in fact packet
   if (/\brecord-breaking\b/i.test(trimmed)) {
     const packetFacts = context.factPacket?.facts || [];
@@ -319,13 +528,47 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 7b. Reject invented recency phrases like "in recent days" unless explicitly present in the source fact packet
+  if (/\b(?:in recent days|in recent weeks|in recent months)\b/i.test(trimmed)) {
+    const packetFacts = context.factPacket?.facts || [];
+    const inPacket = packetFacts.some((f: any) => {
+      const txt = typeof f === 'string' ? f : (f.text || f.factText || '');
+      return /\b(?:in recent days|in recent weeks|in recent months)\b/i.test(txt);
+    });
+    if (!inPacket) {
+      return {
+        valid: false,
+        rejectedReason: 'Contains invented recency ("in recent days/weeks") not present in fact packet',
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 8b / 10b / C3: In news drafts (or draft bodies), if article date != broadcast date,
+  // reject any draft containing relative-day words: tomorrow, tonight, today, yesterday, this/next/last week,
+  // this weekend, this morning, this afternoon, this evening, last night, later today, or bare weekday names.
+  if (isNewsTopic && context.isModelDraft) {
+    const artDate = context.factPacket?.printDate || (context.factPacket?.facts?.[0] as any)?.printDate || (context.factPacket?.facts?.[0] as any)?.date;
+    if (artDate && context.selectedDate && artDate !== context.selectedDate) {
+      const BANNED_REL_DAY = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+      const relMatch = trimmed.match(BANNED_REL_DAY);
+      if (relMatch) {
+        return {
+          valid: false,
+          rejectedReason: `Model news draft contains relative-day word "${relMatch[0]}" when article date (${artDate}) != broadcast date (${context.selectedDate})`,
+          sanitizedText: '',
+        };
+      }
+    }
+  }
+
   // 3b. Check freshness and relative time words
   // "this week", "this Friday", "tonight", "today", "last night", "this morning" etc.
   // Rule: A relative word is allowed only if the event date is within 7 days before the broadcast date
   // and the script's weekday/date matches.
   // Exception: Chart "this week" wording stays allowed for chart sentences built from the latest chart on/before broadcast date.
   const RELATIVE_TIME_WORDS = [
-    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow)\b/i,
+    /\b(?:this week|this monday|this tuesday|this wednesday|this thursday|this friday|this saturday|this sunday|tonight|today|last night|this morning|yesterday|tomorrow|last week|a couple of days ago)\b/i,
   ];
   for (const pat of RELATIVE_TIME_WORDS) {
     const match = trimmed.match(pat);
@@ -335,7 +578,28 @@ export function validateSegmentBreakOutput(
       const isChartTopic = context.factPacket?.topic === 'chart' || context.factPacket?.topic === 'chart_story' || context.factPacket?.topic === 'next_song_story';
       const isChartSentence = relWord === 'this week' && isChartTopic;
 
-      if (!isChartSentence) {
+      // 4e, 5d, 5l: If the packet supplies a code-computed timePhrase, allow matching relative-time phrasing
+      const pktTimePhrase = (context.factPacket?.timePhrase || '').toLowerCase();
+      const matchesPacketTimePhrase = pktTimePhrase && (
+        relWord === pktTimePhrase ||
+        (pktTimePhrase === 'last week' && relWord === 'last week') ||
+        (pktTimePhrase === 'a couple of days ago' && relWord === 'a couple of days ago') ||
+        (pktTimePhrase.includes("today's times") && (relWord === 'today' || relWord === "today's times")) ||
+        (pktTimePhrase.includes("yesterday's times") && (relWord === 'yesterday' || relWord === "yesterday's times")) ||
+        (pktTimePhrase === 'today' && relWord === 'today') ||
+        (pktTimePhrase === 'yesterday' && relWord === 'yesterday')
+      );
+
+      // Fix 5l: Never allow "earlier this week" or "this week" for items older than 4 days
+      if ((relWord === 'this week' || relWord === 'earlier this week') && pktTimePhrase === 'last week') {
+        return {
+          valid: false,
+          rejectedReason: `Time phrase mismatch: used "${relWord}" for item 4-7 days old (expected "last week")`,
+          sanitizedText: '',
+        };
+      }
+
+      if (!isChartSentence && !matchesPacketTimePhrase) {
         // Must verify event date is within 7 days before broadcast date and weekday/date matches
         let isEligible = false;
         if (context.selectedDate && context.factPacket?.facts) {
@@ -415,11 +679,17 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // 3f. Check invented station frequency or format (only "RetroFM" is permitted)
-  if (/\b(?:\d{2,3}(?:\.\d)?\s*fm|\d{2,3}[a-z]+|top 40)\b/i.test(trimmed)) {
+  // 3f. Check invented station frequency or format (only "RetroFM" is permitted).
+  // Fix 5e: Catch real frequencies ("101.5 FM", "98.7 FM"), 4-letter all-caps K/W call signs (e.g. WABC, KROQ),
+  // and format names ("Top 40", "FM radio").
+  // Do NOT use case-insensitive [KW][A-Z]{3} because it matches normal English words like "with", "were", "what", "week"!
+  const STATION_INVENTED_REGEX = /\b(?:\d{2,3}(?:\.\d)?\s*FM|[KW][A-Z]{3}\b|Top\s*40|FM\s*radio)\b/;
+  const stationMatch = trimmed.match(STATION_INVENTED_REGEX);
+  if (stationMatch) {
+    console.log(`[Validator Station Ban Matched] matchedText="${stationMatch[0]}" script="${trimmed}"`);
     return {
       valid: false,
-      rejectedReason: 'Contains invented station frequency, call letters, or format (only "RetroFM" is permitted)',
+      rejectedReason: `Contains invented station frequency, call letters, or format ("${stationMatch[0]}", only "RetroFM" is permitted)`,
       sanitizedText: '',
     };
   }
@@ -489,6 +759,21 @@ export function validateSegmentBreakOutput(
     if (nonContentCount >= tokens.length - 2 && tokens.length > 5) {
       return true;
     }
+    // 4l: Check if phrase consists solely of proper names / titles from the headline/topicTitle
+    // 7e: But do not exempt phrases in news breaks if they copy 5+ consecutive headline words
+    const headline = context.factPacket.headline || context.factPacket.topicTitle || '';
+    if (headline) {
+      if (isNewsTopic) {
+        return false;
+      }
+      const normHeadline = headline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const headlineTokens = new Set(normHeadline.split(' ').filter(Boolean));
+      const phraseTokens = phrase.split(' ');
+      if (phraseTokens.every((tok) => headlineTokens.has(tok))) {
+        return true;
+      }
+    }
+
     return false;
   };
 
@@ -513,6 +798,32 @@ export function validateSegmentBreakOutput(
           }
         } else {
           break;
+        }
+      }
+    }
+  }
+
+  // 7e: In news breaks, reject drafts that repeat the headline or 5+ consecutive headline words
+  if (isNewsTopic) {
+    const rawHeadline = context.factPacket.headline || context.factPacket.topicTitle || '';
+    if (rawHeadline) {
+      const hlNorm = rawHeadline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      const hlStr = hlNorm.join(' ');
+      if (hlNorm.length >= 3 && scriptNorm.join(' ').includes(hlStr)) {
+        return {
+          valid: false,
+          rejectedReason: `Repeats news headline verbatim ("${rawHeadline}")`,
+          sanitizedText: '',
+        };
+      }
+      for (let i = 0; i <= hlNorm.length - 5; i++) {
+        const fiveWords = hlNorm.slice(i, i + 5).join(' ');
+        if (scriptNorm.join(' ').includes(fiveWords)) {
+          return {
+            valid: false,
+            rejectedReason: `Draft copies 5+ consecutive headline words ("${fiveWords}")`,
+            sanitizedText: '',
+          };
         }
       }
     }
@@ -638,16 +949,23 @@ export function validateSegmentBreakOutput(
     }
   }
 
-  // 6. Grounding: Build permissible corpus from packet facts, song metadata, and artist metadata
+  // 6. Grounding: Build permissible corpus from packet facts, NYT headline/abstract/lead/section, song metadata, and artist metadata
   const packetFactTexts = context.factPacket.facts.map((f) => `${f.text} ${f.source || ''}`).join(' ');
   const corpus = [
     packetFactTexts,
+    context.factPacket.topicTitle || '',
+    context.factPacket.headline || '',
+    context.factPacket.abstract || '',
+    context.factPacket.leadParagraph || '',
+    context.factPacket.snippet || '',
+    context.factPacket.section || '',
+    context.factPacket.desk || '',
     context.factPacket.targetSongTitle || '',
     context.factPacket.targetSongArtist || '',
     context.selectedDate,
     'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
     'first', 'second', 'third', 'fourth', 'fifth',
-    'billboard', 'hot 100', 'top 40', 'radio', 'times', 'news',
+    'billboard', 'hot 100', 'top 40', 'radio', 'times', 'news', 'york', 'new york',
     'us', 'u.s.', 'usa', 'u.s.a.', 'uk', 'u.k.', 'britain', 'british', 'america', 'american', 'england', 'english'
   ].join(' ').toLowerCase();
 
@@ -673,12 +991,14 @@ export function validateSegmentBreakOutput(
   const properNames = extractProperNames(trimmed);
   for (const name of properNames) {
     const nameLower = name.toLowerCase();
-    // Allow standard radio phrasing words that might be capitalized at beginning of sentences
+    // Allow standard radio phrasing words that might be capitalized at beginning of sentences,
+    // as well as common civic / institutional / journalistic titles
     const commonRadioWords = new Set([
       'the', 'this', 'that', 'here', 'now', 'well', 'and', 'right', 'so', 'from', 'stay', 'coming', 'next',
       'billboard', 'hot', 'rock', 'music', 'album', 'single', 'song', 'chart', 'times', 'records', 'studio',
       'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
-      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
+      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+      'united', 'nations', 'president', 'governor', 'senator', 'representative', 'mayor', 'secretary', 'general', 'admiral', 'minister', 'police', 'council', 'commissioner', 'court', 'judge'
     ]);
     if (commonRadioWords.has(nameLower)) continue;
 
@@ -686,6 +1006,31 @@ export function validateSegmentBreakOutput(
       return {
         valid: false,
         rejectedReason: `Unverified proper name "${name}" not found in fact packet`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // 7e: Substance check in news breaks: must contain at least 2 specific concrete facts (proper name, number, or year)
+  if (isNewsTopic) {
+    const verifiedNamesCount = properNames.filter((n) => {
+      const nl = n.toLowerCase();
+      const common = new Set([
+        'the', 'this', 'that', 'here', 'now', 'well', 'and', 'right', 'so', 'from', 'stay', 'coming', 'next',
+        'billboard', 'hot', 'rock', 'music', 'album', 'single', 'song', 'chart', 'times', 'records', 'studio',
+        'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+        'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'
+      ]);
+      return !common.has(nl) && corpus.includes(nl);
+    }).length;
+    const verifiedNumbersCount = numbersInText.filter((num) => corpus.includes(num.toLowerCase())).length;
+    const verifiedYearsCount = yearsInText.filter((y) => corpus.includes(String(y))).length;
+    const totalConcreteFacts = verifiedNamesCount + verifiedNumbersCount + verifiedYearsCount;
+
+    if (totalConcreteFacts < 2) {
+      return {
+        valid: false,
+        rejectedReason: `Substance check failed: contains ${totalConcreteFacts} verified concrete facts (minimum 2 required)`,
         sanitizedText: '',
       };
     }

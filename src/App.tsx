@@ -1091,6 +1091,11 @@ export default function App() {
         setIsLibraryLoaded(true);
         if (activeDateRef.current) {
           logStationPools(activeDateRef.current, lib);
+          fetch('/api/news/prefetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetDate: activeDateRef.current }),
+          }).catch(() => {});
         }
       })
       .catch((err) => {
@@ -1467,24 +1472,56 @@ export default function App() {
 
   // Refs for action handlers to prevent stale closures in the Boom Box subscription
   const handlePlayMusicRef = useRef<(playClickTs?: number) => Promise<boolean>>(async () => false);
-  const handlePauseMusicRef = useRef<() => Promise<void>>(async () => {});
+  const handlePauseMusicRef = useRef<(source?: string) => Promise<void>>(async () => {});
   const handleStopMusicRef = useRef<() => Promise<void>>(async () => {});
   const handleRewindMusicRef = useRef<() => Promise<void>>(async () => {});
   const handleFastForwardMusicRef = useRef<() => Promise<void>>(async () => {});
   const advanceToNextSongRef = useRef<(isInitialAfterJingle?: boolean) => Promise<boolean>>(async () => false);
+
+  // Keep a stable ref to broadcastCurrentRadioState so listeners registered once on mount can always invoke the latest version
+  const broadcastCurrentRadioStateRef = useRef<typeof broadcastCurrentRadioState>(broadcastCurrentRadioState);
+  broadcastCurrentRadioStateRef.current = broadcastCurrentRadioState;
 
   // Synchronize state to Boom Box whenever session properties change or library loads
   useEffect(() => {
     broadcastCurrentRadioState(true);
   }, [broadcastCurrentRadioState, isLibraryLoaded]);
 
-  // Listen for actions and state requests from Boom Box
+  // Listen for actions and state requests from Boom Box (registered once on mount with cleanup)
   useEffect(() => {
+    let lastActionKey = '';
+    let lastActionTs = 0;
+
     const unsubAction = musicProviderRef.current.onBoomBoxAction(async (action: any) => {
       if (!action || !action.action) return;
-      logMessage(`[Boom Box Action] ${action.action}`);
+
+      // Deduplicate rapid duplicate actions in app tab (within 800ms)
+      const currentActionKey = `${action.action}_${action.date || ''}_${action.genre || ''}_${action.decade || ''}_${action.volume || ''}_${action.balance || ''}_${action.t_boombox_click || ''}`;
+      const now = Date.now();
+      if (currentActionKey === lastActionKey && (now - lastActionTs) < 800) {
+        return;
+      }
+      lastActionKey = currentActionKey;
+      lastActionTs = now;
+
       const actionName = String(action.action);
       const timeStr = new Date().toLocaleTimeString();
+
+      // Detailed logging for actions (especially PAUSE and END_OF_SONG_TRIGGER) with full timing & player state diagnostics
+      const curPick = currentSongPickRef.current;
+      const libDur = typeof (curPick?.song as any)?.duration_sec === 'number' ? (curPick?.song as any).duration_sec : 0;
+      const ytState = (musicProviderRef.current as any)?.latestYtState || {};
+      const ytPlayerState = typeof action.ytState === 'number' ? action.ytState : (typeof ytState.state === 'number' ? ytState.state : (playbackStatusRef.current?.isPlaying ? 1 : 2));
+      const ytCurTime = typeof action.ytCurrentTime === 'number' ? action.ytCurrentTime : (typeof ytState.currentTime === 'number' ? ytState.currentTime : (playbackStatusRef.current?.currentTime || 0));
+      const ytDur = typeof action.ytDuration === 'number' ? action.ytDuration : (typeof ytState.duration === 'number' ? ytState.duration : (playbackStatusRef.current?.duration || 0));
+      const appVis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+      const ytVis = action.ytVisibility || ytState.ytVisibility || 'unknown';
+      const actionSource = action.source || (action.action === 'PAUSE' ? 'user_click' : (action.action === 'END_OF_SONG_TRIGGER' ? (action.reason || 'silence') : 'unknown'));
+
+      console.log(
+        `[BoomBox Action Log] BOOMBOX_ACTION received: ${actionName} | source=${actionSource} | ytState=${ytPlayerState} | ytCurrentTime=${ytCurTime.toFixed(1)}s | ytDuration=${ytDur.toFixed(1)}s | libraryDuration=${libDur}s | appVisibility=${appVis} | ytVisibility=${ytVis} | ts=${Date.now()}`
+      );
+      logMessage(`[Boom Box Action] ${actionName} (source: ${actionSource})`);
 
       try {
         switch (action.action) {
@@ -1498,8 +1535,8 @@ export default function App() {
             break;
           }
           case 'PAUSE':
-            await handlePauseMusicRef.current();
-            setLastBoomBoxCommand({ action: actionName, result: 'SUCCESS (Paused)', time: timeStr });
+            await handlePauseMusicRef.current(action.source || 'user_click');
+            setLastBoomBoxCommand({ action: `${actionName} (${action.source || 'user_click'})`, result: 'SUCCESS (Paused)', time: timeStr });
             break;
           case 'STOP':
             await handleStopMusicRef.current();
@@ -1596,7 +1633,7 @@ export default function App() {
 
               // Immediately pause YouTube playback
               if (liveStatus.isPlaying || isAdvancingRef.current) {
-                await handlePauseMusicRef.current();
+                await handlePauseMusicRef.current('tune_untuned_dial');
               }
               break;
             }
@@ -1802,6 +1839,13 @@ export default function App() {
             const targetDate = action.date || activeDateRef.current;
             const targetGenre = action.genre || activeStationGenreRef.current || 'Pop';
 
+            // Prefetch NYT archive month (and previous month if in first week) in the background at session start
+            fetch('/api/news/prefetch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targetDate }),
+            }).catch(() => {});
+
             // Start a new DJ listening session on new date/genre selection
             djStateRef.current = newDjState();
             varietyStateRef.current = newVarietyState();
@@ -1856,6 +1900,11 @@ export default function App() {
           case 'REQUEST_DATE_STATIONS': {
             if (action.date) {
               activeDateRef.current = action.date;
+              fetch('/api/news/prefetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetDate: action.date }),
+              }).catch(() => {});
               if (typeof action.decade === 'number') {
                 activeDecadeRef.current = action.decade;
               }
@@ -1898,7 +1947,7 @@ export default function App() {
             logMessage(`[End-Of-Song Trigger] Reason: ${triggerReason} | Level: ${triggerLevel} | Time: ${triggerCur}s | Rem: ${triggerRem}s`);
 
             // 1. Immediately pause current playback so silence/outtro does not linger
-            await handlePauseMusicRef.current();
+            await handlePauseMusicRef.current(`end_of_song_trigger_${triggerReason}`);
 
             // 2. Immediately trigger prepared DJ break if present
             const prep = preparedBreakRef.current;
@@ -1941,11 +1990,17 @@ export default function App() {
                 if (prep.breakId) {
                   reportSegmentStatus(prep.breakId, 'discarded', 'not ready at the song change');
                 }
-                logMessage(`[DJ] Break audio was not ready at end-of-song trigger (${triggerReason})`);
+                logMessage(`[DJ] Break audio was not ready at end-of-song trigger (${triggerReason}). Advancing to next song.`);
+                advanceToNextSongRef.current(false).catch((err) => {
+                  logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
+                });
               }
               preparedBreakRef.current = null;
             } else if (!prep) {
-              logMessage(`[DJ] No prepared break active for end-of-song trigger (${triggerReason})`);
+              logMessage(`[DJ] No prepared break active for end-of-song trigger (${triggerReason}). Advancing to next song.`);
+              advanceToNextSongRef.current(false).catch((err) => {
+                logMessage(`[Auto Advance Error] ${err?.message || 'failed'}`);
+              });
             }
 
             setLastBoomBoxCommand({ action: `END_OF_SONG_TRIGGER (${triggerReason})`, result: 'SUCCESS', time: timeStr });
@@ -1961,14 +2016,18 @@ export default function App() {
     });
 
     const unsubReq = musicProviderRef.current.onRadioStateRequest(() => {
-      broadcastCurrentRadioState(true);
+      broadcastCurrentRadioStateRef.current(true);
     });
+
+    // Log active registered listeners on startup
+    const counts = musicProviderRef.current.getActiveListenerCounts();
+    console.log(`[YouTubeMusicProvider] Active listeners registered:`, counts);
 
     return () => {
       unsubAction();
       unsubReq();
     };
-  }, [broadcastCurrentRadioState]);
+  }, []);
 
   // --- Audio Diagnostics Polling (Refreshes every 2 seconds) ---
   useEffect(() => {
@@ -3100,15 +3159,18 @@ export default function App() {
     }
   };
 
-  const handlePauseMusic = async () => {
+  const handlePauseMusic = async (source: string = 'user_click') => {
     const seq = ++transportCommandSeqRef.current;
     isTransportCommandInFlightRef.current = true;
-    musicProviderRef.current.recordTrace('HANDLE_PAUSE_START', { seq });
-    logMessage('Sending Pause command to YouTube tab...');
-    stopActiveDjSpeechAndRelease('PAUSE transport action');
+    musicProviderRef.current.recordTrace('HANDLE_PAUSE_START', { seq, source });
+    logMessage(`Sending Pause command (source: ${source}) to YouTube tab...`);
+    // Only user-initiated or untuning pause actions stop in-progress DJ commentary; automatic end-of-song events preserve DJ commentary
+    if (!source.startsWith('end_of_song_trigger')) {
+      stopActiveDjSpeechAndRelease('PAUSE transport action');
+    }
 
     try {
-      const pauseRes = await musicProviderRef.current.pauseDetailed();
+      const pauseRes = await musicProviderRef.current.pauseDetailed(source);
       if (transportCommandSeqRef.current !== seq) {
         logMessage('[Pause] Superseded by newer command. Dropping result.');
         musicProviderRef.current.recordTrace('HANDLE_PAUSE_SUPERSEDED', { seq });
@@ -4213,19 +4275,19 @@ export default function App() {
             reportSegmentStatus(options.breakId, 'aired');
           }
 
-          // Step 1: Send request to Boom Box with 2500ms start confirmation timeout
+          // Step 1: Send request to Boom Box with 3500ms start confirmation timeout
           let boomBoxStarted = false;
           let boomBoxSettled = false;
           let boomBoxStartTime = 0;
 
           const bbResPromise = musicProviderRef.current.playBoomBoxDjSpeech(boomBoxPayload);
-          const bbTimeoutPromise = new Promise<{ success: boolean; timedOut?: boolean }>((resolve) =>
-            setTimeout(() => resolve({ success: false, timedOut: true }), 2500)
+          const bbTimeoutPromise = new Promise<{ success: boolean; started?: boolean; timedOut?: boolean }>((resolve) =>
+            setTimeout(() => resolve({ success: false, started: false, timedOut: true }), 3500)
           );
 
           const bbRes = await Promise.race([bbResPromise, bbTimeoutPromise]);
 
-          if (bbRes && bbRes.success && !(bbRes as any).timedOut) {
+          if (bbRes && bbRes.success && bbRes.started && !(bbRes as any).timedOut) {
             boomBoxStarted = true;
             boomBoxStartTime = performance.now();
             const appVisStart = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
@@ -4259,9 +4321,7 @@ export default function App() {
                     console.error(
                       `[DJ] Speech Error: ended early (elapsed ${elapsedSec.toFixed(1)}s of ${durationSec.toFixed(1)}s), cause=${speechFailureCause}`
                     );
-                    if (elapsedSec < 0.8 && finishPayload?.eventType === 'error') {
-                      shouldAttemptLocalFallback = true;
-                    }
+                    shouldAttemptLocalFallback = true;
                     resolve(false);
                   } else if (elapsedSec < durationSec - 1.0 && durationSec > 2) {
                     speechFailureCause = `ended_early_under_duration (${elapsedSec.toFixed(1)}s < ${durationSec.toFixed(1)}s)`;
@@ -4318,12 +4378,13 @@ export default function App() {
               speechEngineUsed = 'Boom Box';
             } else {
               console.warn(
-                `[DJ] Speech: Boom Box playback failed immediately at start. Falling back to local audio element in app tab.`
+                `[DJ] Speech: Boom Box playback failed or reported error (cause=${speechFailureCause}). Falling back to local audio element in app tab.`
               );
             }
           } else {
+            const failReason = (bbRes as any)?.reason || (bbRes as any)?.error || ((bbRes as any)?.timedOut ? 'start_timeout' : 'unconfirmed');
             console.log(
-              `[DJ] Speech: Boom Box did not confirm start within 2.5s (timedOut=${(bbRes as any)?.timedOut || false}, success=${bbRes?.success || false}). Falling back to local audio element in app tab.`
+              `[DJ] Speech: Boom Box did not confirm start within 3.5s (timedOut=${(bbRes as any)?.timedOut || false}, success=${bbRes?.success || false}, started=${bbRes?.started || false}, reason=${failReason}). Falling back to local audio element in app tab.`
             );
           }
         } catch (bbErr: any) {
@@ -4998,7 +5059,7 @@ export default function App() {
         if (/RetroFM/i.test(aired)) {
           specABreakStateRef.current.breaksSinceLastRetroFm = 0;
         } else {
-          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 4) + 1;
+          specABreakStateRef.current.breaksSinceLastRetroFm = (specABreakStateRef.current.breaksSinceLastRetroFm ?? 0) + 1;
         }
       }
 
@@ -6458,7 +6519,7 @@ export default function App() {
                   <span>PLAY</span>
                 </button>
                 <button
-                  onClick={handlePauseMusic}
+                  onClick={() => handlePauseMusic('user_click_button')}
                   className="py-2.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-mono font-bold text-zinc-200 flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Pause className="w-3.5 h-3.5 text-amber-400" />

@@ -19,6 +19,18 @@ const MAX_AUDIO_DIAGNOSTICS_EVENTS = 40;
 let latestAudioDiagnosticsSnapshot = null;
 let audioDiagnosticsEvents = [];
 
+// Deduplication cache for background forwarded messages
+const bgForwardDedupeCache = new Map();
+function isDuplicateForward(key, ttlMs = 2000) {
+  const now = Date.now();
+  for (const [k, ts] of bgForwardDedupeCache.entries()) {
+    if (now - ts > ttlMs) bgForwardDedupeCache.delete(k);
+  }
+  if (bgForwardDedupeCache.has(key)) return true;
+  bgForwardDedupeCache.set(key, now);
+  return false;
+}
+
 function recordAudioDiagnosticsEvent(event, data) {
   try {
     const entry = {
@@ -698,14 +710,19 @@ function handleIncomingRequest(request, sender, sendResponse) {
           recordTrace(entry.source, entry.event, entry.data);
           // Relay YouTube volume ramp completion events to RetroFM app tab for console timing logs
           if (entry.event === 'YT_VOLUME_REACHED_DUCK' || entry.event === 'YT_VOLUME_REACHED_NORMAL') {
-            resolveRetroFmTab().then((retroTabId) => {
-              if (retroTabId) {
-                chrome.tabs.sendMessage(retroTabId, {
-                  type: 'YT_VOLUME_RAMP_REACHED',
-                  payload: { event: entry.event, ...(entry.data || {}) }
-                }).catch(() => {});
-              }
-            }).catch(() => {});
+            const rampId = entry.data?.rampId || '';
+            const rampTs = entry.data?.ts || entry.ts || '';
+            const rampKey = `YT_VOLUME_RAMP_REACHED_${entry.event}_${rampId}_${rampTs}`;
+            if (!isDuplicateForward(rampKey, 3000)) {
+              resolveRetroFmTab().then((retroTabId) => {
+                if (retroTabId) {
+                  chrome.tabs.sendMessage(retroTabId, {
+                    type: 'YT_VOLUME_RAMP_REACHED',
+                    payload: { event: entry.event, ...(entry.data || {}) }
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
+            }
           }
         }
         sendResponse({ success: true });
@@ -836,6 +853,7 @@ function handleIncomingRequest(request, sender, sendResponse) {
                 console.log(`[Transport Timing] [Background] Fast-dispatching ${actionName} directly to YouTube tab ${ytTabId}`);
                 chrome.tabs.sendMessage(ytTabId, {
                   action: actionName,
+                  source: payload?.source || (actionName === 'PLAY' ? 'user_play' : 'user_pause'),
                   t_boombox_play_click: boomBoxClick || null
                 }).catch(() => {});
               }
@@ -883,9 +901,25 @@ function handleIncomingRequest(request, sender, sendResponse) {
             return;
           }
 
+          const actionId = payload?.msgId || `${payload?.action}_${payload?.date || ''}_${payload?.genre || ''}_${payload?.decade || ''}_${payload?.volume || ''}_${payload?.balance || ''}_${payload?.t_boombox_click || payload?.t_boombox_perf || ''}`;
+          const actionDedupeKey = `BOOMBOX_ACTION_FWD_${actionId}`;
+          if (isDuplicateForward(actionDedupeKey, 1500)) {
+            sendResponse({ success: true, deduplicated: true });
+            return;
+          }
+
+          const actionPayloadWithYtInfo = {
+            ...payload,
+            ytState: latestYouTubeState?.state ?? null,
+            ytCurrentTime: latestYouTubeState?.currentTime ?? null,
+            ytDuration: latestYouTubeState?.duration ?? null,
+            ytVideoId: latestYouTubeState?.videoId ?? null,
+            ytVisibility: latestYouTubeState?.ytVisibility || 'unknown'
+          };
+
           const res = await chrome.tabs.sendMessage(retroTabId, {
             type: 'BOOMBOX_ACTION',
-            payload
+            payload: actionPayloadWithYtInfo
           });
           recordTrace('background', 'BOOMBOX_ACTION_FORWARDED_SUCCESS', {
             action: payload?.action,

@@ -70,6 +70,7 @@ let transientTimer = null;
 let playbackEnabled = false;
 let isSeeking = false;
 let seekSafetyTimer = null;
+let boomBoxActionSeq = 0;
 
 // Analog FM Stereo Indicator state machine ('off' | 'searching' | 'locked')
 let stereoState = 'off';
@@ -748,17 +749,50 @@ function playBoomBoxDjSpeech(payload) {
     console.warn('[BoomBox DJ] Effects routing warning:', err);
   }
 
+  const logAudioDiagnostics = (evtName, extra = '') => {
+    const errCode = audio.error ? audio.error.code : 'none';
+    const errMsg = audio.error ? audio.error.message : '';
+    const ctxState = ctx ? ctx.state : 'no_context';
+    const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+    console.log(
+      `[BoomBox DJ Audio] [${evtName}] duration=${audio.duration} currentTime=${audio.currentTime} volume=${audio.volume} muted=${audio.muted} readyState=${audio.readyState} networkState=${audio.networkState} errorCode=${errCode} errorMsg="${errMsg}" ctxState=${ctxState} visibility=${vis}${extra ? ' ' + extra : ''}`
+    );
+  };
+
+  const audioLifecycleEvents = ['loadedmetadata', 'canplay', 'playing', 'pause', 'ended', 'error', 'stalled', 'waiting'];
+  const eventHandlers = {};
+
+  const cleanupListeners = () => {
+    audioLifecycleEvents.forEach((evt) => {
+      if (eventHandlers[evt]) {
+        audio.removeEventListener(evt, eventHandlers[evt]);
+      }
+    });
+  };
+
+  audioLifecycleEvents.forEach((evt) => {
+    eventHandlers[evt] = (e) => {
+      logAudioDiagnostics(evt);
+    };
+    audio.addEventListener(evt, eventHandlers[evt]);
+  });
+
   audio.onended = () => {
+    cleanupListeners();
     notifyFinished(true, undefined, 'ended');
   };
   audio.onpause = () => {
     // If paused externally before natural end, release ducking immediately
     if (!audio.ended && !finished && audio.currentTime > 0) {
+      cleanupListeners();
       notifyFinished(true, undefined, 'pause');
     }
   };
   audio.onerror = (e) => {
-    notifyFinished(false, 'audio_element_error', 'error');
+    const errCode = audio.error ? audio.error.code : 'unknown';
+    const errMsg = audio.error ? audio.error.message : 'audio_element_error';
+    cleanupListeners();
+    notifyFinished(false, `audio_element_error_${errCode}: ${errMsg}`, 'error');
   };
 
   audio.src = audioSrc;
@@ -780,23 +814,29 @@ function playBoomBoxDjSpeech(payload) {
       }
     };
 
-    audio.addEventListener('playing', confirmStarted, { once: true });
+    audio.addEventListener('playing', () => {
+      confirmStarted();
+    }, { once: true });
 
     audio.play().then(async () => {
+      logAudioDiagnostics('play_resolved');
       if (ctx && ctx.state === 'suspended') {
         try { await ctx.resume(); } catch (e) {}
       }
       confirmStarted();
     }).catch((err) => {
+      logAudioDiagnostics('play_rejected', `errName=${err?.name} errMsg="${err?.message}"`);
       console.warn('[BoomBox DJ] Play error:', err);
       if (!settled) {
         settled = true;
-        notifyFinished(false, err?.message || 'play_rejected', 'error');
-        resolve({ success: false, started: false, reason: err?.message || 'play_rejected' });
+        cleanupListeners();
+        const reason = `${err?.name || 'Error'}: ${err?.message || 'play_rejected'}`;
+        notifyFinished(false, reason, 'error');
+        resolve({ success: false, started: false, reason });
       }
     });
 
-    // Fallback check at 350ms if 'playing' or ctx.resume took a moment
+    // Fallback check at 2000ms (sufficient for large >12s base64 data URIs) if 'playing' took a moment
     setTimeout(() => {
       if (settled) return;
       if (ctx && ctx.state === 'suspended') {
@@ -808,12 +848,13 @@ function playBoomBoxDjSpeech(payload) {
         confirmStarted();
       } else {
         settled = true;
+        cleanupListeners();
         const reason = !isContextRunning ? `audio_context_suspended (${ctx?.state})` : 'audio_not_advancing';
-        console.warn(`[BoomBox DJ] Speech not advancing at 350ms: ctxState=${ctx?.state} currentTime=${audio.currentTime} readyState=${audio.readyState}. Reporting failure.`);
+        console.warn(`[BoomBox DJ] Speech not advancing at 2000ms: ctxState=${ctx?.state} currentTime=${audio.currentTime} readyState=${audio.readyState}. Reporting failure.`);
         notifyFinished(false, reason, 'error');
         resolve({ success: false, started: false, reason });
       }
-    }, 350);
+    }, 2000);
   });
 }
 
@@ -1039,7 +1080,9 @@ act($('bPause'),()=>{
   lastUserTransportAction = { state: next, time: Date.now() };
   setState(next, true);
   trace('CLICK_PAUSE', { optimisticState: next });
-  sendBoomBoxAction(next === 'paused' ? 'PAUSE' : 'PLAY');
+  sendBoomBoxAction(next === 'paused' ? 'PAUSE' : 'PLAY', {
+    source: 'user_click'
+  });
 });
 act($('bStop'),()=>{
   playbackEnabled = false;
@@ -2210,6 +2253,7 @@ function checkSilenceDetector() {
   const dur = playbackProgress.duration || 0;
   const rem = dur > 0 ? (dur - cur) : 0;
   const lvl = getCurrentLevel();
+  const isJingle = vid === '3Wk2FzsxK4k' || !hasFirstSongStartedPlaying;
 
   // If a new video started, reset the trigger guard and timer
   if (vid && vid !== silenceTriggerFiredForVideoId && silenceTriggerFiredForVideoId !== null) {
@@ -2240,13 +2284,15 @@ function checkSilenceDetector() {
           silenceTriggerFiredForVideoId = vid;
           lastSilenceTriggerReason = 'silence';
           trace('SILENCE_DETECTOR_TRIGGERED', { reason: 'silence', level: lvl, currentTime: cur, remaining: rem, videoId: vid });
-          sendBoomBoxAction('PAUSE');
           sendBoomBoxAction('END_OF_SONG_TRIGGER', {
+            source: 'silence_detector',
             reason: 'silence',
             level: lvl,
             currentTime: cur,
             remaining: rem,
             videoId: vid,
+            duration: dur,
+            libraryDuration: currentLibraryDurationSec
           });
         }
       }
@@ -2269,14 +2315,16 @@ function checkSilenceDetector() {
         silenceTriggerFiredForVideoId = vid;
         lastSilenceTriggerReason = 'duration_backup';
         trace('SILENCE_DETECTOR_TRIGGERED', { reason: 'duration_backup', level: lvl, currentTime: cur, expectedEnd: currentLibraryDurationSec, videoId: vid });
-        sendBoomBoxAction('PAUSE');
         sendBoomBoxAction('END_OF_SONG_TRIGGER', {
+          source: 'duration_backup_overrun',
           reason: 'duration_backup',
           level: lvl,
           currentTime: cur,
           remaining: rem,
           expectedEnd: currentLibraryDurationSec,
           videoId: vid,
+          duration: dur,
+          libraryDuration: currentLibraryDurationSec
         });
       }
     }
@@ -2575,10 +2623,14 @@ function flushPendingBalance() {
 
 function rawSendBoomBoxAction(action, data) {
   const tCtx = getTimingContext();
-  console.log(`[Transport Timing] [BoomBox] Action dispatched: ${action} (visibility=${tCtx.visibility}, ts=${tCtx.ts}, perf=${tCtx.perf})`);
+  const seq = ++boomBoxActionSeq;
+  const msgId = `bb_act_${seq}_${tCtx.ts}_${Math.random().toString(36).substring(2, 7)}`;
+  console.log(`[Transport Timing] [BoomBox] Action dispatched: ${action} (seq=${seq}, visibility=${tCtx.visibility}, ts=${tCtx.ts}, perf=${tCtx.perf})`);
   const payloadData = {
     action,
     ...(data || {}),
+    msgId,
+    actionSeq: seq,
     t_boombox_click: tCtx.ts,
     t_boombox_perf: tCtx.perf,
     boombox_visibility: tCtx.visibility

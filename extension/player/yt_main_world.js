@@ -4,6 +4,8 @@
 (function () {
   if (window.__retroFmMainWorldLoaded) return;
   window.__retroFmMainWorldLoaded = true;
+  window.__retroFmMainWorldVersion = '1.0.16';
+  console.log('[RetroFM] yt_main_world.js loaded v1.0.16');
 
   const EVENT_SET_VOLUME = 'RETROFM_SET_YT_VOLUME';
   const EVENT_RAMP_VOLUME = 'RETROFM_RAMP_YT_VOLUME';
@@ -306,7 +308,6 @@
 
   function runMainWorldTick() {
     const now = performance.now();
-    // Deduplicate if both workerTicker and baseline setInterval fire within < 15ms
     if (now - lastVuSampleTickTs < 15) {
       try { tickMainWorldVolumeRamp(); } catch (e) {}
       return;
@@ -318,60 +319,14 @@
 
   function startVuSamplingLoop() {
     if (vuSamplingInterval) return;
-    // Always run a baseline 33ms setInterval so that if YouTube's CSP (worker-src) blocks
-    // the inline Blob Worker asynchronously via worker.onerror, VU sampling and volume ramps
-    // still run reliably on the audible YouTube tab without stalling.
-    const fallbackTimer = setInterval(runMainWorldTick, 33);
-
-    let workerTicker = null;
-    let workerUrl = null;
-    try {
-      const blob = new Blob([
-        `let timer = null;
-        onmessage = function(e) {
-          if (e.data === 'start') {
-            if (!timer) timer = setInterval(function() { postMessage('tick'); }, 33);
-          } else if (e.data === 'stop') {
-            if (timer) { clearInterval(timer); timer = null; }
-          }
-        };`
-      ], { type: 'application/javascript' });
-      workerUrl = URL.createObjectURL(blob);
-      workerTicker = new Worker(workerUrl);
-      workerTicker.onmessage = () => {
-        runMainWorldTick();
-      };
-      workerTicker.onerror = (err) => {
-        try {
-          if ( err && typeof err.preventDefault === 'function' ) err.preventDefault();
-          workerTicker.terminate();
-        } catch (e) {}
-        if (workerUrl) {
-          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-          workerUrl = null;
-        }
-        workerTicker = null;
-      };
-      workerTicker.postMessage('start');
-    } catch (workerErr) {
-      if (workerUrl) {
-        try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-        workerUrl = null;
-      }
-      workerTicker = null;
-    }
+    // YouTube enforces Trusted Types, so inline Blob Worker creation fails with
+    // "This document requires 'TrustedScriptURL' assignment".
+    // We run a 33ms setInterval directly which safely handles VU sampling and volume ramps.
+    const intervalTimer = setInterval(runMainWorldTick, 33);
 
     vuSamplingInterval = {
       stop: () => {
-        clearInterval(fallbackTimer);
-        if (workerTicker) {
-          try { workerTicker.postMessage('stop'); workerTicker.terminate(); } catch (e) {}
-          workerTicker = null;
-        }
-        if (workerUrl) {
-          try { URL.revokeObjectURL(workerUrl); } catch (e) {}
-          workerUrl = null;
-        }
+        clearInterval(intervalTimer);
       }
     };
   }
@@ -571,21 +526,26 @@
     }
   }
 
+  const INTERNAL_REASON = /^(ramp|RAMP_|duck|event:|navigationStart|yt-|playerReady)/;
+
   function applyVolume(vol, reason = 'direct') {
     if (typeof vol !== 'number' || isNaN(vol)) return;
     const clampedVol = Math.max(0, Math.min(100, Math.round(vol)));
+
+    const isInternal = INTERNAL_REASON.test(String(reason));
+    const isRampDriver = /^(ramp|duck)/.test(String(reason));
+    if (isInternal && !isRampDriver && activeMainWorldRamp) {
+      return;
+    }
+
     queuedVolume = clampedVol;
 
-    const isRampReason = typeof reason === 'string' && (reason.startsWith('ramp') || reason.startsWith('duck'));
-    // If this is a direct SET_VOLUME (not a ramp step), cancel any active ramp and persist user master volume
-    if (!isRampReason) {
+    if (!isInternal) {
       activeMainWorldRamp = null;
-      if (!reason.startsWith('event:')) {
-        userMasterVolume = clampedVol;
-        try {
-          localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
-        } catch (e) {}
-      }
+      userMasterVolume = clampedVol;
+      try {
+        localStorage.setItem(STORAGE_KEY_SAVED_VOLUME, String(clampedVol));
+      } catch (e) {}
     }
 
     const player = getPlayer();
@@ -632,7 +592,7 @@
     const clampedTarget = Math.max(0, Math.min(100, rawTarget));
     const dur = typeof durationMs === 'number' && durationMs > 0 ? durationMs : 400;
 
-    // Ensure the unthrottled Web Worker ticker is running
+    // Ensure the 33ms sampling and ramp ticker is running
     startVuSamplingLoop();
 
     const player = getPlayer();
@@ -900,7 +860,8 @@
 
     const stateBefore = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
     const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-    console.log(`[Transport Timing] [YouTube MW] Executing direct player command: ${cmd} (visibility=${vis}, stateBefore=${stateBefore})`);
+    const source = payload?.source || 'unknown';
+    console.log(`[Transport Timing] [YouTube MW] Executing direct player command: ${cmd} (source=${source}, visibility=${vis}, stateBefore=${stateBefore})`);
 
     if (cmd === 'PLAY') {
       const t_mw_play_call = Date.now();
@@ -1099,16 +1060,28 @@
     media.addEventListener('pause', () => {
       try {
         const vis = typeof document !== 'undefined' ? document.visibilityState : 'unknown';
-        console.log(`[Transport Timing] [YouTube MW] video 'pause' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime})`);
-        const now = Date.now();
+        const isConfirmDialogVisible = Boolean(
+          document.querySelector('yt-confirm-dialog-renderer, ytd-popup-container ytd-modal-with-dimmed-background-renderer') ||
+          Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytd-dialog, yt-confirm-dialog-renderer')).some(el => {
+            const txt = el.textContent || '';
+            return (txt.includes('Continue watching?') || txt.includes('Video paused.')) && (el.offsetWidth > 0 || el.offsetHeight > 0 || !el.hasAttribute('aria-hidden'));
+          })
+        );
+        if (isConfirmDialogVisible) {
+          console.warn(`[YouTube MW] DETECTED "Video paused. Continue watching?" confirmation dialog!`);
+          recordError('continueWatchingDialog', { ts: now, currentTime: media.currentTime });
+        }
+        console.log(`[Transport Timing] [YouTube MW] video 'pause' event (visibility=${vis}, paused=${media.paused}, currentTime=${media.currentTime}, continueWatchingDialog=${isConfirmDialogVisible})`);
         const unmutedRecently = (now - lastUnmuteTime) <= 3000;
         recordError('videoPause', {
           ts: now,
           pausedRightAfterUnmute: unmutedRecently,
+          continueWatchingDialog: isConfirmDialogVisible,
           timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
         });
         trace('VIDEO_PAUSE_EVENT', {
           pausedRightAfterUnmute: unmutedRecently,
+          continueWatchingDialog: isConfirmDialogVisible,
           timeSinceLastUnmuteMs: lastUnmuteTime > 0 ? (now - lastUnmuteTime) : null
         });
         syncPlaybackProgress(false);
