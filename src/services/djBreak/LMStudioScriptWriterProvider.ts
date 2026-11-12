@@ -908,7 +908,13 @@ Respond strictly with JSON schema:
     }
 
     const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
-    // 4d: news breaks also get the NYT section as context (headline is Fact [1]).
+    // Extract exact capitalized proper names from factLines so the model knows which names are verified
+    const combinedFactText = `${input.headline || ''} ${factItems.map((f) => f.text).join(' ')}`;
+    const properTokens = Array.from(new Set((combinedFactText.match(/\b[A-Z][a-zA-Z0-9.'-]{2,}\b/g) || []).filter((w) => !/^(?:Fact|The|In|On|At|By|For|From|With|After|Before|When|While|Although|Despite|Since|Under|Over|Between|During|Through|Against|Among|Into|Upon|Within|Without|According| Officials|Official|President|Senator|General|Prime|Minister|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Yesterday|Today|Tonight)$/.test(w))));
+    const allowedNamesLine = properTokens.length > 0
+      ? `\nALLOWED PROPER NAMES (use ONLY these exact capitalized names; NEVER invent or expand first names, titles, cities, or agencies not listed here): ${properTokens.slice(0, 35).join(', ')}`
+      : '';
+    // 4d: news breaks also get the NYT section as context.
     const newsSectionLine = (input.topic === 'major_news' || input.topic === 'music_news') && input.section ? `\nSECTION: ${input.section}` : '';
     const timePhraseLine = input.timePhrase ? `\nTIME OF EVENT: ${input.timePhrase} (use this exact phrase if mentioning when it happened; do not use any other relative-time words)` : '';
     const storyStatusLine = input.storyStatus ? `\nSTORY STATUS: ${input.storyStatus.toUpperCase()} (use developing-story language like "details are still coming in" or "officials haven't said" if unresolved)` : '';
@@ -997,8 +1003,8 @@ STRICT RULES (Must follow all):
       : '';
 
     const userPromptStep1 = `FACT SHEET:
-${factLines}${newsSectionLine}${timePhraseLine}${storyStatusLine}${unresolvedLine}
-OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
+${factLines}${allowedNamesLine}${newsSectionLine}${timePhraseLine}${storyStatusLine}${unresolvedLine}
+OPENING: Open immediately with the main subject (person, country, or group) of the news in Fact [1] using your own verbs and sentence structure. Do NOT copy 5 consecutive words from Fact [1], and do NOT write any greeting or publication opener.${failureCorrection}
 
 TASK:
 Write 2-3 short, natural sentences (35-55 words total) following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
@@ -1043,8 +1049,16 @@ Write 2-3 short, natural sentences (35-55 words total) following all rules. Outp
     }
 
     if (!rawDraft) {
-      // Fallback: build natural script from facts
-      rawDraft = factItems.map(f => f.text).join(' ').trim();
+      return {
+        success: false,
+        scriptText: '',
+        unsupportedClaims: [],
+        modelUsed: activeModel,
+        callStartTime: new Date(startTime).toISOString(),
+        callDurationSec: Number(((Date.now() - startTime) / 1000).toFixed(1)),
+        error: 'LMStudio Step 1 failed to produce a draft',
+        isUnavailable: true,
+      };
     }
 
     // Fix comma capitalization bug
@@ -1107,7 +1121,7 @@ VERDICTS:`;
     const unsupportedClaims: string[] = [];
     const droppedSentenceIndexes = new Set<number>();
 
-    if (claimsToCheck.length > 0) {
+    if (claimsToCheck.length > 0 && input.topic !== 'major_news') {
       try {
         const resWithFallback = await fetchLmStudioWithFallback(
           this.endpoint,

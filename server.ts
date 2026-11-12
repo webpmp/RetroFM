@@ -39,9 +39,9 @@ import {
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
-import { getProminentStoryPackets } from './src/services/news/prominenceStoryService.js';
+import { getProminentStoryPackets, isIndexStyleText, isCleanBodySentence, cleanKnownAbbreviations, repairOcrBrokenWords } from './src/services/news/prominenceStoryService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
-import { validateSegmentBreakOutput, validateHandoffText, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
+import { validateSegmentBreakOutput, validateHandoffText, computeNewsWordBudget, lintReadAloudScript } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
 import { getEffectiveAppUrl, logStartupEnvironmentStatus, resolveLmStudioEndpoint } from './src/services/envUtil.js';
@@ -774,11 +774,13 @@ async function startServer() {
     breaksSinceLastRetroFm: 0,
   };
 
-  // Item 3: Rebuilt natural extractive fallback for speech:
-  // - Uses 2-3 full sentences from lead paragraphs / abstract, never headline or topicTitle.
-  // - Strips datelines, bylines, "LEAD:", and parentheticals.
-  // - Expands common abbreviations and normalizes OCR abbreviations.
-  // - Deduplicates, enforces length 40-80 words, and ends strictly on a sentence boundary.
+  // Round 6 Item 1: Rebuilt natural extractive fallback for speech:
+  // - Uses ONLY full sentences from article body (leadParagraph, snippet, clean packet facts, or non-index abstract), NEVER headline or topicTitle.
+  // - Rejects index-style abstracts (2+ semicolons, known abbreviations, day abbreviations like "Apr 29").
+  // - Rejects any sentence with 4+ consecutive all-caps words, a headline, or a broken word ("Univer sity").
+  // - Normalizes relative time words based on article pub_date vs broadcastDate.
+  // - Removes duplicate sentences after normalization.
+  // - Validates final output through lintReadAloudScript; returns '' if no clean body text passes so caller skips to next-ranked story.
   function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {
     const isNews = packet.topic === 'major_news' || packet.topic === 'music_news';
     if (!isNews) {
@@ -791,72 +793,99 @@ async function startServer() {
         if (t.length > 4 && t === t.toUpperCase()) {
           t = t.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         }
-        const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate);
+        const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate, broadcastDate);
         return resolved.text;
       });
       return sentences.join(' ');
     }
 
-    // For news packets: gather sentences from leadParagraph or abstract or verified facts
-    const rawCandidates: string[] = [];
-    if (packet.leadParagraph) rawCandidates.push(packet.leadParagraph);
-    if (packet.abstract) rawCandidates.push(packet.abstract);
-    if (packet.snippet) rawCandidates.push(packet.snippet);
+    // For news packets: gather sentences from clean packet.facts first (which were already filtered for lead noun overlap and clean prose),
+    // then leadParagraph, snippet, and non-index abstract. NEVER use packet.headline or packet.topicTitle.
+    const rawCandidates: Array<{ text: string; pubDate: string }> = [];
+    const defaultPubDate = packet.printDate || broadcastDate;
+
     for (const f of packet.facts || []) {
       const txt = typeof f === 'string' ? f : (f.text || '');
-      if (txt) rawCandidates.push(txt);
+      const fDate = (typeof f === 'object' && f?.printDate) ? f.printDate : defaultPubDate;
+      if (txt && !isIndexStyleText(txt)) {
+        rawCandidates.push({ text: txt, pubDate: fDate });
+      }
+    }
+    if (packet.leadParagraph && !isIndexStyleText(packet.leadParagraph)) {
+      rawCandidates.push({ text: packet.leadParagraph, pubDate: defaultPubDate });
+    }
+    if (packet.snippet && !isIndexStyleText(packet.snippet)) {
+      rawCandidates.push({ text: packet.snippet, pubDate: defaultPubDate });
+    }
+    if (rawCandidates.length === 0 && packet.abstract && !isIndexStyleText(packet.abstract)) {
+      rawCandidates.push({ text: packet.abstract, pubDate: defaultPubDate });
     }
 
     const sentences: string[] = [];
     const seenSentencesNorm = new Set<string>();
 
     for (const candidate of rawCandidates) {
-      let cleaned = candidate
-        // Strip "LEAD:" prefixes
-        .replace(/^LEAD:\s*/i, '')
-        // Strip datelines (e.g. "WASHINGTON, July 13 —", "DANANG, South Vietnam, Saturday —", "NIAGARA FALLS, N.Y., May 17-")
-        .replace(/^[A-Z\s\.,\-—–]+,\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{1,2}\s*[\-—–]\s*/i, '')
-        .replace(/^[A-Z\s\.,\-—–]+,\s*(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)[a-z]*\s*[\-—–]\s*/i, '')
-        .replace(/^[A-Z\s\.,\-—–]{3,40}\s*[\-—–]\s*/, '')
+      let cleaned = repairOcrBrokenWords(
+        candidate.text
+          // Strip "LEAD:" prefixes
+          .replace(/^LEAD:\s*/i, '')
+          .replace(/&#8212;|&#8211;|&mdash;|&ndash;/g, ' — ')
+          .replace(/&#8208;/g, '-')
+      )
+        // Strip datelines (e.g. "WASHINGTON, July 13 —", "PARIS. July 4 —", "JERUSALEM, Sunday, July 4 —", "LANDING ZONE X‐RAY, Cambodia, May 1—")
+        .replace(/^[A-Z0-9\s.,\-\u2010—–]+?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*\d{1,2}\s*(?:\([A-Z]+\)\s*)?[\-\u2010—–]+\s*/i, '')
+        .replace(/^[A-Z0-9\s.,\-\u2010—–]+?(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)[a-z,.\s0-9]*[\-\u2010—–]+\s*/i, '')
+        .replace(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*\d{1,2}\s*:\s*/i, '')
+        .replace(/^[A-Z\s.,]{3,35}\s*[\-\u2010—–]+\s*/, '')
         // Strip bylines like "By John Smith —"
-        .replace(/^By\s+[A-Za-z\s\.\-]+\s*[\-—–]\s*/i, '')
+        .replace(/^By\s+[A-Za-z\s.\-]+\s*[\-\u2010—–]\s*/i, '')
         // Strip parentheticals
-        .replace(/\([^\)]*\)/g, ' ')
-        // Expand common abbreviations
-        .replace(/\bgen\b/gi, 'general')
-        .replace(/\barty\b/gi, 'artillery')
-        .replace(/\brepts\b/gi, 'reports')
-        .replace(/\bparamil\b/gi, 'paramilitary')
-        .replace(/\bdept\b/gi, 'department')
-        .replace(/\bgovt\b/gi, 'government')
-        .replace(/\bu\.s\./gi, 'United States')
-        .replace(/\bu\.s\b/gi, 'United States')
+        .replace(/\([^)]*\)/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+
+      if (isIndexStyleText(cleaned)) continue;
 
       const splitS = splitVerbatimSentences(cleaned);
       for (let s of splitS) {
         s = s.trim();
-        // Skip headlines or fragments: never use headlines or topic titles
-        const norm = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normH = (packet.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (!norm || norm.length < 25) continue;
-        if (norm === normH || normH.includes(norm) || (norm.length > 20 && norm.includes(normH))) continue;
-        if (seenSentencesNorm.has(norm)) continue;
-        // Check if sentence starts with or contains "LEAD:"
-        if (/^lead:/i.test(s)) continue;
+        if (!s || /^lead:/i.test(s)) continue;
 
-        // Fix casing if all uppercase
-        if (s.length > 10 && s === s.toUpperCase()) {
-          s = s.toLowerCase().split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        }
-
-        // Relative time words adjustment
-        const resolved = resolveRelativeTimeWords(s, packet.printDate || broadcastDate);
-        s = resolved.text;
+        // Relative time words adjustment relative to candidate.pubDate and broadcastDate
+        const resolved = resolveRelativeTimeWords(s, candidate.pubDate, broadcastDate);
+        s = cleanKnownAbbreviations(resolved.text).replace(/\s+/g, ' ').trim();
 
         // Ensure ending with period
         if (!/[.!?]$/.test(s)) s += '.';
+
+        // Strict sentence-level checks: must be a clean body sentence and pass read-aloud lint
+        if (!isCleanBodySentence(s, packet.headline || packet.topicTitle)) continue;
+        // Also reject orphan pronouns in the first extractive sentence
+        if (sentences.length === 0 && /^(?:Their|They|He|She|It|This|These|Those|That)\b/i.test(s)) continue;
+        const lintRes = lintReadAloudScript(s);
+        if (!lintRes.valid) continue;
+
+        const norm = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!norm || norm.length < 25) continue;
+        if (seenSentencesNorm.has(norm)) continue;
+
+        // Also reject if substantially overlapping an already-selected sentence (e.g. abstract vs leadParagraph)
+        let isNearDuplicate = false;
+        const sTokens = new Set(s.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w) => w.length >= 4));
+        for (const existing of sentences) {
+          const eTokens = existing.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w) => w.length >= 4);
+          if (eTokens.length > 0 && sTokens.size > 0) {
+            let shared = 0;
+            for (const w of eTokens) {
+              if (sTokens.has(w)) shared++;
+            }
+            if (shared / Math.min(sTokens.size, eTokens.length) >= 0.75) {
+              isNearDuplicate = true;
+              break;
+            }
+          }
+        }
+        if (isNearDuplicate) continue;
 
         seenSentencesNorm.add(norm);
         sentences.push(s);
@@ -865,7 +894,11 @@ async function startServer() {
       if (sentences.length >= 3) break;
     }
 
-    // Target length: 40-80 words, 2-3 sentences
+    if (sentences.length === 0) {
+      return '';
+    }
+
+    // Target length: 30-80 words, 1-3 clean full sentences
     let selectedSentences: string[] = [];
     let currentWords = 0;
     for (const s of sentences) {
@@ -876,13 +909,23 @@ async function startServer() {
       if (currentWords >= 40 && selectedSentences.length >= 2) break;
     }
 
-    if (selectedSentences.length < 2 && sentences.length >= 2) {
+    if (selectedSentences.length === 0) {
       selectedSentences = sentences.slice(0, 2);
     }
 
     let result = selectedSentences.join(' ').trim();
     if (result && !/[.!?]$/.test(result)) {
       result += '.';
+    }
+
+    // Final read-aloud lint check on assembled extractive segment
+    const finalLint = lintReadAloudScript(result);
+    if (!finalLint.valid) {
+      return '';
+    }
+    const totalCleanWords = result.split(/\s+/).filter(Boolean).length;
+    if (totalCleanWords < 18) {
+      return '';
     }
     return result;
   }
@@ -1019,7 +1062,9 @@ async function startServer() {
         writer = new LMStudioScriptWriterProvider({ endpoint: resolvedEndpoint, model, timeoutMs: 18000 });
         console.log(`[DJ Break Writer] Using LMStudioScriptWriterProvider (model: ${model || 'default'}, endpoint: ${resolvedEndpoint})`);
       } else {
-        const defaultModel = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-3.8-flash';
+        const defaultModel = (typeof model === 'string' && model.startsWith('gemini-'))
+          ? model
+          : (process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-2.5-flash');
         const fallbackModel = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || 'gemini-2.5-flash';
         writer = new GeminiScriptWriterProvider(process.env.GEMINI_API_KEY, defaultModel, fallbackModel);
         console.log(`[DJ Break Writer] Using GeminiScriptWriterProvider (primary: ${defaultModel}, fallback: ${fallbackModel})`);
@@ -1389,26 +1434,112 @@ async function startServer() {
         if (musicNewsCandidates.length >= 8) break;
       }
 
-      // 3. Major News Candidates
+      // 3. Major News Candidates & No Silent Skipping Tracking (Round 6 Item 2 & 8)
+      interface CandidateEvaluationLog {
+        rank: number;
+        type: string;
+        headline: string;
+        prominenceScore?: number;
+        leadPubDate?: string;
+        outcome: 'aired' | 'rejected' | 'not_reached';
+        attempts: number;
+        rejectionReasons: string[];
+        finalPath?: 'model' | 'gemini_fallback' | 'extractive';
+      }
+      const candidateEvaluations: CandidateEvaluationLog[] = [];
       const majorNewsCandidates: CandidateEval[] = [];
 
+      const hasFreshCleanCandidate = prominentStoryPackets.some((pkt) => {
+        const lDate = pkt.leadArticle?.pubDate || selectedDate;
+        const dDays = Math.max(0, Math.round((new Date(selectedDate).getTime() - new Date(lDate).getTime()) / (1000 * 60 * 60 * 24)));
+        return dDays <= 1 && pkt.facts.length > 0;
+      });
+
       // Prefer prominence-ranked major stories (Parts 1-3) over routine single articles
-      for (const storyPkt of prominentStoryPackets) {
+      for (let idx = 0; idx < prominentStoryPackets.length; idx++) {
+        const storyPkt = prominentStoryPackets[idx];
+        const rankNum = idx + 1;
         const itemKey = `prominence:${storyPkt.id}`;
-        if (isKeyBlocked(itemKey)) continue;
-        if (serverRotationState.airedArticleIds.has(storyPkt.id)) continue;
-        const normH = (storyPkt.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normH && serverRotationState.airedHeadlinesNorm.has(normH)) continue;
-
-        if (storyPkt.facts.length === 0) continue;
-
         const leadPubDate = storyPkt.leadArticle?.pubDate || selectedDate;
         const diffMs = new Date(selectedDate).getTime() - new Date(leadPubDate).getTime();
         const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+
+        if (isKeyBlocked(itemKey) || serverRotationState.airedArticleIds.has(storyPkt.id)) {
+          candidateEvaluations.push({
+            rank: rankNum,
+            type: 'major_news',
+            headline: storyPkt.headline || storyPkt.topicTitle,
+            prominenceScore: storyPkt.prominenceScore,
+            leadPubDate,
+            outcome: 'rejected',
+            attempts: 0,
+            rejectionReasons: ['already aired or blacklisted in session'],
+          });
+          continue;
+        }
+        const normH = (storyPkt.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normH && serverRotationState.airedHeadlinesNorm.has(normH)) {
+          candidateEvaluations.push({
+            rank: rankNum,
+            type: 'major_news',
+            headline: storyPkt.headline || storyPkt.topicTitle,
+            prominenceScore: storyPkt.prominenceScore,
+            leadPubDate,
+            outcome: 'rejected',
+            attempts: 0,
+            rejectionReasons: ['headline already aired in session'],
+          });
+          continue;
+        }
+
+        if (storyPkt.facts.length === 0) {
+          const rejectReason = 'no clean body sentences available (all candidate text was index-style or empty)';
+          console.log(`[Major News Candidate Skipped] rank=${rankNum} headline="${storyPkt.headline}" reason="${rejectReason}"`);
+          candidateEvaluations.push({
+            rank: rankNum,
+            type: 'major_news',
+            headline: storyPkt.headline || storyPkt.topicTitle,
+            prominenceScore: storyPkt.prominenceScore,
+            leadPubDate,
+            outcome: 'rejected',
+            attempts: 0,
+            rejectionReasons: [rejectReason],
+          });
+          continue;
+        }
+
+        if (hasFreshCleanCandidate && diffDays > 1) {
+          const rejectReason = `stale lead article (${leadPubDate} is ${diffDays} days before broadcastDate ${selectedDate}; fresher page-1 leads exist)`;
+          console.log(`[Major News Candidate Skipped] rank=${rankNum} headline="${storyPkt.headline}" reason="${rejectReason}"`);
+          candidateEvaluations.push({
+            rank: rankNum,
+            type: 'major_news',
+            headline: storyPkt.headline || storyPkt.topicTitle,
+            prominenceScore: storyPkt.prominenceScore,
+            leadPubDate,
+            outcome: 'rejected',
+            attempts: 0,
+            rejectionReasons: [rejectReason],
+          });
+          continue;
+        }
+
         let timePhrase = "in today's paper";
         if (diffDays === 1) timePhrase = "in yesterday's paper";
         else if (diffDays <= 3 && diffDays > 1) timePhrase = 'a few days ago';
         else if (diffDays > 3) timePhrase = 'earlier this week';
+
+        const evalLogEntry: CandidateEvaluationLog = {
+          rank: rankNum,
+          type: 'major_news',
+          headline: storyPkt.headline || storyPkt.topicTitle,
+          prominenceScore: storyPkt.prominenceScore,
+          leadPubDate,
+          outcome: 'not_reached',
+          attempts: 0,
+          rejectionReasons: [],
+        };
+        candidateEvaluations.push(evalLogEntry);
 
         majorNewsCandidates.push({
           type: 'major_news',
@@ -1440,13 +1571,15 @@ async function startServer() {
             targetSongArtist: undefined,
             facts: storyPkt.facts,
             factKeys: [itemKey],
+            _evalLog: evalLogEntry,
           },
         });
-        if (majorNewsCandidates.length >= 3) break;
+        if (majorNewsCandidates.length >= 6) break;
       }
 
-      // If no prominent story candidates available, fall back to tiered almanac major news entries
-      if (majorNewsCandidates.length === 0) {
+      // Always append clean almanac major news fallback entries at the end of majorNewsCandidates
+      // so if all prominent story candidates are rejected (e.g. early 1960s index-only clusters), the next clean body prose article is tried
+      if (majorNewsCandidates.length <= 2) {
         for (const { entry, tierInfo } of selectTieredNewsEntries('major_news')) {
           const itemKey = `almanac:${entry.id}`;
           const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
@@ -1454,7 +1587,23 @@ async function startServer() {
             console.log(`[News Candidate Skipped] type=major_news key=${itemKey} reason="too little verified material (${majorMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
             continue;
           }
-          const subFacts = majorMaterial.facts;
+          const subFacts = majorMaterial.facts.filter(
+            (f) => isCleanBodySentence(f.text, entry.headline) && lintReadAloudScript(f.text).valid
+          );
+          if (subFacts.length === 0) {
+            continue;
+          }
+          const almanacEvalLog: CandidateEvaluationLog = {
+            rank: candidateEvaluations.length + 1,
+            type: 'major_news',
+            headline: entry.headline,
+            prominenceScore: entry.interestScore || 70,
+            leadPubDate: entry.printDate || selectedDate,
+            outcome: 'not_reached',
+            attempts: 0,
+            rejectionReasons: [],
+          };
+          candidateEvaluations.push(almanacEvalLog);
           majorNewsCandidates.push({
             type: 'major_news',
             category: 'major_news',
@@ -1482,6 +1631,7 @@ async function startServer() {
               targetSongArtist: undefined,
               facts: subFacts,
               factKeys: [itemKey],
+              _evalLog: almanacEvalLog,
             },
           });
           if (majorNewsCandidates.length >= 8) break;
@@ -1754,12 +1904,15 @@ async function startServer() {
 
           const packet = cand.packet;
           const itemKey = cand.itemKey;
+          const evalLog: CandidateEvaluationLog | undefined = packet?._evalLog;
 
           try {
             let scriptText = '';
             let unsupportedClaims: string[] = [];
             let valResult: any = null;
             let candidateOpenerUsed = '';
+            let finalPathUsed: 'model' | 'gemini_fallback' | 'extractive' = 'model';
+            const attemptRejectionReasons: string[] = [];
 
             // LLM Generation & Retries (Requirement 2: Up to 5 attempts for major_news, feeding validator rejection back)
             const isMajorNews = cand.type === 'major_news';
@@ -1774,6 +1927,13 @@ async function startServer() {
                 scriptText = scriptRes.scriptText;
                 unsupportedClaims = scriptRes.unsupportedClaims || [];
                 candidateOpenerUsed = scriptRes.openerUsed || '';
+              } else {
+                valResult = { valid: false, rejectedReason: scriptRes.error || 'empty model draft' };
+                if (scriptRes.isUnavailable) {
+                  // Do not burn 5 retries against an unreachable local endpoint
+                  attemptRejectionReasons.push(`Attempt 1: ${scriptRes.error || 'writer unavailable'}`);
+                  currentAttempt = maxDraftAttempts;
+                }
               }
             }
             let totalWriterMs = Date.now() - tWriterStart;
@@ -1795,11 +1955,14 @@ async function startServer() {
                 isModelDraft: true,
               });
               totalValidatorMs += (Date.now() - tValStart);
+            }
 
+            if (valResult) {
               while ((!valResult.valid || unsupportedClaims.length > 0) && currentAttempt < maxDraftAttempts) {
                 lastFailureReason = !valResult.valid
                   ? (valResult.rejectedReason || 'validation failed')
                   : `audit unsupported claims: ${unsupportedClaims.join('; ')}`;
+                attemptRejectionReasons.push(`Attempt ${currentAttempt}: ${lastFailureReason}`);
                 
                 console.log(`[Segment Candidate Attempt ${currentAttempt} Failed] type=${cand.type} key=${cand.itemKey || 'none'} reason="${lastFailureReason}" -> Retrying attempt ${currentAttempt + 1}/${maxDraftAttempts} with exact reason`);
 
@@ -1832,20 +1995,86 @@ async function startServer() {
                     });
                     totalValidatorMs += (Date.now() - tVal2Start);
                     console.log(`[Segment Candidate Attempt ${currentAttempt}] type=${cand.type} key=${cand.itemKey || 'none'} valid=${valResult.valid} reason="${valResult.rejectedReason || 'PASS'}"`);
+                  } else {
+                    valResult = { valid: false, rejectedReason: regenRes.error || 'empty regeneration response' };
+                    if (regenRes.isUnavailable) break;
                   }
                 } else {
                   break;
                 }
               }
 
-              let usedExtractiveFallback = false;
-              // Requirement 2: If all attempts fail for major_news, use the deterministic extractive path built from packet facts plus lead-in
+              // Record final attempt failure reason if loop exhausted
+              if ((!valResult.valid || unsupportedClaims.length > 0) && attemptRejectionReasons.length === 0) {
+                const finalFail = !valResult.valid
+                  ? (valResult.rejectedReason || 'validation failed')
+                  : `audit unsupported claims: ${unsupportedClaims.join('; ')}`;
+                attemptRejectionReasons.push(`Attempt ${currentAttempt}: ${finalFail}`);
+              } else if (!valResult.valid || unsupportedClaims.length > 0) {
+                const finalFail = !valResult.valid
+                  ? (valResult.rejectedReason || 'validation failed')
+                  : `audit unsupported claims: ${unsupportedClaims.join('; ')}`;
+                const lastRecorded = attemptRejectionReasons[attemptRejectionReasons.length - 1] || '';
+                if (!lastRecorded.startsWith(`Attempt ${currentAttempt}:`)) {
+                  attemptRejectionReasons.push(`Attempt ${currentAttempt}: ${finalFail}`);
+                }
+              }
+
+              // Round 6 Item 8 Option: Try one Gemini-writer attempt before extractive fallback when local model fails all attempts
+              if (isMajorNews && (!valResult || !valResult.valid || unsupportedClaims.length > 0) && process.env.GEMINI_API_KEY && provider === 'lmstudio') {
+                try {
+                  const defaultGeminiModel = process.env.GEMINI_TEXT_MODEL_FALLBACK?.trim() || 'gemini-3.5-flash-lite';
+                  const geminiFallbackWriter = new GeminiScriptWriterProvider(process.env.GEMINI_API_KEY, defaultGeminiModel, 'gemini-3.1-flash-lite');
+                  const gemRetryReason = attemptRejectionReasons[attemptRejectionReasons.length - 1] || '';
+                  const gemRes = await geminiFallbackWriter.writeSegmentBreakScript(
+                    buildWriterInput(packet, `Previous draft failed (${gemRetryReason}). Open with the subject of Fact [1] in your own words. Use ONLY proper names from the Fact Sheet.`)
+                  );
+                  currentAttempt++;
+                  if (gemRes.success && gemRes.scriptText) {
+                    let gemScript = gemRes.scriptText;
+                    const gemOrphan = resolveOrphanPronounOpening(gemScript, packet.targetSongTitle, packet.targetSongArtist);
+                    if (gemOrphan.replaced) gemScript = gemOrphan.resolvedText;
+                    const gemVal = validateSegmentBreakOutput(gemScript, {
+                      selectedDate,
+                      factPacket: packet,
+                      isModelDraft: true,
+                    });
+                    const gemUnsupported = gemRes.unsupportedClaims || [];
+                    if (gemVal.valid && gemUnsupported.length === 0) {
+                      scriptText = gemScript;
+                      valResult = gemVal;
+                      unsupportedClaims = [];
+                      if (gemRes.openerUsed) candidateOpenerUsed = gemRes.openerUsed;
+                      finalPathUsed = 'gemini_fallback';
+                      console.log(`[Segment Candidate Gemini Fallback PASS] type=${cand.type} key=${cand.itemKey || 'none'} on attempt ${currentAttempt}`);
+                    } else {
+                      const gemFail = !gemVal.valid ? (gemVal.rejectedReason || 'validation failed') : `audit unsupported claims: ${gemUnsupported.join('; ')}`;
+                      attemptRejectionReasons.push(`Attempt ${currentAttempt} (Gemini): ${gemFail}`);
+                    }
+                  } else {
+                    attemptRejectionReasons.push(`Attempt ${currentAttempt} (Gemini): ${gemRes.error || 'empty response'}`);
+                  }
+                } catch (gemErr: any) {
+                  attemptRejectionReasons.push(`Attempt ${currentAttempt + 1} (Gemini error): ${gemErr?.message}`);
+                }
+              }
+
+              // Requirement 2 & Round 6 Item 1: If all model attempts fail for major_news, try deterministic extractive path built from clean body sentences.
+              // If extractive segment is empty or fails read-aloud lint, reject this candidate and continue to the next-ranked story!
               if (isMajorNews && (!valResult || !valResult.valid || unsupportedClaims.length > 0)) {
-                console.log(`[Segment Candidate Extractive Fallback] type=${cand.type} key=${cand.itemKey || 'none'} after ${currentAttempt} failed model attempts. Building deterministic extractive segment from packet facts.`);
-                scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
-                valResult = { valid: true };
-                unsupportedClaims = [];
-                usedExtractiveFallback = true;
+                console.log(`[Segment Candidate Extractive Fallback] type=${cand.type} key=${cand.itemKey || 'none'} after ${currentAttempt} failed model attempts. Building deterministic extractive segment from clean body sentences.`);
+                const extractiveText = buildNaturalExtractiveSegment(packet, selectedDate);
+                const extractiveLint = extractiveText ? lintReadAloudScript(extractiveText) : { valid: false, rejectedReason: 'no clean body sentences available for extractive fallback' };
+                if (extractiveText && extractiveLint.valid) {
+                  scriptText = extractiveText;
+                  valResult = { valid: true };
+                  unsupportedClaims = [];
+                  finalPathUsed = 'extractive';
+                } else {
+                  const extFailReason = `extractive fallback rejected: ${extractiveLint.rejectedReason || 'no clean body text'}`;
+                  attemptRejectionReasons.push(extFailReason);
+                  valResult = { valid: false, rejectedReason: extFailReason };
+                }
               }
 
               // When audit flags sentences, delete only those sentences and air the rest if 2 or more supported sentences remain.
@@ -1982,6 +2211,12 @@ async function startServer() {
                 // Final post-assembly check:
                 // Since model body and closer were each validated against their respective rules,
                 // verify only structural invariants (no exclamation marks, length, etc.) without re-validating proper names across the composite text.
+                if (evalLog) {
+                  evalLog.outcome = 'aired';
+                  evalLog.attempts = currentAttempt;
+                  evalLog.rejectionReasons = attemptRejectionReasons;
+                  evalLog.finalPath = finalPathUsed;
+                }
                 if (cand.type === 'major_news' || cand.type === 'music_news') {
                   newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
                 }
@@ -1995,6 +2230,11 @@ async function startServer() {
                 const failReason = !valResult?.valid
                   ? `validator rejected: ${valResult?.rejectedReason}`
                   : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
+                if (evalLog) {
+                  evalLog.outcome = 'rejected';
+                  evalLog.attempts = currentAttempt;
+                  evalLog.rejectionReasons = attemptRejectionReasons.length > 0 ? attemptRejectionReasons : [failReason];
+                }
                 if (cand.type === 'major_news' || cand.type === 'music_news') {
                   newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
                   console.log(`[Major News Candidate Skipped] rank=${attemptsThisCategory} headline="${packet.headline || packet.topicTitle || 'unknown'}" reason="${failReason}"`);
@@ -2010,6 +2250,11 @@ async function startServer() {
               }
             } else {
               const failReason = 'script generation returned empty';
+              if (evalLog) {
+                evalLog.outcome = 'rejected';
+                evalLog.attempts = currentAttempt;
+                evalLog.rejectionReasons = [failReason];
+              }
               if (cand.type === 'major_news' || cand.type === 'music_news') {
                 newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
                 console.log(`[Major News Candidate Skipped] rank=${attemptsThisCategory} headline="${packet.headline || packet.topicTitle || 'unknown'}" reason="${failReason}"`);
@@ -2023,6 +2268,11 @@ async function startServer() {
             }
           } catch (err: any) {
             const failReason = `generation error: ${err?.message}`;
+            if (evalLog) {
+              evalLog.outcome = 'rejected';
+              evalLog.attempts = 1;
+              evalLog.rejectionReasons = [failReason];
+            }
             if (cand.type === 'major_news' || cand.type === 'music_news') {
               newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
             }
@@ -2390,6 +2640,7 @@ async function startServer() {
           nytFunnel,
           newsDraftAttempts,
           newsSkippedReason,
+          candidateEvaluations,
         },
         handoffGroup: chosenHandoffGroup,
         handoffTemplate: chosenHandoffTemplate,

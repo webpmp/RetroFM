@@ -1,0 +1,861 @@
+================================================================================
+ROUND 6 VERIFICATION RUN (Generated 2026-11-12T19:51:33.700Z)
+================================================================================
+
+--------------------------------------------------------------------------------
+DATE: 1962-10-23
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1962-10-23:
+  #1 [Score 375.8] "BIG FORCE MASSES TO BLOCKADE CUBA; Armada Is Under Orders to Open Fire if Necessary-- All Troops Are Alerted U.S. Assembled Massive Military Force in the Carribbean to Impose the Blockade MORE NAVAL UNITS JOIN PATROL SHIPS Pentagon Confident It Can Carry Out Order--Families to Leave Base in Cuba" (articles: 10, fp: 8, dates: 1962-10-22..1962-10-23)
+  #2 [Score 265.3] "INDIANS FALL BACK AS CHINESE PRESS FRONTIER ATTACK; Nehru Vows Lost Territory Will Be Retaken--Bhutan Gets Peking Warning INDIANS FALL BACK IN HARD FIGHTING" (articles: 5, fp: 4, dates: 1962-10-21..1962-10-23)
+  #3 [Score 230.4] "KENNEDY DECIDES ON HOUSING EDICT; Plans Ban on Segregation in U.S.-Aided Building After Election Day KENNEDY DECIDES ON HOUSING EDICT" (articles: 11, fp: 4, dates: 1962-10-20..1962-10-23)
+  #4 [Score 220.2] "TRAFFIC DELAYED AT BERLIN BORDER; Reds Start Intensive Check of Civilian Trucks an Hour Before Kennedy Speech TRAFFIC TO BERLIN IS SLOWED BY REDS" (articles: 11, fp: 2, dates: 1962-10-20..1962-10-23)
+  #5 [Score 219.5] "PEKING REPORTS INDIAN ASSAULTS; Reds Say 'Frenzied' Attacks in Tibet and Ladakh Areas Caused Them Heavy Loss PEKING REPORTS INDIAN ASSAULTS" (articles: 6, fp: 2, dates: 1962-10-20..1962-10-23)
+  #6 [Score 202] "U.S. Bids U.N. Bar China; Denounces Attack on India; U.S. BIDS U.N. BAR COMMUNIST CHINA" (articles: 8, fp: 1, dates: 1962-10-21..1962-10-23)
+  #7 [Score 201.2] "PRESIDENT URGES A WORLD PARLEY TO EASE TARIFFS; Tells Diefenbaker He Wants to Take Full Advantage of New Trade Act" (articles: 3, fp: 2, dates: 1962-10-20..1962-10-23)
+  #8 [Score 194.1] "TOP AIDES CONFER; U.S. Forces Maneuver Off Puerto Rico-- Link Is Denied TOP AIDES CONFER WITH PRESIDENT Big U.S. Force Manuevers Off Puerto Rico--Link to Parleys Denied" (articles: 2, fp: 2, dates: 1962-10-22..1962-10-23)
+  #9 [Score 186.7] "U.S. JUDGES GIVEN POWER TO REQUIRE VOTE FOR NEGROES; High Court Upholds Order Forcing the Registration of 54 in Alabama County HIGH COURT RULES FOR NEGRO VOTERS" (articles: 7, fp: 2, dates: 1962-10-20..1962-10-23)
+  #10 [Score 183.3] "CITY LABOR PANEL SNUBS DEMOCRATS; Central Council, in Switch, Rules Out Endorsements for Any State Office CITY LABOR BARS ROLE IN ELECTION" (articles: 4, fp: 2, dates: 1962-10-19..1962-10-22)
+Next Song Selected (Era-Matched): "Monster Mash" by Bobby "Boris" Pickett And The Crypt-Kickers (1962-10-20)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 375.8, pubDate=1962-10-23] "BIG FORCE MASSES TO BLOCKADE CUBA; Armada Is Under Orders to Open Fire if Necessary-- All Troops Are Alerted U.S. Assembled Massive Military Force in the Carribbean to Impose the Blockade MORE NAVAL UNITS JOIN PATROL SHIPS Pentagon Confident It Can Carry Out Order--Families to Leave Base in Cuba"
+  - Rank #2 [REJECTED] (attempts=0) [Score 265.3, pubDate=1962-10-22] "INDIANS FALL BACK AS CHINESE PRESS FRONTIER ATTACK; Nehru Vows Lost Territory Will Be Retaken--Bhutan Gets Peking Warning INDIANS FALL BACK IN HARD FIGHTING" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 230.4, pubDate=1962-10-22] "KENNEDY DECIDES ON HOUSING EDICT; Plans Ban on Segregation in U.S.-Aided Building After Election Day KENNEDY DECIDES ON HOUSING EDICT" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 220.2, pubDate=1962-10-23] "TRAFFIC DELAYED AT BERLIN BORDER; Reds Start Intensive Check of Civilian Trucks an Hour Before Kennedy Speech TRAFFIC TO BERLIN IS SLOWED BY REDS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 219.5, pubDate=1962-10-20] "PEKING REPORTS INDIAN ASSAULTS; Reds Say 'Frenzied' Attacks in Tibet and Ladakh Areas Caused Them Heavy Loss PEKING REPORTS INDIAN ASSAULTS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 201.2, pubDate=1962-10-20] "PRESIDENT URGES A WORLD PARLEY TO EASE TARIFFS; Tells Diefenbaker He Wants to Take Full Advantage of New Trade Act" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 194.1, pubDate=1962-10-22] "TOP AIDES CONFER; U.S. Forces Maneuver Off Puerto Rico-- Link Is Denied TOP AIDES CONFER WITH PRESIDENT Big U.S. Force Manuevers Off Puerto Rico--Link to Parleys Denied" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 186.7, pubDate=1962-10-23] "U.S. JUDGES GIVEN POWER TO REQUIRE VOTE FOR NEGROES; High Court Upholds Order Forcing the Registration of 54 in Alabama County HIGH COURT RULES FOR NEGRO VOTERS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 183.3, pubDate=1962-10-19] "CITY LABOR PANEL SNUBS DEMOCRATS; Central Council, in Switch, Rules Out Endorsements for Any State Office CITY LABOR BARS ROLE IN ELECTION" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The U.S. Government continues to closely monitor the Soviet military activities in Cuba as promised. Orders have been issued for a massive naval force to assemble and patrol the Caribbean, prepared to impose a blockade if necessary. Officials are confident that these units can carry out their orders effectively. Families in potentially affected areas are being advised to leave. Let's spend a few minutes with Bobby "Boris" Pickett And The Crypt-Kickers and "Monster Mash"."
+
+--------------------------------------------------------------------------------
+DATE: 1968-06-06
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1968-06-06:
+  #1 [Score 298.9] "KENNEDY IS DEAD, VICTIM OF ASSASSIN; SURGERY IN VAIN President Calls Death Tragedy, Proclaims a Day of Mourning Kennedy Dies, Victim of Assassin, After Doctors Perform 3-Hour Brain Operation ARAB ARRAIGNED; $250,000 BAIL SET Revolver Traced to Suspect -- Senator, 42, Failed to Regain Consciousness." (articles: 4, fp: 4, dates: 1968-06-06)
+  #2 [Score 269.4] "KENNEDY SHOT AND GRAVELY WOUNDED AFTER WINNING CALIFORNIA PRIMARY; SUSPECT SEIZED IN LOS ANGELES HOTEL; CONDITION 'STABLE' Aide Reports Senator Is 'Breathing Well' --Last Rites Given KENNEDY IS SHOT BY YOUTH ON COAST" (articles: 6, fp: 4, dates: 1968-06-03..1968-06-06)
+  #3 [Score 254] "SAIGON SHELLED IN HEAVY ATTACK; VESSELS STRUCK; 40 Rounds of Mortar and Rocket Fire Hit Capital and Its Suburbs" (articles: 8, fp: 4, dates: 1968-06-02..1968-06-05)
+  #4 [Score 249.3] "KENNEDY DISPUTES M'CARTHY ON WAR IN TV DISCUSSION; Rivals Differ Over Whether Peace Parleys Should Urge a Coalition Government" (articles: 14, fp: 3, dates: 1968-06-02..1968-06-05)
+  #5 [Score 246.5] "JERUSALEM POLICE CLASH WITH ARABS; Israelis Halt Procession on Anniversary of War -- U.N. Council Meets on Fighting Police and Arab Paraders Clash At the Edge of Old Jerusalem" (articles: 3, fp: 3, dates: 1968-06-04..1968-06-06)
+  #6 [Score 226.3] "JOHNSON APPOINTS PANEL ON VIOLENCE; 6 IN RACE GUARDED Secret Service Given Campaign Security Task by President Johnson Names a Panel on Violence and Orders a Guard for Presidential Candidates HE VOICES HORROR ON THE SHOOTING Pleads, in Television Talk, for 'End to Violence and Preaching of Violence'" (articles: 3, fp: 2, dates: 1968-06-05..1968-06-06)
+  #7 [Score 221.7] "MARCUS TESTIFIES DE SAPIO HAD ROLE IN A CON ED DEAL; Says Itkin Sought Delay of Permit to Aid Own Scheme With Ex-Tammany Head Marcus Testifies De Sapio Had Role in Con Ed Deal" (articles: 4, fp: 3, dates: 1968-06-03..1968-06-06)
+  #8 [Score 183.2] "HUGHES FORCES VICTOR IN JERSEY; McCarthy Insurgents Win 20 of 80 Delegate Seats In Light Balloting Jersey Governor Is Given Wide Lead" (articles: 4, fp: 2, dates: 1968-06-02..1968-06-05)
+  #9 [Score 173.7] "HOME LOAN RATES TO RISE IN JERSEY; Interest Ceiling of 8 Per Cent Passed by Legislature -- Cigarette Tax Increased" (articles: 4, fp: 3, dates: 1968-06-01..1968-06-04)
+  #10 [Score 172] "POMPIDOU URGES RETURN TO WORK; Also Says Issue in French Election Is Communism" (articles: 3, fp: 3, dates: 1968-06-01..1968-06-04)
+Next Song Selected (Era-Matched): "Mrs. Robinson" by Simon and Garfunkel (1968-06-01)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 298.9, pubDate=1968-06-06] "KENNEDY IS DEAD, VICTIM OF ASSASSIN; SURGERY IN VAIN President Calls Death Tragedy, Proclaims a Day of Mourning Kennedy Dies, Victim of Assassin, After Doctors Perform 3-Hour Brain Operation ARAB ARRAIGNED; $250,000 BAIL SET Revolver Traced to Suspect -- Senator, 42, Failed to Regain Consciousness." | reasons: Attempt 1: Unverified proper name "Democratic" not found in fact packet
+  - Rank #2 [REJECTED] (attempts=0) [Score 269.4, pubDate=1968-06-05] "KENNEDY SHOT AND GRAVELY WOUNDED AFTER WINNING CALIFORNIA PRIMARY; SUSPECT SEIZED IN LOS ANGELES HOTEL; CONDITION 'STABLE' Aide Reports Senator Is 'Breathing Well' --Last Rites Given KENNEDY IS SHOT BY YOUTH ON COAST" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 254, pubDate=1968-06-04] "SAIGON SHELLED IN HEAVY ATTACK; VESSELS STRUCK; 40 Rounds of Mortar and Rocket Fire Hit Capital and Its Suburbs" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 249.3, pubDate=1968-06-02] "KENNEDY DISPUTES M'CARTHY ON WAR IN TV DISCUSSION; Rivals Differ Over Whether Peace Parleys Should Urge a Coalition Government" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 246.5, pubDate=1968-06-06] "JERUSALEM POLICE CLASH WITH ARABS; Israelis Halt Procession on Anniversary of War -- U.N. Council Meets on Fighting Police and Arab Paraders Clash At the Edge of Old Jerusalem" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 226.3, pubDate=1968-06-06] "JOHNSON APPOINTS PANEL ON VIOLENCE; 6 IN RACE GUARDED Secret Service Given Campaign Security Task by President Johnson Names a Panel on Violence and Orders a Guard for Presidential Candidates HE VOICES HORROR ON THE SHOOTING Pleads, in Television Talk, for 'End to Violence and Preaching of Violence'" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 221.7, pubDate=1968-06-06] "MARCUS TESTIFIES DE SAPIO HAD ROLE IN A CON ED DEAL; Says Itkin Sought Delay of Permit to Aid Own Scheme With Ex-Tammany Head Marcus Testifies De Sapio Had Role in Con Ed Deal" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 183.2, pubDate=1968-06-05] "HUGHES FORCES VICTOR IN JERSEY; McCarthy Insurgents Win 20 of 80 Delegate Seats In Light Balloting Jersey Governor Is Given Wide Lead" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 173.7, pubDate=1968-06-04] "HOME LOAN RATES TO RISE IN JERSEY; Interest Ceiling of 8 Per Cent Passed by Legislature -- Cigarette Tax Increased" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 172, pubDate=1968-06-04] "POMPIDOU URGES RETURN TO WORK; Also Says Issue in French Election Is Communism" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Robert F. Kennedy's death has cast a shadow over the 1968 Presidential campaign. Details are still coming in, but it may solidify the nominations for Vice President Humphrey and Richard Nixon as the front-runners for their respective parties. The nation grapples with this profound tragedy. Coming up, it's "Mrs. Robinson" by Simon and Garfunkel."
+
+--------------------------------------------------------------------------------
+DATE: 1970-05-05
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1970-05-05:
+  #1 [Score 301.9] "37 COLLEGE CHIEFS URGE NIXON MOVE FOR PROMPT PEACE" (articles: 4, fp: 4, dates: 1970-05-02..1970-05-05)
+  #2 [Score 258.7] "BOMBING OF NORTH CALLED DEFENSIVE" (articles: 3, fp: 3, dates: 1970-05-02..1970-05-05)
+  #3 [Score 239] "GUARD IS LEAVING CALM NEW HAVEN IN WAKE OF RALLY" (articles: 7, fp: 4, dates: 1970-05-01..1970-05-04)
+  #4 [Score 210.8] "WAR AND ECONOMY SPUR STOCK DROPS" (articles: 2, fp: 1, dates: 1970-05-03..1970-05-05)
+  #5 [Score 210.7] "U.S. SAYS BIG RAIDS IN NORTH ARE OVER" (articles: 4, fp: 2, dates: 1970-05-05)
+  #6 [Score 210.6] "HIGH COURT BACKS CHURCHES' RIGHT TO TAX EXEMPTION" (articles: 2, fp: 2, dates: 1970-05-02..1970-05-05)
+  #7 [Score 209.1] "PNOMPENH GIVEN NO PRIOR NOTICE" (articles: 3, fp: 3, dates: 1970-05-01..1970-05-04)
+  #8 [Score 203.6] "4 Kent State Students Killed by Troops" (articles: 3, fp: 1, dates: 1970-05-03..1970-05-05)
+  #9 [Score 197.7] "U.S. Forces Employ Artillery and Aircraft to Strike Foe in Cambodia" (articles: 8, fp: 3, dates: 1970-05-02..1970-05-05)
+  #10 [Score 183.9] "RISING PERIL SEEN" (articles: 3, fp: 3, dates: 1970-04-30..1970-05-03)
+Next Song Selected (Era-Matched): "ABC" by Jackson 5 (1970-05-02)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 301.9, pubDate=1970-05-05] "37 COLLEGE CHIEFS URGE NIXON MOVE FOR PROMPT PEACE"
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, College presidents are calling for President Nixon to show a clear commitment to ending United States military involvement in Southeast Asia. Details are still coming in, but their plea emphasizes the urgency they feel about the situation. Meanwhile, Premier Aleksei N. Kosygin has criticized Nixon's decision to send American forces into Cambodia. Turn it up for Jackson 5 and "ABC"."
+
+--------------------------------------------------------------------------------
+DATE: 1975-04-30
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1975-04-30:
+  #1 [Score 337] "SAIGON ASSEMBLY EMPOWERS HUONG TO PICK SUCCESSOR" (articles: 15, fp: 5, dates: 1975-04-27..1975-04-30)
+  #2 [Score 268.5] "CAMBODIA ORDERS FOREIGNERS OUT" (articles: 7, fp: 3, dates: 1975-04-27..1975-04-30)
+  #3 [Score 227] "CABINET RESIGNS" (articles: 16, fp: 6, dates: 1975-04-23..1975-04-26)
+  #4 [Score 220.8] "DOCTORS PLANNING TREATMENT CURBS IN INSURANCE FIGHT" (articles: 6, fp: 2, dates: 1975-04-28..1975-04-30)
+  #5 [Score 217] "VIETCONG INDICATE THEY WANT MINH AS SAIGON LEADER" (articles: 16, fp: 4, dates: 1975-04-25..1975-04-28)
+  #6 [Score 209.1] "BREZHNEV, FORD AGREE TO DELAY TALKS TILL FALL" (articles: 5, fp: 2, dates: 1975-04-27..1975-04-30)
+  #7 [Score 196.1] "FORD UNITY PLEA" (articles: 2, fp: 2, dates: 1975-04-29..1975-04-30)
+  #8 [Score 194.5] "REFUGEE AIRLIFT TO GUAM RESUMES" (articles: 6, fp: 4, dates: 1975-04-25..1975-04-28)
+  #9 [Score 193.9] "HEAVY USERS FACE CON ED INCREASE" (articles: 3, fp: 1, dates: 1975-04-27..1975-04-30)
+  #10 [Score 177.7] "VOTE BY ASSEMBLY" (articles: 5, fp: 3, dates: 1975-04-26..1975-04-28)
+Next Song Selected (Era-Matched): "(Hey Won't You Play) Another Somebody Done Somebody Wrong Song" by B.J. Thomas (1975-04-26)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 337, pubDate=1975-04-27] "SAIGON ASSEMBLY EMPOWERS HUONG TO PICK SUCCESSOR" | reasons: stale lead article (1975-04-27 is 3 days before broadcastDate 1975-04-30; fresher page-1 leads exist)
+  - Rank #2 [AIRED] (attempts=1 | path=model) [Score 268.5, pubDate=1975-04-30] "CAMBODIA ORDERS FOREIGNERS OUT"
+  - Rank #3 [REJECTED] (attempts=0) [Score 227, pubDate=1975-04-24] "CABINET RESIGNS" | reasons: stale lead article (1975-04-24 is 6 days before broadcastDate 1975-04-30; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 220.8, pubDate=1975-04-28] "DOCTORS PLANNING TREATMENT CURBS IN INSURANCE FIGHT" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 217, pubDate=1975-04-25] "VIETCONG INDICATE THEY WANT MINH AS SAIGON LEADER" | reasons: stale lead article (1975-04-25 is 5 days before broadcastDate 1975-04-30; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 209.1, pubDate=1975-04-27] "BREZHNEV, FORD AGREE TO DELAY TALKS TILL FALL" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 196.1, pubDate=1975-04-30] "FORD UNITY PLEA" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 194.5, pubDate=1975-04-28] "REFUGEE AIRLIFT TO GUAM RESUMES" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 193.9, pubDate=1975-04-30] "HEAVY USERS FACE CON ED INCREASE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 177.7, pubDate=1975-04-28] "VOTE BY ASSEMBLY" | reasons: stale lead article (1975-04-28 is 2 days before broadcastDate 1975-04-30; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Cambodia has made it clear that foreign military bases will not be permitted within its borders. The new Cambodian Government issued these orders Monday, stating that no FOREIGNERS would establish such facilities in Cambodia. Details are still coming in regarding how this policy will be enforced. Take a listen to B.J. Thomas with "(Hey Won't You Play) Another Somebody Done Somebody Wrong Song"."
+
+--------------------------------------------------------------------------------
+DATE: 1988-07-04
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1988-07-04:
+  #1 [Score 262.1] "290 REPORTED DEAD; A TRAGEDY, REAGAN SAYS; ACTION IS DEFENDED" (articles: 2, fp: 2, dates: 1988-07-04)
+  #2 [Score 218.5] "REBEL ARCHBISHOP ANOINTS 4 BISHOPS" (articles: 5, fp: 2, dates: 1988-07-01..1988-07-04)
+  #3 [Score 189.9] "SWEEPING POLITICAL REVISION OF SOVIET SYSTEM APPROVED IN STORMY MEETING OF PARTY" (articles: 3, fp: 2, dates: 1988-07-02..1988-07-03)
+  #4 [Score 183.8] "Set Back in Early Skirmishes, Bush Gains With New Attack" (articles: 3, fp: 1, dates: 1988-06-30..1988-07-03)
+  #5 [Score 175] "5 Firefighters Killed in Jersey as a Roof Collapses" (articles: 3, fp: 3, dates: 1988-06-29..1988-07-02)
+  #6 [Score 169.5] "Scattered U.S. Aides Link Up by Phone On Airliner Incident" (articles: 5, fp: 1, dates: 1988-07-04)
+  #7 [Score 164.1] "SOVIET CONFERENCE HEARS MEMBER ASK GROMYKO'S OUSTER" (articles: 4, fp: 2, dates: 1988-06-29..1988-07-02)
+  #8 [Score 155.2] "Similarities With KAL Flight Are Rejected by U.S. Admiral" (articles: 2, fp: 1, dates: 1988-07-03..1988-07-04)
+  #9 [Score 147.6] "High Court Rulings Hint Move to Right" (articles: 2, fp: 1, dates: 1988-07-01..1988-07-03)
+  #10 [Score 136.3] "Federal Agency, In Shift, to Back Artificial Heart" (articles: 2, fp: 1, dates: 1988-07-02..1988-07-03)
+Next Song Selected (Era-Matched): "Dirty Diana" by Michael Jackson (1988-07-02)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 262.1, pubDate=1988-07-04] "290 REPORTED DEAD; A TRAGEDY, REAGAN SAYS; ACTION IS DEFENDED" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("a united states navy warship in the persian gulf") from source sentence (max allowed: 8)
+  - Rank #2 [REJECTED] (attempts=0) [Score 218.5, pubDate=1988-07-01] "REBEL ARCHBISHOP ANOINTS 4 BISHOPS" | reasons: stale lead article (1988-07-01 is 3 days before broadcastDate 1988-07-04; fresher page-1 leads exist)
+  - Rank #3 [REJECTED] (attempts=0) [Score 189.9, pubDate=1988-07-02] "SWEEPING POLITICAL REVISION OF SOVIET SYSTEM APPROVED IN STORMY MEETING OF PARTY" | reasons: stale lead article (1988-07-02 is 2 days before broadcastDate 1988-07-04; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 175, pubDate=1988-07-02] "5 Firefighters Killed in Jersey as a Roof Collapses" | reasons: stale lead article (1988-07-02 is 2 days before broadcastDate 1988-07-04; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 164.1, pubDate=1988-07-01] "SOVIET CONFERENCE HEARS MEMBER ASK GROMYKO'S OUSTER" | reasons: stale lead article (1988-07-01 is 3 days before broadcastDate 1988-07-04; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Iran reports a tragic incident involving one of its passenger planes shot down by forces in the Persian Gulf yesterday. The United States Navy claims it mistook the aircraft for a hostile jet fighter, leading to this unfortunate event. Details are still coming in regarding the 290 reported dead aboard the flight. Let's ease into this one with Michael Jackson and "Dirty Diana"."
+
+--------------------------------------------------------------------------------
+DATE: 1965-02-22
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1965-02-22:
+  #1 [Score 300] "POWELL ACCUSES 3 OF A MURDER HERE; Uses House Floor to Review Court Fight and Charge Police With Corruption" (articles: 7, fp: 4, dates: 1965-02-19..1965-02-22)
+  #2 [Score 270] "TOP COUNCIL ACTS; 'No Confidence' Voted Despite End of Coup Against Leader KHANH IS FACING NEW OUSTER MOVE" (articles: 6, fp: 4, dates: 1965-02-19..1965-02-22)
+  #3 [Score 242.9] "M'NAMARA FEARS 220 MILLION TOLL; Estimates a Missile War With Soviet Union Would Kill 120 Million in U.S." (articles: 10, fp: 3, dates: 1965-02-18..1965-02-21)
+  #4 [Score 241.7] "Malcolm X Shot to Death at Rally Here; Three Other Negroes Wounded -- One Is Held in Killing Malcolm X Is Shot to Death at a Rally of Black Nationalists in a Ballroom Here WOUNDED NEGRO HELD IN SLAYING Police Believe Others May Be Involved -- Long Feud With Muslims Noted" (articles: 8, fp: 2, dates: 1965-02-19..1965-02-22)
+  #5 [Score 239.5] "AGE IS A PROBLEM IN LABOR COUNCIL; Some in A.F.L.-C.I.O. Feel Older Chiefs Should Quit -- Most Are Over 65 AGE IS A PROBLEM IN LABOR COUNCIL" (articles: 7, fp: 2, dates: 1965-02-19..1965-02-22)
+  #6 [Score 215.8] "2 INQUIRIES OPEN ON RACIAL CLASH IN ALABAMA TOWN; Agents of Wallace and F.B.I. Investigating Attack by 50 Troopers on Crowd" (articles: 5, fp: 2, dates: 1965-02-18..1965-02-21)
+  #7 [Score 203.7] "VIETNAM FLARE-UP IRKS WASHINGTON; Clash Surprises Officials -- They Fear New Efforts to Exploit Confusion" (articles: 4, fp: 2, dates: 1965-02-20..1965-02-22)
+  #8 [Score 195.7] "Congo Seeks Return Of Ousted Teachers; CONGO IS ASKING TEACHERS BACK" (articles: 4, fp: 3, dates: 1965-02-19..1965-02-22)
+  #9 [Score 194.2] "DEMOCRATS TO AID NONFISCAL BILLS OF THE GOVERNOR; Zaretzki Expects Passage of Narcotics, Pollution and Other Measures" (articles: 2, fp: 2, dates: 1965-02-20..1965-02-22)
+  #10 [Score 180.6] "RANGER 8 HITS TARGET ON MOON AND RADIOS BACK 7,000 PICTURES TO AID SEARCH FOR LANDING SITE; AIM NEAR-PERFECT" (articles: 5, fp: 2, dates: 1965-02-18..1965-02-21)
+Next Song Selected (Era-Matched): "This Diamond Ring" by Gary Lewis And The Playboys (1965-02-20)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 300, pubDate=1965-02-19] "POWELL ACCUSES 3 OF A MURDER HERE; Uses House Floor to Review Court Fight and Charge Police With Corruption" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #2 [REJECTED] (attempts=0) [Score 270, pubDate=1965-02-21] "TOP COUNCIL ACTS; 'No Confidence' Voted Despite End of Coup Against Leader KHANH IS FACING NEW OUSTER MOVE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 242.9, pubDate=1965-02-19] "M'NAMARA FEARS 220 MILLION TOLL; Estimates a Missile War With Soviet Union Would Kill 120 Million in U.S." | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [AIRED] (attempts=1 | path=model) [Score 241.7, pubDate=1965-02-22] "Malcolm X Shot to Death at Rally Here; Three Other Negroes Wounded -- One Is Held in Killing Malcolm X Is Shot to Death at a Rally of Black Nationalists in a Ballroom Here WOUNDED NEGRO HELD IN SLAYING Police Believe Others May Be Involved -- Long Feud With Muslims Noted"
+  - Rank #5 [REJECTED] (attempts=0) [Score 239.5, pubDate=1965-02-22] "AGE IS A PROBLEM IN LABOR COUNCIL; Some in A.F.L.-C.I.O. Feel Older Chiefs Should Quit -- Most Are Over 65 AGE IS A PROBLEM IN LABOR COUNCIL" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 215.8, pubDate=1965-02-20] "2 INQUIRIES OPEN ON RACIAL CLASH IN ALABAMA TOWN; Agents of Wallace and F.B.I. Investigating Attack by 50 Troopers on Crowd" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 203.7, pubDate=1965-02-20] "VIETNAM FLARE-UP IRKS WASHINGTON; Clash Surprises Officials -- They Fear New Efforts to Exploit Confusion" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 195.7, pubDate=1965-02-22] "Congo Seeks Return Of Ousted Teachers; CONGO IS ASKING TEACHERS BACK" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 194.2, pubDate=1965-02-20] "DEMOCRATS TO AID NONFISCAL BILLS OF THE GOVERNOR; Zaretzki Expects Passage of Narcotics, Pollution and Other Measures" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 180.6, pubDate=1965-02-21] "RANGER 8 HITS TARGET ON MOON AND RADIOS BACK 7,000 PICTURES TO AID SEARCH FOR LANDING SITE; AIM NEAR-PERFECT" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Malcolm X spoke those powerful words last Thursday in Harlem. In a two-hour interview at his Organization for Afro-American Unity office, he described living like a man who's already dead. Details are still coming in about the context behind this striking statement. Let's get back to the music with "This Diamond Ring" by Gary Lewis And The Playboys."
+
+--------------------------------------------------------------------------------
+DATE: 1976-07-05
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1976-07-05:
+  #1 [Score 317.5] "HOSTAGES FREED AS ISRAELIS RAID UGANDA AIRPORT" (articles: 8, fp: 4, dates: 1976-07-02..1976-07-05)
+  #2 [Score 237.4] "CARTER TO BEGIN TALKS ON TICKET" (articles: 5, fp: 2, dates: 1976-07-02..1976-07-05)
+  #3 [Score 197.9] "PANOPLY OF SAILS" (articles: 3, fp: 1, dates: 1976-07-02..1976-07-05)
+  #4 [Score 193.6] "EUROPEAN REDS BACK AUTONOMY FOR EACH PARTY" (articles: 3, fp: 2, dates: 1976-07-01..1976-07-04)
+  #5 [Score 188] "HIGH COURT BARS GIVING A HUSBAND VETO ON ABORTION" (articles: 8, fp: 3, dates: 1976-06-30..1976-07-03)
+  #6 [Score 171.4] "U.S. Attorney Calls F.B.I. ‘Out of Step’" (articles: 4, fp: 2, dates: 1976-07-02..1976-07-04)
+  #7 [Score 169.9] "JERSEY ASSEMBLY DEFERS TAX ISSUE" (articles: 8, fp: 2, dates: 1976-06-30..1976-07-03)
+  #8 [Score 165.4] "LONG TO LET PANEL RESTUDY TAX BILI" (articles: 4, fp: 1, dates: 1976-07-01..1976-07-04)
+  #9 [Score 143.4] "BEIRUT RIGHTISTS SAID TO CAPTURE PALESTINIAN SITE" (articles: 6, fp: 3, dates: 1976-06-29..1976-07-02)
+  #10 [Score 135.8] "DECISION IS 7 TO 2" (articles: 2, fp: 1, dates: 1976-07-03..1976-07-04)
+Next Song Selected (Era-Matched): "Silly Love Songs" by Wings (1976-07-04)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=4 | path=model) [Score 317.5, pubDate=1976-07-04] "HOSTAGES FREED AS ISRAELIS RAID UGANDA AIRPORT" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("105 mainly israeli hostages and air france crew members") from source sentence (max allowed: 8) ;; Attempt 2: Unverified proper name "Ugandan" not found in fact packet ;; Attempt 3: Wholesale copying: reproduces 9 consecutive words ("105 mainly israeli hostages and air france crew members") from source sentence (max allowed: 8)
+  - Rank #4 [REJECTED] (attempts=0) [Score 193.6, pubDate=1976-07-01] "EUROPEAN REDS BACK AUTONOMY FOR EACH PARTY" | reasons: stale lead article (1976-07-01 is 4 days before broadcastDate 1976-07-05; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 188, pubDate=1976-07-02] "HIGH COURT BARS GIVING A HUSBAND VETO ON ABORTION" | reasons: stale lead article (1976-07-02 is 3 days before broadcastDate 1976-07-05; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 169.9, pubDate=1976-07-03] "JERSEY ASSEMBLY DEFERS TAX ISSUE" | reasons: stale lead article (1976-07-03 is 2 days before broadcastDate 1976-07-05; fresher page-1 leads exist)
+  - Rank #9 [REJECTED] (attempts=0) [Score 143.4, pubDate=1976-07-01] "BEIRUT RIGHTISTS SAID TO CAPTURE PALESTINIAN SITE" | reasons: stale lead article (1976-07-01 is 4 days before broadcastDate 1976-07-05; fresher page-1 leads exist)
+  - Rank #10 [REJECTED] (attempts=0) [Score 135.8, pubDate=1976-07-03] "DECISION IS 7 TO 2" | reasons: stale lead article (1976-07-03 is 2 days before broadcastDate 1976-07-05; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, Israeli commandos carried out a bold nighttime operation at Entebbe airport in Uganda over the weekend. They freed more than one hundred hostages and crew members from an Air France plane held by Palestinian hijackers. The daring raid successfully evacuated the victims to safety aboard Israeli aircraft. Let's take a listen to "Silly Love Songs" by Wings."
+
+--------------------------------------------------------------------------------
+DATE: 1980-11-05
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1980-11-05:
+  #1 [Score 357.7] "MUSKIE IS HEARTENED BY 'PROGRESS' MADE ON HOSTAGE RELEASE; SAYS SOLUTION MAY TAKE TIME Algeria Will Act as an Intermediary for Iran in Dealing With U.S.-- Text of Terms Delivered Official Texts Received Muskie Says He Is Pleased With 'Progress' on Iran Crisis" (articles: 12, fp: 7, dates: 1980-11-02..1980-11-05)
+  #2 [Score 322.9] "PRESIDENT CONCEDES; Republican Gains Victories in All Areas and Vows to Act on Economy Concession by Carter Reagan, Sweeping Midwest And South, Defeats Carter Pocketbook Issues Stressed G.O.P. Hopes in Senate Carter Pledge in Plains Assessments of Outcome Appeal to Anderson Backers" (articles: 6, fp: 5, dates: 1980-11-04..1980-11-05)
+  #3 [Score 235.7] "FOREIGN POLICY AIDE TO REAGAN RESIGNS TO FORESTALL ISSUE; Richard Allen Denies Impropriety Under Nixon--G.O.P. Seeks to Avoid Campaign Snag Withdrawal Termed Temporary Carter Aide Quit Earlier FOREIGN POLICY AIDE TO REAGAN RESIGNS Conflict of Interest Suggested" (articles: 25, fp: 7, dates: 1980-10-29..1980-11-01)
+  #4 [Score 218.7] "Reagan and Carter Stand Nearly Even in Last Polls; Differences on War Issue Reagan and Carter Stand Almost Even in Final Polls Effects of the Debate Male-Female Preferences Catholics and Conservatives Fears About the Economy The New York Times/CBS News Poll" (articles: 4, fp: 4, dates: 1980-11-02..1980-11-04)
+  #5 [Score 210.1] "IRAN DELAYS DEBATE ON HOSTAGE RELEASE AT LEAST TO SUNDAY; PARLIAMENT LACKS A QUORUM Some Lawmakers Oppose Solution Before the U.S. Elections-- Tempers Flare on Issue Iraq's Invasion a Factor Some Deputies at the Front Iran's Parliament Again Delays Hostage Release Vote" (articles: 7, fp: 4, dates: 1980-10-31..1980-11-03)
+  #6 [Score 166.4] "WORLD GRAIN PINCH PREDICTED FOR 1981; Agriculture Dept. Expects Lowest Ratio of Reserves in 5 Years Food as a Diplomatic Tool World Grain Pinch Predicted by Agriculture Dept. Large Wheat Crop in U.S. Specter of Belt Tightening" (articles: 3, fp: 3, dates: 1980-10-31..1980-11-03)
+  #7 [Score 156.6] "A New York Dip In Voters Posing Threat to Carter; Ballots Are Crowded New York Dip in Voters Posing a Threat to Carter City Strength Declining" (articles: 3, fp: 2, dates: 1980-11-01..1980-11-04)
+  #8 [Score 149.7] "Anderson Looks Beyond the Voting; Calls Dramatic Shifts Possible On to His Alma Mater" (articles: 6, fp: 1, dates: 1980-11-02..1980-11-05)
+  #9 [Score 149.5] "Javits Is Far Behind; Murphy and Thompson Lose D'Amato Is Victorious in New York's Senate Contest Little Emphasis on Issues" (articles: 2, fp: 1, dates: 1980-11-05)
+  #10 [Score 149.5] "The Election At a Glance; Summary of Presidential Vote THE SENATE THE HOUSE" (articles: 2, fp: 1, dates: 1980-11-05)
+Next Song Selected (Era-Matched): "Woman In Love" by Barbra Streisand (1980-11-01)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 357.7, pubDate=1980-11-04] "MUSKIE IS HEARTENED BY 'PROGRESS' MADE ON HOSTAGE RELEASE; SAYS SOLUTION MAY TAKE TIME Algeria Will Act as an Intermediary for Iran in Dealing With U.S.-- Text of Terms Delivered Official Texts Received Muskie Says He Is Pleased With 'Progress' on Iran Crisis" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("prepared a bill that would nationalize american claims against") from source sentence (max allowed: 8)
+  - Rank #3 [REJECTED] (attempts=0) [Score 235.7, pubDate=1980-10-31] "FOREIGN POLICY AIDE TO REAGAN RESIGNS TO FORESTALL ISSUE; Richard Allen Denies Impropriety Under Nixon--G.O.P. Seeks to Avoid Campaign Snag Withdrawal Termed Temporary Carter Aide Quit Earlier FOREIGN POLICY AIDE TO REAGAN RESIGNS Conflict of Interest Suggested" | reasons: stale lead article (1980-10-31 is 5 days before broadcastDate 1980-11-05; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 218.7, pubDate=1980-11-03] "Reagan and Carter Stand Nearly Even in Last Polls; Differences on War Issue Reagan and Carter Stand Almost Even in Final Polls Effects of the Debate Male-Female Preferences Catholics and Conservatives Fears About the Economy The New York Times/CBS News Poll" | reasons: stale lead article (1980-11-03 is 2 days before broadcastDate 1980-11-05; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 210.1, pubDate=1980-10-31] "IRAN DELAYS DEBATE ON HOSTAGE RELEASE AT LEAST TO SUNDAY; PARLIAMENT LACKS A QUORUM Some Lawmakers Oppose Solution Before the U.S. Elections-- Tempers Flare on Issue Iraq's Invasion a Factor Some Deputies at the Front Iran's Parliament Again Delays Hostage Release Vote" | reasons: stale lead article (1980-10-31 is 5 days before broadcastDate 1980-11-05; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 166.4, pubDate=1980-11-03] "WORLD GRAIN PINCH PREDICTED FOR 1981; Agriculture Dept. Expects Lowest Ratio of Reserves in 5 Years Food as a Diplomatic Tool World Grain Pinch Predicted by Agriculture Dept. Large Wheat Crop in U.S. Specter of Belt Tightening" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 149.7, pubDate=1980-11-04] "Anderson Looks Beyond the Voting; Calls Dramatic Shifts Possible On to His Alma Mater" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, The Carter Administration is drafting legislation aimed at centralizing American claims against Iran. This move would prevent individuals and companies from pursuing direct legal action against the Iranian Government for past grievances. Barbara Rosen, wife of an American hostage, received a cablegram from Chancellor Helmut Schmidt pledging West Germany's support in securing her husband's release along with his colleagues. This is Barbra Streisand with "Woman In Love"."
+
+--------------------------------------------------------------------------------
+DATE: 1971-06-13
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1971-06-13:
+  #1 [Score 264] "Vast Review of War Took a Year" (articles: 12, fp: 2, dates: 1971-06-13)
+  #2 [Score 191.8] "NIXON TO ENFORCE RIGHTS MEASURES FOR U.S. HOUSING" (articles: 6, fp: 3, dates: 1971-06-09..1971-06-12)
+  #3 [Score 179.9] "NIXON CRITICIZED AS MAYORS MEET" (articles: 2, fp: 1, dates: 1971-06-12..1971-06-13)
+  #4 [Score 178] "U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT" (articles: 3, fp: 2, dates: 1971-06-10..1971-06-13)
+  #5 [Score 176] "EEC BIDS U.S. ACCEPT PRINCIPLE OF PARITY IN ARMS" (articles: 6, fp: 2, dates: 1971-06-10..1971-06-12)
+  #6 [Score 172.1] "Hijacker Is Seized at Kennedy After Man Is Killed in Chicago" (articles: 3, fp: 1, dates: 1971-06-11..1971-06-13)
+  #7 [Score 160.3] "VATICAN REVISES ANNULMENT RULES" (articles: 2, fp: 1, dates: 1971-06-10..1971-06-12)
+  #8 [Score 157.9] "Tricia Nixon Takes Vows In Garden at White House" (articles: 3, fp: 1, dates: 1971-06-11..1971-06-13)
+  #9 [Score 155.9] "HARTFORD'S HOUSE VOTES RELIEF CURB" (articles: 4, fp: 2, dates: 1971-06-09..1971-06-11)
+  #10 [Score 150.6] "Senators, in Bedford‐Stuyvesant, Hear Praise for Development Unit" (articles: 2, fp: 2, dates: 1971-06-11..1971-06-12)
+Next Song Selected (Era-Matched): "Want Ads" by The Honey Cone (1971-06-12)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 264, pubDate=1971-06-13] "Vast Review of War Took a Year"
+  - Rank #2 [REJECTED] (attempts=0) [Score 191.8, pubDate=1971-06-12] "NIXON TO ENFORCE RIGHTS MEASURES FOR U.S. HOUSING" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 179.9, pubDate=1971-06-13] "NIXON CRITICIZED AS MAYORS MEET" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 178, pubDate=1971-06-13] "U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 172.1, pubDate=1971-06-12] "Hijacker Is Seized at Kennedy After Man Is Killed in Chicago" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 160.3, pubDate=1971-06-12] "VATICAN REVISES ANNULMENT RULES" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 157.9, pubDate=1971-06-13] "Tricia Nixon Takes Vows In Garden at White House" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 155.9, pubDate=1971-06-09] "HARTFORD'S HOUSE VOTES RELIEF CURB" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 150.6, pubDate=1971-06-12] "Senators, in Bedford‐Stuyvesant, Hear Praise for Development Unit" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The Pentagon papers reveal that during this phase, the United States had been secretly escalating military actions against North Vietnam and working to secure a Congressional resolution viewed as tantamount to a declaration of war. These far-reaching strategies were not hastily conceived but rather meticulously planned well before the Tonkin crisis emerged. Details are still coming in about how these plans unfolded. Don't touch that dial. Here's The Honey Cone with "Want Ads"."
+
+--------------------------------------------------------------------------------
+DATE: 1971-06-14
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1971-06-14:
+  #1 [Score 260] "Vietnam Archive: A Consensus to Bomb Developed Before ’64 Election, Study Says" (articles: 27, fp: 3, dates: 1971-06-13..1971-06-14)
+  #2 [Score 251.4] "PRESIDENT ORDERS DRIVE TO PROVIDE JOBS TO VETERANS" (articles: 6, fp: 4, dates: 1971-06-11..1971-06-14)
+  #3 [Score 162.9] "Women's Prison Closed; Inmates Moved to Bikers" (articles: 3, fp: 1, dates: 1971-06-11..1971-06-14)
+  #4 [Score 158] "U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT" (articles: 3, fp: 2, dates: 1971-06-10..1971-06-13)
+  #5 [Score 157.4] "9 STUDENTS DEAD IN MEXICO RIOTING" (articles: 3, fp: 1, dates: 1971-06-11..1971-06-14)
+  #6 [Score 153] "19 POLICE INJURED AT PARADE HERE" (articles: 1, fp: 1, dates: 1971-06-14)
+  #7 [Score 149.7] "Tanker Bound for Israel Attached Near Red Sea" (articles: 2, fp: 1, dates: 1971-06-14)
+  #8 [Score 145] "Tricia Nixon Takes Vows In Garden at White House" (articles: 4, fp: 1, dates: 1971-06-11..1971-06-14)
+  #9 [Score 133.2] "EEC BIDS U.S. ACCEPT PRINCIPLE OF PARITY IN ARMS" (articles: 5, fp: 2, dates: 1971-06-11..1971-06-14)
+  #10 [Score 132.7] "NIXON CRITICIZED AS MAYORS MEET" (articles: 1, fp: 1, dates: 1971-06-13)
+Next Song Selected (Era-Matched): "Want Ads" by The Honey Cone (1971-06-12)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 260, pubDate=1971-06-14] "Vietnam Archive: A Consensus to Bomb Developed Before ’64 Election, Study Says"
+  - Rank #2 [REJECTED] (attempts=0) [Score 251.4, pubDate=1971-06-14] "PRESIDENT ORDERS DRIVE TO PROVIDE JOBS TO VETERANS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 162.9, pubDate=1971-06-14] "Women's Prison Closed; Inmates Moved to Bikers" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 158, pubDate=1971-06-13] "U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 157.4, pubDate=1971-06-11] "9 STUDENTS DEAD IN MEXICO RIOTING" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 153, pubDate=1971-06-14] "19 POLICE INJURED AT PARADE HERE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 149.7, pubDate=1971-06-14] "Tanker Bound for Israel Attached Near Red Sea" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 145, pubDate=1971-06-13] "Tricia Nixon Takes Vows In Garden at White House" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 133.2, pubDate=1971-06-12] "EEC BIDS U.S. ACCEPT PRINCIPLE OF PARITY IN ARMS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 132.7, pubDate=1971-06-13] "NIXON CRITICIZED AS MAYORS MEET" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The Pentagon papers disclose that during this phase, the United States had been secretly escalating military operations against North Vietnam. These documents reveal premeditated planning for a Congressional resolution deemed equivalent to a declaration of war by the Administration. Details are still coming in about how these far-reaching measures were developed well before the Tonkin crisis. Time for "Want Ads" by The Honey Cone."
+
+--------------------------------------------------------------------------------
+DATE: 1993-02-27
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1993-02-27:
+  #1 [Score 292] "EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS" (articles: 11, fp: 3, dates: 1993-02-27)
+  #2 [Score 220.4] "CLINTON ANNOUNCES AIRDROPS TO BOSNIA WILL BEGIN SHORTLY" (articles: 6, fp: 3, dates: 1993-02-23..1993-02-26)
+  #3 [Score 199.2] "INDIAN POLICE SEIZE TENS OF THOUSANDS TO BLOCK PROTEST" (articles: 4, fp: 2, dates: 1993-02-24..1993-02-27)
+  #4 [Score 198.2] "PRESIDENT URGES MORE RUSSIAN AID" (articles: 3, fp: 2, dates: 1993-02-26..1993-02-27)
+  #5 [Score 169.1] "Somali Warlord's Supporters On Rampage for Second Day" (articles: 3, fp: 2, dates: 1993-02-25..1993-02-27)
+  #6 [Score 150.9] "S.E.C. Cites Japanese" (articles: 4, fp: 1, dates: 1993-02-24..1993-02-26)
+  #7 [Score 141.2] "SYRIANS PUT ISSUE OF PEACE EFFORT BEFORE DEPORTEES" (articles: 4, fp: 1, dates: 1993-02-22..1993-02-25)
+  #8 [Score 138.4] "Shoreham A-Plant Has Found a Taker For Its Spent Fuel" (articles: 3, fp: 1, dates: 1993-02-25..1993-02-26)
+  #9 [Score 125.8] "Liverpool Tries to Reconcile Murder and a Boy Next Door" (articles: 2, fp: 1, dates: 1993-02-24..1993-02-27)
+  #10 [Score 120.7] "SEOUL GIVES POWER TO CIVILIAN LEADER" (articles: 2, fp: 1, dates: 1993-02-25..1993-02-27)
+Next Song Selected (Era-Matched): "I Will Always Love You" by Whitney Houston (1993-02-27)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 292, pubDate=1993-02-27] "EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS"
+  - Rank #3 [REJECTED] (attempts=0) [Score 199.2, pubDate=1993-02-25] "INDIAN POLICE SEIZE TENS OF THOUSANDS TO BLOCK PROTEST" | reasons: stale lead article (1993-02-25 is 2 days before broadcastDate 1993-02-27; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 141.2, pubDate=1993-02-22] "SYRIANS PUT ISSUE OF PEACE EFFORT BEFORE DEPORTEES" | reasons: stale lead article (1993-02-22 is 5 days before broadcastDate 1993-02-27; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The explosion at the World Trade Center in lower Manhattan shook the city with a force felt like an earthquake shortly after noon Thursday. At least five people were killed, and over 650 others injured, mostly from smoke inhalation or minor burns. Details are still coming in as officials assess the damage across both towers. Let's roll with Whitney Houston and "I Will Always Love You"."
+
+--------------------------------------------------------------------------------
+DATE: 1963-08-29
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1963-08-29:
+  #1 [Score 299.8] "LONG CRISIS SEEN ON VIETNAM RULE; Washington Expects Tension to Persist as Diplomatic Maneuvering Goes On LONG CRISIS SEEN ON VIETNAM RULE Diplomats Note Shift Utah Teachers Returning" (articles: 6, fp: 6, dates: 1963-08-26..1963-08-29)
+  #2 [Score 286.7] "CAPITAL IS READY FOR MARCHTODAY; 100,000 EXPECTED; 6,000 Police Are Assigned to Rights Rally--Liquor Sale Is Banned in District First Come by Car Big Logistical Problem Liquor Sales Banned CAPITAL IS READY FOR MARCH TODAY Food to Be Sold Panama Faces Cabinet Crisis" (articles: 8, fp: 3, dates: 1963-08-26..1963-08-29)
+  #3 [Score 258.6] "200,000 MARCH FOR CIVIL RIGHTS IN ORDERLY WASHINGTON RALLY; PRESIDENT SEES GAIN FOR NEGRO; ACTION ASKED NOW 10 Leaders of Protest Urge Laws to End Racial Inequity Children Clap and Sing Says Nation Can Be Proud LEADERS OF RALLY URGE ACTION 'NOW' Ask Laws Against Inequity --Picnic Air Prevails as Crowds Clap and Sing Dream of Brotherhood" (articles: 4, fp: 3, dates: 1963-08-27..1963-08-29)
+  #4 [Score 235.1] "VIETNAM ORDERS SCHOOLS CLOSED IN RISING UNREST; Shuts All Secondary Classes and Saigon University as Students Stage Rallies PROFESSORS SEE DIEM Hostility Toward U.S. Said to Widen as Public Ties Americans to Attack Students Cheer Mau Appeal for Support VIETNAM ORDERS SCHOOLS CLOSED Anger at Boiling Point Diem's Position Remarked Saigon Curfew Eased" (articles: 6, fp: 3, dates: 1963-08-25..1963-08-28)
+  #5 [Score 231.2] "LODI KILLER SLAIN; 2D MAN GIVES UP; Suspect in Lodi Killing Surrenders" (articles: 3, fp: 2, dates: 1963-08-27..1963-08-29)
+  #6 [Score 224.2] "MINE BLAST TRAPS 25 AT 2,700 FEET; Utah Potash Pit Is Ripped by Explosion and Fire-- Men's Chances 'Slim' Debris Halts Rescuers MINE BLAST TRAPS 25 AT 2,700 FEET" (articles: 2, fp: 2, dates: 1963-08-28..1963-08-29)
+  #7 [Score 220.9] "KENNEDY SIGNS BILL AVERTING A RAIL STRIKE; PRECEDENT IS SET Arbitration Imposed by Congress--Vote in House 286-66 Many Are Reluctant PRESIDENT SIGNS RAIL STRIKE BAN Conference Avoided Picking Board Members Court Action Provided" (articles: 5, fp: 3, dates: 1963-08-27..1963-08-29)
+  #8 [Score 185.7] "GOVERNOR HEARD AT PICKETS' TRIAL; Testifies That He Ordered 7 Demonstrators Ousted From His Offices Here Governor Testifies He Ordered Ouster of Pickets at His Office" (articles: 4, fp: 2, dates: 1963-08-25..1963-08-28)
+  #9 [Score 179.2] "2 Girls Murdered In E. 88th St. Flat; 2 GIRLS ARE SLAIN IN EAST SIDE FLAT Calls Girl's Father Sets Time of Death Had Master's Degree" (articles: 2, fp: 1, dates: 1963-08-29)
+  #10 [Score 171.3] "BRITAIN APPEALS TO SOVIET ON LAOS; Warns Peace May 'Crumble --Seeks Moscow's Help to Halt Pro-Red Attacks Unified Regime Set Up 'Serious Situation' Recalled BRITAIN APPEALS TO SOVIET ON LAOS" (articles: 3, fp: 2, dates: 1963-08-24..1963-08-27)
+Next Song Selected (Era-Matched): "Fingertips - Pt 2" by Little Stevie Wonder (1963-08-24)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 299.8, pubDate=1963-08-28] "LONG CRISIS SEEN ON VIETNAM RULE; Washington Expects Tension to Persist as Diplomatic Maneuvering Goes On LONG CRISIS SEEN ON VIETNAM RULE Diplomats Note Shift Utah Teachers Returning" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #2 [AIRED] (attempts=6 | path=gemini_fallback) [Score 286.7, pubDate=1963-08-28] "CAPITAL IS READY FOR MARCHTODAY; 100,000 EXPECTED; 6,000 Police Are Assigned to Rights Rally--Liquor Sale Is Banned in District First Come by Car Big Logistical Problem Liquor Sales Banned CAPITAL IS READY FOR MARCH TODAY Food to Be Sold Panama Faces Cabinet Crisis" | reasons: Attempt 1: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 2: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 3: Model news draft contains relative-day word "tomorrow" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 4: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 5: Model news draft contains relative-day word "tomorrow" when article date (1963-08-28) != broadcast date (1963-08-29)
+  - Rank #3 [REJECTED] (attempts=0) [Score 258.6, pubDate=1963-08-29] "200,000 MARCH FOR CIVIL RIGHTS IN ORDERLY WASHINGTON RALLY; PRESIDENT SEES GAIN FOR NEGRO; ACTION ASKED NOW 10 Leaders of Protest Urge Laws to End Racial Inequity Children Clap and Sing Says Nation Can Be Proud LEADERS OF RALLY URGE ACTION 'NOW' Ask Laws Against Inequity --Picnic Air Prevails as Crowds Clap and Sing Dream of Brotherhood" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 235.1, pubDate=1963-08-25] "VIETNAM ORDERS SCHOOLS CLOSED IN RISING UNREST; Shuts All Secondary Classes and Saigon University as Students Stage Rallies PROFESSORS SEE DIEM Hostility Toward U.S. Said to Widen as Public Ties Americans to Attack Students Cheer Mau Appeal for Support VIETNAM ORDERS SCHOOLS CLOSED Anger at Boiling Point Diem's Position Remarked Saigon Curfew Eased" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 231.2, pubDate=1963-08-29] "LODI KILLER SLAIN; 2D MAN GIVES UP; Suspect in Lodi Killing Surrenders" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 224.2, pubDate=1963-08-28] "MINE BLAST TRAPS 25 AT 2,700 FEET; Utah Potash Pit Is Ripped by Explosion and Fire-- Men's Chances 'Slim' Debris Halts Rescuers MINE BLAST TRAPS 25 AT 2,700 FEET" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 220.9, pubDate=1963-08-29] "KENNEDY SIGNS BILL AVERTING A RAIL STRIKE; PRECEDENT IS SET Arbitration Imposed by Congress--Vote in House 286-66 Many Are Reluctant PRESIDENT SIGNS RAIL STRIKE BAN Conference Avoided Picking Board Members Court Action Provided" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 185.7, pubDate=1963-08-28] "GOVERNOR HEARD AT PICKETS' TRIAL; Testifies That He Ordered 7 Demonstrators Ousted From His Offices Here Governor Testifies He Ordered Ouster of Pickets at His Office" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 179.2, pubDate=1963-08-29] "2 Girls Murdered In E. 88th St. Flat; 2 GIRLS ARE SLAIN IN EAST SIDE FLAT Calls Girl's Father Sets Time of Death Had Master's Degree" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 171.3, pubDate=1963-08-24] "BRITAIN APPEALS TO SOVIET ON LAOS; Warns Peace May 'Crumble --Seeks Moscow's Help to Halt Pro-Red Attacks Unified Regime Set Up 'Serious Situation' Recalled BRITAIN APPEALS TO SOVIET ON LAOS" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, Police departments and gas stations between New York and Washington are trying to determine the number of buses heading south for the march. Officials have not said how many vehicles are expected to arrive for the event. This logistical situation remains a developing story as details are still coming in. Get ready for "Fingertips - Pt 2" by Little Stevie Wonder."
+
+--------------------------------------------------------------------------------
+DATE: 1963-11-22
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1963-11-22:
+  #1 [Score 261.1] "MURTAGH ACCUSED OF COURT MISRULE; Leader in Bronx Bar Asks for Disciplinary Action MURTAGH ACCUSED OF COURT MISRULE 'Dictation of Judgments' 'Strictly an Order'" (articles: 9, fp: 3, dates: 1963-11-19..1963-11-22)
+  #2 [Score 252.7] "GILPATRIC'S ROLE IN TFX QUESTIONED; McClellan Raises an Issue of Conflict of Interest-- Official Voices Denial GILPATRIC'S ROLE ON TFX QUERIED Cites Role for Boeing" (articles: 14, fp: 3, dates: 1963-11-19..1963-11-22)
+  #3 [Score 243.9] "KENNEDY PLEDGES SPACE ADVANCES; OPENS TEXAS TOUR; Dedicates San Antonio Site and Declares Research 'Must and Will Go On' PARTY SPLIT EVIDENCED Yarborough Scores Connally and Refuses to Accompany Johnson on Motorcade KENNEDY PLEDGES SPACE ADVANCES" (articles: 9, fp: 2, dates: 1963-11-19..1963-11-22)
+  #4 [Score 226.1] "SENATE APPROVES HOUSE SPACE CUTS; Refuses to Restore Funds to $5.1 Billion Budget-- Moon Shot Faces Delay Project Faces Showdown SENATE APPROVES HOUSE SPACE CUTS Committee Rebuffed" (articles: 3, fp: 2, dates: 1963-11-21..1963-11-22)
+  #5 [Score 219.1] "BILLS SEEK TO AID LOW-RENT TENANT; State Panel Weighs Change in Limits on Income BILLS SEEK TO AID LOW-RENT TENANT Effect of One, Change Factor In Family Income" (articles: 2, fp: 2, dates: 1963-11-22)
+  #6 [Score 217.7] "SOVIET AND CHINA RESUME ATTEMPT TO HALT QUARREL; Officials Confer in Moscow With View to a Meeting in Peking Next Year WORLD PARLEY DROPPED Russians Yield to Foreign Communists' Appeal for Direct Discussions Russians Briefed on Issue Soviet and Red China Resume Attempt to Negotiate Accord" (articles: 6, fp: 4, dates: 1963-11-18..1963-11-21)
+  #7 [Score 208.5] "RUSSIA TO KEEP UP AID FLOW TO CUBA, CAPITAL BELIEVES; Political Strains Develop, Diplomats Concede, but Cutbacks Are Denied Reductions Hinted in Press Want Ties Resumed SOVIET TO KEEP UP AID FLOW TO CUBA Cuba a Prestige Asset" (articles: 15, fp: 6, dates: 1963-11-16..1963-11-19)
+  #8 [Score 206.3] "SAIGON'S CONTROL IN TWO PROVINCES PERILED BY REDS; Rice-Rich Areas in Mekong in Danger--Top U.S. Aides Report Gain in War Rural Positions Undermined VIETNAMESE REDS PERIL 2 PROVINCES 4 Main-Force Battalions Major Test Expected Long Artillery Attacks Rangers Wiped Out" (articles: 3, fp: 2, dates: 1963-11-20..1963-11-21)
+  #9 [Score 196.3] "AIR FORCE IS GIVEN WIDER SPACE ROLE IN PENTAGON SHIFT; Facilities for Launching and Tracking Reorganized to Improve Management NAVY YIELDS FUNCTIONS Major Changes in Military Commands Announced by the White House Commands Are Changed Gets Post in Pacific AIR FORCE IS GIVEN WIDER SPACE ROLE" (articles: 10, fp: 2, dates: 1963-11-20..1963-11-22)
+  #10 [Score 190.9] "BYRNES DEFENDS STOCK PURCHASE; Denies Wrongdoing in Deal With Company He Aided  Will Give Away Profit Denies Knowledge of Curb Byrnes Defends Stock Purchase; Says He Will Give Away Profit" (articles: 5, fp: 1, dates: 1963-11-20..1963-11-22)
+Next Song Selected (Era-Matched): "Deep Purple" by Nino Tempo and April Stevens (1963-11-16)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 261.1, pubDate=1963-11-22] "MURTAGH ACCUSED OF COURT MISRULE; Leader in Bronx Bar Asks for Disciplinary Action MURTAGH ACCUSED OF COURT MISRULE 'Dictation of Judgments' 'Strictly an Order'" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #2 [REJECTED] (attempts=0) [Score 252.7, pubDate=1963-11-19] "GILPATRIC'S ROLE IN TFX QUESTIONED; McClellan Raises an Issue of Conflict of Interest-- Official Voices Denial GILPATRIC'S ROLE ON TFX QUERIED Cites Role for Boeing" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 243.9, pubDate=1963-11-22] "KENNEDY PLEDGES SPACE ADVANCES; OPENS TEXAS TOUR; Dedicates San Antonio Site and Declares Research 'Must and Will Go On' PARTY SPLIT EVIDENCED Yarborough Scores Connally and Refuses to Accompany Johnson on Motorcade KENNEDY PLEDGES SPACE ADVANCES" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 226.1, pubDate=1963-11-21] "SENATE APPROVES HOUSE SPACE CUTS; Refuses to Restore Funds to $5.1 Billion Budget-- Moon Shot Faces Delay Project Faces Showdown SENATE APPROVES HOUSE SPACE CUTS Committee Rebuffed" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 219.1, pubDate=1963-11-22] "BILLS SEEK TO AID LOW-RENT TENANT; State Panel Weighs Change in Limits on Income BILLS SEEK TO AID LOW-RENT TENANT Effect of One, Change Factor In Family Income" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 217.7, pubDate=1963-11-20] "SOVIET AND CHINA RESUME ATTEMPT TO HALT QUARREL; Officials Confer in Moscow With View to a Meeting in Peking Next Year WORLD PARLEY DROPPED Russians Yield to Foreign Communists' Appeal for Direct Discussions Russians Briefed on Issue Soviet and Red China Resume Attempt to Negotiate Accord" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=6) [Score 208.5, pubDate=1963-11-18] "RUSSIA TO KEEP UP AID FLOW TO CUBA, CAPITAL BELIEVES; Political Strains Develop, Diplomats Concede, but Cutbacks Are Denied Reductions Hinted in Press Want Ties Resumed SOVIET TO KEEP UP AID FLOW TO CUBA Cuba a Prestige Asset" | reasons: Attempt 1: Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; Attempt 2: Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; Attempt 3: Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; Attempt 4: Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; Attempt 5: Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; Attempt 6 (Gemini): Model news draft contains relative-day word "this week" when article date (1963-11-18) != broadcast date (1963-11-22) ;; extractive fallback rejected: no clean body sentences available for extractive fallback
+  - Rank #8 [REJECTED] (attempts=0) [Score 206.3, pubDate=1963-11-21] "SAIGON'S CONTROL IN TWO PROVINCES PERILED BY REDS; Rice-Rich Areas in Mekong in Danger--Top U.S. Aides Report Gain in War Rural Positions Undermined VIETNAMESE REDS PERIL 2 PROVINCES 4 Main-Force Battalions Major Test Expected Long Artillery Attacks Rangers Wiped Out" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 196.3, pubDate=1963-11-21] "AIR FORCE IS GIVEN WIDER SPACE ROLE IN PENTAGON SHIFT; Facilities for Launching and Tracking Reorganized to Improve Management NAVY YIELDS FUNCTIONS Major Changes in Military Commands Announced by the White House Commands Are Changed Gets Post in Pacific AIR FORCE IS GIVEN WIDER SPACE ROLE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 190.9, pubDate=1963-11-22] "BYRNES DEFENDS STOCK PURCHASE; Denies Wrongdoing in Deal With Company He Aided  Will Give Away Profit Denies Knowledge of Curb Byrnes Defends Stock Purchase; Says He Will Give Away Profit" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #11 [AIRED] (attempts=2 | path=model) [Score 55, pubDate=1963-11-19] "Kennedy Address to Florida Chamber of Commerce; Commends School Plan A Dillon Story Other Action Listed Businessmen 'Welcome' Rise by States No on Debt as Disaster Contracts Spending Pentagon Savings Inflation Fear Discounted Quotes Dickens" | reasons: Attempt 1: Unverified proper name "Department" not found in fact packet
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "A couple of days ago in The Times, Kennedy addressed a gathering of businessmen a couple of days ago. Senator George Smathers suggested Kennedy's attendance, given his role as Florida’s senior senator and majority whip in the Senate. The president commended efforts to boost economic action across various states. A little something from Nino Tempo and April Stevens, "Deep Purple"."
+
+--------------------------------------------------------------------------------
+DATE: 1967-06-06
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1967-06-06:
+  #1 [Score 353] "ISRAEL-SYRIA FRAY AT BORDER KILLS 3; Jerusalem Says 2 Soldiers and Arab Commando Are First Fatalities in Crisis" (articles: 10, fp: 6, dates: 1967-06-03..1967-06-06)
+  #2 [Score 241.3] "JOHNSON IS TOLD OF MIDEAST CLASH; Outbreak Follows Capital's Report That High Cairo Official Is Due in U.S." (articles: 3, fp: 3, dates: 1967-06-05..1967-06-06)
+  #3 [Score 227.1] "SOVIET NOVELIST ASSAILS CENSORS; Letter to Writers' Session Urges the Abolition of All Restraints on Fiction" (articles: 8, fp: 3, dates: 1967-06-03..1967-06-06)
+  #4 [Score 226.2] "474 OF FOE KILLED IN MARINE BATTLE; Confirmed U.S. Losses at 54 in 16 Hours of Fighting-- Two MIG's Shot Down" (articles: 3, fp: 3, dates: 1967-06-03..1967-06-05)
+  #5 [Score 226.2] "WILSON DECLARES CRISIS COULD LEAD TO A GENERAL WAR; Confers With Johnson Over Declaration on Freedom of Passage in Tiran Strait" (articles: 3, fp: 2, dates: 1967-06-03..1967-06-06)
+  #6 [Score 215.7] "WILSON DISCUSSES CRISIS WITH THANT; Security Council Defers Vote --Washington Says Cairo Rebuffs West's Efforts" (articles: 5, fp: 2, dates: 1967-06-04..1967-06-06)
+  #7 [Score 203.9] "HIGH COURT CURBS HOME INSPECTIONS; Backs Right to Deny Entry Not Supported by Warrant --Also Protects Business" (articles: 4, fp: 2, dates: 1967-06-03..1967-06-06)
+  #8 [Score 193.5] "Nasser Exhorts Arabs; Cairo Asserts Its Forces Invade Israel After Repulsing Attacks" (articles: 4, fp: 1, dates: 1967-06-04..1967-06-06)
+  #9 [Score 169] "Senate Unit Assails The Army's Policy On Rifle Purchases; SENATORS ASSAIL ARMY ON RIFLES" (articles: 8, fp: 2, dates: 1967-06-02..1967-06-05)
+  #10 [Score 159.1] "FIGHTING IS HEAVY; Each Side Accuses Other of Making First Assault" (articles: 2, fp: 1, dates: 1967-06-05..1967-06-06)
+Next Song Selected (Era-Matched): "Respect" by Aretha Franklin (1967-06-03)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 353, pubDate=1967-06-03] "ISRAEL-SYRIA FRAY AT BORDER KILLS 3; Jerusalem Says 2 Soldiers and Arab Commando Are First Fatalities in Crisis" | reasons: stale lead article (1967-06-03 is 3 days before broadcastDate 1967-06-06; fresher page-1 leads exist)
+  - Rank #2 [AIRED] (attempts=1 | path=model) [Score 241.3, pubDate=1967-06-05] "JOHNSON IS TOLD OF MIDEAST CLASH; Outbreak Follows Capital's Report That High Cairo Official Is Due in U.S."
+  - Rank #3 [REJECTED] (attempts=0) [Score 227.1, pubDate=1967-06-05] "SOVIET NOVELIST ASSAILS CENSORS; Letter to Writers' Session Urges the Abolition of All Restraints on Fiction" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 226.2, pubDate=1967-06-04] "474 OF FOE KILLED IN MARINE BATTLE; Confirmed U.S. Losses at 54 in 16 Hours of Fighting-- Two MIG's Shot Down" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 226.2, pubDate=1967-06-03] "WILSON DECLARES CRISIS COULD LEAD TO A GENERAL WAR; Confers With Johnson Over Declaration on Freedom of Passage in Tiran Strait" | reasons: stale lead article (1967-06-03 is 3 days before broadcastDate 1967-06-06; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 215.7, pubDate=1967-06-04] "WILSON DISCUSSES CRISIS WITH THANT; Security Council Defers Vote --Washington Says Cairo Rebuffs West's Efforts" | reasons: stale lead article (1967-06-04 is 2 days before broadcastDate 1967-06-06; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 203.9, pubDate=1967-06-06] "HIGH COURT CURBS HOME INSPECTIONS; Backs Right to Deny Entry Not Supported by Warrant --Also Protects Business" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 193.5, pubDate=1967-06-06] "Nasser Exhorts Arabs; Cairo Asserts Its Forces Invade Israel After Repulsing Attacks" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 169, pubDate=1967-06-05] "Senate Unit Assails The Army's Policy On Rifle Purchases; SENATORS ASSAIL ARMY ON RIFLES" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 159.1, pubDate=1967-06-05] "FIGHTING IS HEAVY; Each Side Accuses Other of Making First Assault" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, Johnson was alerted yesterday to reports of a full-scale war breaking out in the Mideast between Israel and the United Arab Republic. Fighting has spread from the Sinai border to Jerusalem, where clashes erupted just hours after initial reports. Details are still coming in as officials assess the situation unfolding across the region. This is Aretha Franklin with "Respect"."
+
+--------------------------------------------------------------------------------
+DATE: 1968-04-04
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1968-04-04:
+  #1 [Score 271.6] "Congress Cheered By Hanoi Response; Broad Spectrum Congress Is Cheered by Hanoi's Response to Bombing Curb" (articles: 5, fp: 4, dates: 1968-04-02..1968-04-04)
+  #2 [Score 255.4] "JOHNSON AGREES TO CONFER WITH KENNEDY;; PRESIDENT HAILED" (articles: 7, fp: 3, dates: 1968-04-02..1968-04-04)
+  #3 [Score 234.8] "M'CARTHY PRAISES PRESIDENT ON WAR; He Holds Johnson Merits Nation's Honor for Move to Begin De-Escalation" (articles: 6, fp: 3, dates: 1968-04-01..1968-04-04)
+  #4 [Score 220.4] "HALTS NORTH VIETNAM RAIDS; BIDS HANOI JOIN PEACE MOVES; DMZ IS EXEMPTED Johnson Sets No Time Limit on Halting of Air and Sea Blows Johnson to Halt Bombing in North Vietnam, Except for DMZ; Sets No Time Limit HE CALLS ON HANOI TO AIDE PEACE STEP Urges Russia and Britain to Back Move -- Also Warns Against 'Fake Solution'" (articles: 7, fp: 2, dates: 1968-04-01..1968-04-04)
+  #5 [Score 218.5] "ACCORD REACHED ON STATE BUDGET; GOVERNOR BALKS; He Calls Plan Irresponsible -- It Proposes to Scrap Most of His Tax Rises Accord Reached to Balance State Budget, but Governor Balks" (articles: 4, fp: 3, dates: 1968-04-01..1968-04-04)
+  #6 [Score 212] "JOHNSON CONSULTS SAIGON; TO GO TO HAWAII; NEW ALLIED DRIVE" (articles: 7, fp: 2, dates: 1968-04-01..1968-04-04)
+  #7 [Score 200.2] "NORTH VIETNAM AND U.S. AGREE TO CONTACT;; FOE'S BID LIMITED" (articles: 16, fp: 1, dates: 1968-04-01..1968-04-04)
+  #8 [Score 199.1] "Nixon Delays War Statement;; 2-to-3-Week Moratorium" (articles: 2, fp: 2, dates: 1968-04-02..1968-04-04)
+  #9 [Score 196.8] "ABORTION REFORM DIES IN ASSEMBLY; Expected Support Fails to Materialize -- Blumenthal to Try Again in 1969" (articles: 7, fp: 1, dates: 1968-04-01..1968-04-04)
+  #10 [Score 196.5] "MORTGAGE FUNDS PLEDGED TO SLUM; 80 Institutions Subscribe to $100-Million Pool for Bedford-Stuyvesant" (articles: 3, fp: 2, dates: 1968-04-02..1968-04-04)
+Next Song Selected (Era-Matched): "(Sittin' On) The Dock Of The Bay" by Otis Redding (1968-03-30)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 271.6, pubDate=1968-04-04] "Congress Cheered By Hanoi Response; Broad Spectrum Congress Is Cheered by Hanoi's Response to Bombing Curb"
+  - Rank #2 [REJECTED] (attempts=0) [Score 255.4, pubDate=1968-04-02] "JOHNSON AGREES TO CONFER WITH KENNEDY;; PRESIDENT HAILED" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 234.8, pubDate=1968-04-02] "M'CARTHY PRAISES PRESIDENT ON WAR; He Holds Johnson Merits Nation's Honor for Move to Begin De-Escalation" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 220.4, pubDate=1968-04-01] "HALTS NORTH VIETNAM RAIDS; BIDS HANOI JOIN PEACE MOVES; DMZ IS EXEMPTED Johnson Sets No Time Limit on Halting of Air and Sea Blows Johnson to Halt Bombing in North Vietnam, Except for DMZ; Sets No Time Limit HE CALLS ON HANOI TO AIDE PEACE STEP Urges Russia and Britain to Back Move -- Also Warns Against 'Fake Solution'" | reasons: stale lead article (1968-04-01 is 3 days before broadcastDate 1968-04-04; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 218.5, pubDate=1968-04-03] "ACCORD REACHED ON STATE BUDGET; GOVERNOR BALKS; He Calls Plan Irresponsible -- It Proposes to Scrap Most of His Tax Rises Accord Reached to Balance State Budget, but Governor Balks" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 212, pubDate=1968-04-04] "JOHNSON CONSULTS SAIGON; TO GO TO HAWAII; NEW ALLIED DRIVE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 199.1, pubDate=1968-04-02] "Nixon Delays War Statement;; 2-to-3-Week Moratorium" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 196.8, pubDate=1968-04-04] "ABORTION REFORM DIES IN ASSEMBLY; Expected Support Fails to Materialize -- Blumenthal to Try Again in 1969" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 196.5, pubDate=1968-04-02] "MORTGAGE FUNDS PLEDGED TO SLUM; 80 Institutions Subscribe to $100-Million Pool for Bedford-Stuyvesant" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, American warplanes struck within eighty-one miles of Hanoi Sunday according to United States military spokesmen Monday. This marks a significant escalation in the ongoing conflict, bringing intense aerial activity closer than ever before to Hanoi's city limits. Details are still coming in regarding the full extent and response from both sides. This is Otis Redding with "(Sittin' On) The Dock Of The Bay"."
+
+--------------------------------------------------------------------------------
+DATE: 1969-07-21
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1969-07-21:
+  #1 [Score 275.6] "ASTRONAUTS LAND ON PLAIN; COLLECT ROCKS, PLANT FLAG; A Powdery Surface Is Closely Explored" (articles: 5, fp: 4, dates: 1969-07-18..1969-07-21)
+  #2 [Score 226.2] "15 NAMED TO STUDY PENTAGON REFORM; Defense Business Concerns Represented on Panel That Will Suggest Changes" (articles: 15, fp: 3, dates: 1969-07-17..1969-07-21)
+  #3 [Score 219.8] "LUNA 15 IS SHIFTED TO A HIGHER ORBIT; Soviet Says Correction Put Craft 59 Miles From the Moon Instead of 34.5" (articles: 7, fp: 4, dates: 1969-07-17..1969-07-20)
+  #4 [Score 205.3] "VOYAGE TO THE MOON" (articles: 11, fp: 1, dates: 1969-07-18..1969-07-21)
+  #5 [Score 179.4] "Drug Producer Concedes Investigating Senate Aide; DRUG MEN SOUGHT DATA ON U.S. AIDE" (articles: 2, fp: 2, dates: 1969-07-18..1969-07-20)
+  #6 [Score 151.3] "HEAT FELLS 150 AS TIE-UP ON IRT TRAPS THOUSANDS; Man Is Killed After Flood in Bronx Halts Service on Lexington Ave. Line" (articles: 3, fp: 1, dates: 1969-07-17..1969-07-19)
+  #7 [Score 147.6] "HOUSE UNIT ACTS TO INCREASE TAX ON CAPITAL GAINS; Mills Also Indicates Action by Committee to Reduce Oil-Depletion Allowance SENATE DEBATE GOES ON Long and Dirksen Continue to Press for Early Move on Surcharge Extension House Unit Acting on Capital Gains" (articles: 5, fp: 2, dates: 1969-07-16..1969-07-19)
+  #8 [Score 143.8] "14 Largest Private Banks Are Nationalized by India; 14 BANKS IN INDIA ARE NATIONALIZED" (articles: 4, fp: 1, dates: 1969-07-19..1969-07-21)
+  #9 [Score 141.6] "FOES OF ABM SAY THEY LACK VOTES; Belief Growing That Nixon Will Win in the Senate by Margin of Half-Dozen" (articles: 3, fp: 2, dates: 1969-07-16..1969-07-19)
+  #10 [Score 141.4] "FIGHTING ABATING IN LATIN CONFLICT; Honduras and El Salvador Seem to Lack Equipment Honduran-Salvadoran War Seems to Be Abating" (articles: 4, fp: 3, dates: 1969-07-15..1969-07-18)
+Next Song Selected (Era-Matched): "In The Year 2525" by Zager and Evans (1969-07-19)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 275.6, pubDate=1969-07-21] "ASTRONAUTS LAND ON PLAIN; COLLECT ROCKS, PLANT FLAG; A Powdery Surface Is Closely Explored" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #2 [AIRED] (attempts=1 | path=model) [Score 226.2, pubDate=1969-07-20] "15 NAMED TO STUDY PENTAGON REFORM; Defense Business Concerns Represented on Panel That Will Suggest Changes"
+  - Rank #5 [REJECTED] (attempts=0) [Score 179.4, pubDate=1969-07-20] "Drug Producer Concedes Investigating Senate Aide; DRUG MEN SOUGHT DATA ON U.S. AIDE" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #6 [REJECTED] (attempts=0) [Score 151.3, pubDate=1969-07-19] "HEAT FELLS 150 AS TIE-UP ON IRT TRAPS THOUSANDS; Man Is Killed After Flood in Bronx Halts Service on Lexington Ave. Line" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 147.6, pubDate=1969-07-16] "HOUSE UNIT ACTS TO INCREASE TAX ON CAPITAL GAINS; Mills Also Indicates Action by Committee to Reduce Oil-Depletion Allowance SENATE DEBATE GOES ON Long and Dirksen Continue to Press for Early Move on Surcharge Extension House Unit Acting on Capital Gains" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 143.8, pubDate=1969-07-20] "14 Largest Private Banks Are Nationalized by India; 14 BANKS IN INDIA ARE NATIONALIZED" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 141.6, pubDate=1969-07-19] "FOES OF ABM SAY THEY LACK VOTES; Belief Growing That Nixon Will Win in the Senate by Margin of Half-Dozen" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [REJECTED] (attempts=0) [Score 141.4, pubDate=1969-07-17] "FIGHTING ABATING IN LATIN CONFLICT; Honduras and El Salvador Seem to Lack Equipment Honduran-Salvadoran War Seems to Be Abating" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, Gilbert W. Fitzhugh announced yesterday's paper the membership of a blue-ribbon panel tasked with studying and suggesting changes to the operation of the Department of Defense over the next twelve months. Secretary Melvin Laird joined in the announcement, highlighting the diverse group represented on That Panel, which includes experts from various concerns within Business and the Pentagon. Here's a good one, "In The Year 2525" by Zager and Evans."
+
+--------------------------------------------------------------------------------
+DATE: 1969-08-15
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1969-08-15:
+  #1 [Score 287.8] "PRAGUE MOBILIZES ARMY AND MILITIA; Forces to Assist Police on Invasion Anniversary PRAGUE MOBILIZES ARMY AND MILITIA" (articles: 7, fp: 3, dates: 1969-08-12..1969-08-15)
+  #2 [Score 252.3] "BRITISH AIRLIFTING TROOPS TO ULSTER; FOUR DIE IN RIOTS; 600 Will Join Compatriots Who Helped to Restore Quiet in Londonderry SLUM AREA SEALED OFF Rioting Out of Control There for 48 Hours When Belfast Requested Intervention" (articles: 3, fp: 3, dates: 1969-08-15)
+  #3 [Score 216.8] "4 BERETS LINKED TO A SECRET UNIT; Men in Vietnam Case Said to Have Served in Group With Ties to C.I.A. 4 Green Berets Linked to a Secret Unit" (articles: 3, fp: 3, dates: 1969-08-12..1969-08-15)
+  #4 [Score 215.4] "MOON CREW SAYS MISSION CAN LEAD TO GOOD ON EARTH; Astronauts, at News Parley, Suggest Landing Shows Way to Solve Problems" (articles: 5, fp: 4, dates: 1969-08-11..1969-08-14)
+  #5 [Score 201.5] "IRT FLOOD TRACED TO DIRTY STREETS; Ronan Reports Sewers That City Was Warned About Caused July 18 Tie-Up" (articles: 3, fp: 2, dates: 1969-08-12..1969-08-15)
+  #6 [Score 179.5] "TREASURY'S HEAD FEARS TAX RELIEF 'MAY GO TOO FAR'; Kennedy Says House Bill Could Cut U.S. Programs and Increase Inflation Secretary of the Treasury Fears Tax Relief 'May Go Too Far'" (articles: 4, fp: 1, dates: 1969-08-15)
+  #7 [Score 179.2] "GOODELL TO FIGHT BID TO 'DUMP' HIM; Threatens to Split Party if Governor Doesn't Aid Him GOODELL TO FIGHT BID TO 'DUMP' HIM" (articles: 2, fp: 1, dates: 1969-08-13..1969-08-15)
+  #8 [Score 176.4] "NIXON PROPOSES REVENUE SHARING WITHOUT STRINGS; Would Distribute Tax Funds to States and Localities With No Curb on Use $5-BILLION IS 1976 GOAL Congress, Adjourning, Gets Message Urging an Effort to Cut Federal Power NIXON PROPOSES REVENUE SHARING" (articles: 3, fp: 2, dates: 1969-08-13..1969-08-14)
+  #9 [Score 175.5] "ISRAELIS DAMAGE KEY JORDAN CANAL IN REPRISAL RAID; Jets Strike After Attacks by Arabs Despite Agreement for Restraint in Area Israeli Jets, in Reprisal Raids, Again Damage Vital Jordan Canal" (articles: 4, fp: 2, dates: 1969-08-09..1969-08-14)
+  #10 [Score 169.1] "STATE APPROVES BLUE CROSS RISES AVERAGING 43.3%; Governor Calls Rate Increase Necessary to Keep Health Plan From Bankruptcy TO TAKE EFFECT BY OCT. 1 Rockefeller Again Presses for New Medical System to Halt Growing Costs Blue Cross Rate Rise of 43.3% Wins Interim Approval of State" (articles: 2, fp: 2, dates: 1969-08-14..1969-08-15)
+Next Song Selected (Era-Matched): "In The Year 2525" by Zager and Evans (1969-08-09)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 287.8, pubDate=1969-08-15] "PRAGUE MOBILIZES ARMY AND MILITIA; Forces to Assist Police on Invasion Anniversary PRAGUE MOBILIZES ARMY AND MILITIA" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #2 [REJECTED] (attempts=0) [Score 252.3, pubDate=1969-08-15] "BRITISH AIRLIFTING TROOPS TO ULSTER; FOUR DIE IN RIOTS; 600 Will Join Compatriots Who Helped to Restore Quiet in Londonderry SLUM AREA SEALED OFF Rioting Out of Control There for 48 Hours When Belfast Requested Intervention" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #3 [REJECTED] (attempts=0) [Score 216.8, pubDate=1969-08-15] "4 BERETS LINKED TO A SECRET UNIT; Men in Vietnam Case Said to Have Served in Group With Ties to C.I.A. 4 Green Berets Linked to a Secret Unit" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #4 [REJECTED] (attempts=0) [Score 215.4, pubDate=1969-08-13] "MOON CREW SAYS MISSION CAN LEAD TO GOOD ON EARTH; Astronauts, at News Parley, Suggest Landing Shows Way to Solve Problems" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #5 [REJECTED] (attempts=0) [Score 201.5, pubDate=1969-08-12] "IRT FLOOD TRACED TO DIRTY STREETS; Ronan Reports Sewers That City Was Warned About Caused July 18 Tie-Up" | reasons: stale lead article (1969-08-12 is 3 days before broadcastDate 1969-08-15; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 179.5, pubDate=1969-08-15] "TREASURY'S HEAD FEARS TAX RELIEF 'MAY GO TOO FAR'; Kennedy Says House Bill Could Cut U.S. Programs and Increase Inflation Secretary of the Treasury Fears Tax Relief 'May Go Too Far'" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #7 [REJECTED] (attempts=0) [Score 179.2, pubDate=1969-08-15] "GOODELL TO FIGHT BID TO 'DUMP' HIM; Threatens to Split Party if Governor Doesn't Aid Him GOODELL TO FIGHT BID TO 'DUMP' HIM" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #8 [REJECTED] (attempts=0) [Score 176.4, pubDate=1969-08-14] "NIXON PROPOSES REVENUE SHARING WITHOUT STRINGS; Would Distribute Tax Funds to States and Localities With No Curb on Use $5-BILLION IS 1976 GOAL Congress, Adjourning, Gets Message Urging an Effort to Cut Federal Power NIXON PROPOSES REVENUE SHARING" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 175.5, pubDate=1969-08-11] "ISRAELIS DAMAGE KEY JORDAN CANAL IN REPRISAL RAID; Jets Strike After Attacks by Arabs Despite Agreement for Restraint in Area Israeli Jets, in Reprisal Raids, Again Damage Vital Jordan Canal" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #10 [AIRED] (attempts=3 | path=model) [Score 169.1, pubDate=1969-08-15] "STATE APPROVES BLUE CROSS RISES AVERAGING 43.3%; Governor Calls Rate Increase Necessary to Keep Health Plan From Bankruptcy TO TAKE EFFECT BY OCT. 1 Rockefeller Again Presses for New Medical System to Halt Growing Costs Blue Cross Rate Rise of 43.3% Wins Interim Approval of State" | reasons: Attempt 1: Draft copies 5+ consecutive headline words ("increase necessary to keep health") ;; Attempt 2: Read-aloud lint: contains 4+ consecutive all-caps words ("STATE APPROVES AVERAGE RISE")
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Blue Cross rate rises averaging forty-three point three percent have been approved by the State. Governor Rockefeller calls the increase necessary to keep the Health Plan from bankruptcy. The new rates will take effect in October. Officials haven't said if further action is planned to halt growing costs. This one's got some energy. Zager and Evans with "In The Year 2525"."
+
+--------------------------------------------------------------------------------
+DATE: 1971-05-01
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1971-05-01:
+  #1 [Score 209.4] "PRESIDENT GREETS COMBAT MARINES" (articles: 3, fp: 2, dates: 1971-04-30..1971-05-01)
+  #2 [Score 203.3] "2 COURTS UPHOLD AMTRAK SYSTEM; SERVICE IS BEGUN" (articles: 3, fp: 2, dates: 1971-04-28..1971-05-01)
+  #3 [Score 182.8] "AIR QUALITY RULES FOR 6 POLLUTANTS GIVEN FOR NATION" (articles: 3, fp: 1, dates: 1971-04-28..1971-05-01)
+  #4 [Score 177.8] "Nationalists Reject U.S. Suggestions on Taiwan" (articles: 3, fp: 2, dates: 1971-04-28..1971-05-01)
+  #5 [Score 175.8] "HOUSE TO SHELVE AID REFORM PLAN FOR THIS SESSION" (articles: 2, fp: 2, dates: 1971-04-29..1971-04-30)
+  #6 [Score 165.6] "Girl Arrives in Seattle for Bombing Inquiry" (articles: 2, fp: 1, dates: 1971-04-30..1971-05-01)
+  #7 [Score 161.6] "New Berrigan Indictments; Letters on ‘Plot’ Released" (articles: 2, fp: 1, dates: 1971-05-01)
+  #8 [Score 155.4] "DRUG CURB FEARS ALLAYED BY F.D.A." (articles: 2, fp: 1, dates: 1971-04-28..1971-05-01)
+  #9 [Score 150.5] "Austrian Castle Is a Stop On Soviet‐Israel Route" (articles: 2, fp: 1, dates: 1971-05-01)
+  #10 [Score 147.4] "Kotouc Is Acquitted of Maiming A Vietnamese Prisoner at Mylai" (articles: 4, fp: 1, dates: 1971-04-27..1971-04-30)
+Next Song Selected (Era-Matched): "Joy To The World" by Three Dog Night (1971-05-01)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 209.4, pubDate=1971-05-01] "PRESIDENT GREETS COMBAT MARINES" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("remain in south vietnam indefinitely no matter how long") from source sentence (max allowed: 8)
+  - Rank #3 [REJECTED] (attempts=0) [Score 182.8, pubDate=1971-05-01] "AIR QUALITY RULES FOR 6 POLLUTANTS GIVEN FOR NATION" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, President Nixon welcomed home yesterday the First Marine Division from Vietnam with a promise to end the conflict honorably. Meanwhile, he stated that some U.S. troops might stay indefinitely if Hanoi doesn't release American prisoners. Officials haven't provided further details yet. A little something from Three Dog Night, "Joy To The World"."
+
+--------------------------------------------------------------------------------
+DATE: 1972-06-17
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1972-06-17:
+  #1 [Score 269.4] "SOVIET CONCEDES SOME OPPOSITION TO SUMMIT TALKS" (articles: 7, fp: 3, dates: 1972-06-14..1972-06-17)
+  #2 [Score 249.8] "AIRMEN SAY RAIDS ON HANOI ARE OFF FOR POKORNY TRIP" (articles: 6, fp: 5, dates: 1972-06-13..1972-06-16)
+  #3 [Score 219.9] "PROSECUTOR SAID TO FACE CHARGES IN BRIBERY STUDY" (articles: 2, fp: 2, dates: 1972-06-17)
+  #4 [Score 213.7] "PENSION TAX RISE IN 1973 APPROVED BY SENATE PANEL" (articles: 3, fp: 2, dates: 1972-06-14..1972-06-17)
+  #5 [Score 213.4] "KISSINGER IS GOING TO CHINA 4TH TIME TO TALK WITH CHOU" (articles: 3, fp: 2, dates: 1972-06-15..1972-06-17)
+  #6 [Score 195.6] "AIRLINE STOPPAGE ORDERED MONDAY" (articles: 2, fp: 2, dates: 1972-06-14..1972-06-17)
+  #7 [Score 182.6] "Bunker Says Civilian Toll Runs Higher Than at Tet" (articles: 3, fp: 2, dates: 1972-06-15..1972-06-16)
+  #8 [Score 160.5] "NIXON MAKES PLEA FOR ARMS ACCORD" (articles: 2, fp: 1, dates: 1972-06-16..1972-06-17)
+  #9 [Score 160.5] "FOOD CHAINS WARN OF BIG PRICE RISES; U.S WEIGHS MOVES" (articles: 2, fp: 1, dates: 1972-06-16..1972-06-17)
+  #10 [Score 157.5] "Bankruptcy Rise Feared In Wage‐Price Program" (articles: 3, fp: 1, dates: 1972-06-14..1972-06-17)
+Next Song Selected (Era-Matched): "The Candy Man" by Sammy Davis, Jr. and The Mike Curb Congregation (1972-06-17)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=4 | path=model) [Score 269.4, pubDate=1972-06-16] "SOVIET CONCEDES SOME OPPOSITION TO SUMMIT TALKS" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("after the united states mined north vietnam s ports") from source sentence (max allowed: 8) ;; Attempt 2: Unverified proper name "Soviets" not found in fact packet ;; Attempt 3: Wholesale copying: reproduces 9 consecutive words ("after the united states mined north vietnam s ports") from source sentence (max allowed: 8)
+  - Rank #4 [REJECTED] (attempts=0) [Score 213.7, pubDate=1972-06-14] "PENSION TAX RISE IN 1973 APPROVED BY SENATE PANEL" | reasons: stale lead article (1972-06-14 is 3 days before broadcastDate 1972-06-17; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 213.4, pubDate=1972-06-15] "KISSINGER IS GOING TO CHINA 4TH TIME TO TALK WITH CHOU" | reasons: stale lead article (1972-06-15 is 2 days before broadcastDate 1972-06-17; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, Soviet leaders have acknowledged facing internal opposition before deciding to proceed with summit talks with President Nixon. This came after recent tensions over military actions in Vietnam. Meanwhile, Senator Edmund Muskie is leading criticism of Nixon's defense budget during his political tour across ten states. Got a great track for you from Sammy Davis, Jr. and The Mike Curb Congregation, "The Candy Man"."
+
+--------------------------------------------------------------------------------
+DATE: 1973-10-20
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1973-10-20:
+  #1 [Score 397] "KISSINGER ON WAY TO MOSCOW TALKS" (articles: 22, fp: 9, dates: 1973-10-17..1973-10-20)
+  #2 [Score 352] "3 MEETINGS HELD" (articles: 16, fp: 7, dates: 1973-10-17..1973-10-20)
+  #3 [Score 242] "MOVE IS SURPRISE" (articles: 27, fp: 8, dates: 1973-10-13..1973-10-16)
+  #4 [Score 242] "EGYPTIAN FORCES LAUNCH MAJOR OFFENSIVE IN SIN AI; BIG TANK LOSSES REPORTED" (articles: 16, fp: 8, dates: 1973-10-13..1973-10-16)
+  #5 [Score 220.7] "Guerrillas Seize a Beirut Bank, Demand 10‐Million for the War" (articles: 4, fp: 2, dates: 1973-10-18..1973-10-20)
+  #6 [Score 215.8] "GOAL IS A CUTOFF" (articles: 4, fp: 2, dates: 1973-10-17..1973-10-20)
+  #7 [Score 199.9] "KISSINGER AND THO WIN NOBEL PRIZE FOR VIETNAM PACT" (articles: 5, fp: 2, dates: 1973-10-17..1973-10-20)
+  #8 [Score 193.1] "TRANSPORTS LAND" (articles: 11, fp: 3, dates: 1973-10-16..1973-10-19)
+  #9 [Score 174.1] "Saudis Cut Oil Output 10% To Put Pressure on U.S." (articles: 5, fp: 2, dates: 1973-10-16..1973-10-19)
+  #10 [Score 161.1] "BAGHDAD LOSSES PUT AT 70 TANKS" (articles: 8, fp: 4, dates: 1973-10-14..1973-10-17)
+Next Song Selected (Era-Matched): "Angie" by The Rolling Stones (1973-10-20)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 397, pubDate=1973-10-20] "KISSINGER ON WAY TO MOSCOW TALKS"
+  - Rank #3 [REJECTED] (attempts=0) [Score 242, pubDate=1973-10-13] "MOVE IS SURPRISE" | reasons: stale lead article (1973-10-13 is 7 days before broadcastDate 1973-10-20; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 242, pubDate=1973-10-15] "EGYPTIAN FORCES LAUNCH MAJOR OFFENSIVE IN SIN AI; BIG TANK LOSSES REPORTED" | reasons: stale lead article (1973-10-15 is 5 days before broadcastDate 1973-10-20; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 199.9, pubDate=1973-10-17] "KISSINGER AND THO WIN NOBEL PRIZE FOR VIETNAM PACT" | reasons: stale lead article (1973-10-17 is 3 days before broadcastDate 1973-10-20; fresher page-1 leads exist)
+  - Rank #8 [REJECTED] (attempts=0) [Score 193.1, pubDate=1973-10-16] "TRANSPORTS LAND" | reasons: stale lead article (1973-10-16 is 4 days before broadcastDate 1973-10-20; fresher page-1 leads exist)
+  - Rank #10 [REJECTED] (attempts=0) [Score 161.1, pubDate=1973-10-14] "BAGHDAD LOSSES PUT AT 70 TANKS" | reasons: stale lead article (1973-10-14 is 6 days before broadcastDate 1973-10-20; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Secretary Kissinger is en route to Moscow for talks aimed at ending hostilities in the Middle East. President Nixon dispatched him early this morning, seeking ways to resolve the ongoing conflict through diplomatic channels. Meanwhile, details are still coming in about how these discussions will unfold between Soviet leaders and American officials. This one's got some energy. The Rolling Stones with "Angie"."
+
+--------------------------------------------------------------------------------
+DATE: 1974-08-09
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1974-08-09:
+  #1 [Score 367] "POLITICAL SCENE SHARPLY ALTERED" (articles: 20, fp: 7, dates: 1974-08-06..1974-08-09)
+  #2 [Score 317] "COURT FAILS TO GET TAPES OP 9 TALKS" (articles: 36, fp: 7, dates: 1974-08-05..1974-08-08)
+  #3 [Score 229.5] "SPECULATION RIFE ON VICE PRESIDENT" (articles: 3, fp: 3, dates: 1974-08-07..1974-08-09)
+  #4 [Score 212] "FORD SEES ODDS IN HOUSE SHIFTING TO IMPEACHMENT" (articles: 27, fp: 7, dates: 1974-08-02..1974-08-05)
+  #5 [Score 211.9] "Rise and Fall Appraisal of Nixon Career" (articles: 4, fp: 2, dates: 1974-08-09)
+  #6 [Score 196.8] "House Votes Missile Site Planned for 6 Months' Use" (articles: 8, fp: 3, dates: 1974-08-06..1974-08-08)
+  #7 [Score 194.3] "NEWS INDEX" (articles: 13, fp: 4, dates: 1974-08-06..1974-08-09)
+  #8 [Score 164.5] "JACOBSEN PLEADS GUILTY TO BRIBERY" (articles: 4, fp: 1, dates: 1974-08-05..1974-08-08)
+  #9 [Score 161] "CYPRIOTES SEIZED BY TURKISH ARMY" (articles: 12, fp: 4, dates: 1974-08-02..1974-08-05)
+  #10 [Score 150.3] "A Tiny G.O.P. Bastion Feels Loss and Relief" (articles: 2, fp: 1, dates: 1974-08-09)
+Next Song Selected (Era-Matched): "Annie's Song" by John Denver (1974-08-03)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 367, pubDate=1974-08-09] "POLITICAL SCENE SHARPLY ALTERED" | reasons: Attempt 1: First sentence echoes headline content words (4/4 words: "political scene sharply altered")
+  - Rank #4 [REJECTED] (attempts=0) [Score 212, pubDate=1974-08-04] "FORD SEES ODDS IN HOUSE SHIFTING TO IMPEACHMENT" | reasons: stale lead article (1974-08-04 is 5 days before broadcastDate 1974-08-09; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The American political landscape has been drastically altered with President Nixon's announcement of his resignation. Effective at noon tomorrow, he'll step down after a long and arduous fight to remain in office. Leon Jaworski, the special Watergate prosecutor, stated last night that no deals were made or offered for immunity. Let's spend a few minutes with John Denver and "Annie's Song"."
+
+--------------------------------------------------------------------------------
+DATE: 1976-03-10
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1976-03-10:
+  #1 [Score 242.5] "FORD DEFEATS REAGAN IN FLORIDA; CARTER IS WINNER OVER WALLACE IN DEMOCRATIC VOTE, JACKSON 3D" (articles: 4, fp: 2, dates: 1976-03-09..1976-03-10)
+  #2 [Score 240.2] "JERSEY BUS STRIKE DISRUPTS 450,000" (articles: 7, fp: 3, dates: 1976-03-07..1976-03-10)
+  #3 [Score 216.6] "RHODESIANS FACE A WIDER CONFLICT WITH GUERRILLAS" (articles: 4, fp: 2, dates: 1976-03-07..1976-03-10)
+  #4 [Score 212.8] "PUBLIC PENSIONS IN SINGLE SYSTEM URGED IN ALBANY" (articles: 5, fp: 2, dates: 1976-03-08..1976-03-10)
+  #5 [Score 195.4] "Canada to Resume Nuclear Aid India" (articles: 5, fp: 2, dates: 1976-03-07..1976-03-10)
+  #6 [Score 193.9] "REAGAN DOUBTFUL ON FLORIDA VOTING" (articles: 5, fp: 2, dates: 1976-03-07..1976-03-09)
+  #7 [Score 178.5] "WARNING SOUNDED BY POSTAL CHIEF" (articles: 3, fp: 2, dates: 1976-03-08..1976-03-09)
+  #8 [Score 176.3] "BERGER IS NAMED TO REPLACE ELISH ON CONTROL BOARD" (articles: 4, fp: 1, dates: 1976-03-09..1976-03-10)
+  #9 [Score 169.4] "REAGAN TO PRESS ATTACKS ON FORD" (articles: 5, fp: 4, dates: 1976-03-03..1976-03-05)
+  #10 [Score 168.8] "Pike Charges C.I.A. Effort At Retaliation for Findings" (articles: 3, fp: 1, dates: 1976-03-07..1976-03-10)
+Next Song Selected (Era-Matched): "Love Machine (Part 1)" by The Miracles (1976-03-06)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 242.5, pubDate=1976-03-10] "FORD DEFEATS REAGAN IN FLORIDA; CARTER IS WINNER OVER WALLACE IN DEMOCRATIC VOTE, JACKSON 3D"
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Ford's victory over former Governor Reagan of California in Florida's primary yesterday significantly weakens Reagan's chances for nomination. Details are still coming in, but Ford has emerged as a strong contender following this decisive win. Meanwhile, George Wallace of Alabama made a last-minute push by touring Florida to secure votes ahead of Monday's Democratic Presidential primary. The Miracles, "Love Machine (Part 1)"."
+
+--------------------------------------------------------------------------------
+DATE: 1977-08-17
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1977-08-17:
+  #1 [Score 221.1] "FORD GIVES SUPPORT TO NEW AGREEMENT ON PANAMA CANAL" (articles: 6, fp: 2, dates: 1977-08-14..1977-08-17)
+  #2 [Score 214.8] "Another Shooting Laid to Suspect In the ‘ Sam’ Case" (articles: 9, fp: 2, dates: 1977-08-13..1977-08-16)
+  #3 [Score 204.9] "CURB ON BANK VOIDED JUST BEFORE LANCE WAS NAMED TO POST" (articles: 9, fp: 4, dates: 1977-08-12..1977-08-15)
+  #4 [Score 202.9] "ELVIS PRESLEY DIES; ROCK SINGER WAS 42; Heart Failure Is Cited by Coroner—Acclaim Followed Early Scorn’" (articles: 4, fp: 2, dates: 1977-08-17)
+  #5 [Score 176] "Visit to War‐Torn South Lebanon: Ghost Town and Roving Guerrillas" (articles: 4, fp: 1, dates: 1977-08-16)
+  #6 [Score 175.7] "PRESIDENT TO MEET FOREIGN MINISTERS FROM MIDDLE EAST" (articles: 2, fp: 2, dates: 1977-08-15..1977-08-16)
+  #7 [Score 162.4] "U.S. JUDGE IS CHOICE AS NEW FURL DIRECTOR" (articles: 5, fp: 1, dates: 1977-08-16..1977-08-17)
+  #8 [Score 155.2] "4 GANDHI AIDES HELD ON CHARGES OF GRAFT" (articles: 2, fp: 1, dates: 1977-08-16)
+  #9 [Score 153.2] "Sitting During Flag Pledge Upheld" (articles: 3, fp: 1, dates: 1977-08-17)
+  #10 [Score 150.8] "BREZINEV DEPICTS CARTER'S OVERTURE AS A POSITIVE MOVE." (articles: 2, fp: 1, dates: 1977-08-17)
+Next Song Selected (Era-Matched): "I Just Want To Be Your Everything" by Andy Gibb (1977-08-13)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 221.1, pubDate=1977-08-17] "FORD GIVES SUPPORT TO NEW AGREEMENT ON PANAMA CANAL"
+  - Rank #3 [REJECTED] (attempts=0) [Score 204.9, pubDate=1977-08-14] "CURB ON BANK VOIDED JUST BEFORE LANCE WAS NAMED TO POST" | reasons: stale lead article (1977-08-14 is 3 days before broadcastDate 1977-08-17; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 175.7, pubDate=1977-08-15] "PRESIDENT TO MEET FOREIGN MINISTERS FROM MIDDLE EAST" | reasons: stale lead article (1977-08-15 is 2 days before broadcastDate 1977-08-17; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, President Carter is working to build support for new Panama Canal agreements by securing endorsements from key figures like former Secretary of State Henry Kissinger and reaching out directly to former President Gerald Ford. A White House spokesman suggests Carter might travel to Panama for signing, expressing cautious optimism about Senate ratification. Details are still coming regarding the progress on these New Zone treaties. This one's from Andy Gibb, "I Just Want To Be Your Everything"."
+
+--------------------------------------------------------------------------------
+DATE: 1979-03-30
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1979-03-30:
+  #1 [Score 307] "EGYPT AND ISRAEL SIGN FORMAL TREATY, ENDING A STATE OF WAR AFTER 30 YEARS" (articles: 10, fp: 6, dates: 1979-03-26..1979-03-29)
+  #2 [Score 258] "OPEC PARLEY WEIGHS NEW OIL PRICE RISES AND CUTS IN OUTPUT" (articles: 9, fp: 5, dates: 1979-03-27..1979-03-30)
+  #3 [Score 187.6] "TRUCKING INDUSTRY AND THE TEAMSTERS CLOSER TO CONTRACT" (articles: 3, fp: 1, dates: 1979-03-27..1979-03-30)
+  #4 [Score 183.9] "Nuclear Accident Is Laid to Failure Of Several Safety Systems at Plant" (articles: 3, fp: 2, dates: 1979-03-29..1979-03-30)
+  #5 [Score 168.8] "Atomic Plant Is Still Emitting Radioactivity" (articles: 3, fp: 1, dates: 1979-03-29..1979-03-30)
+  #6 [Score 162.6] "U.S. Said to Ask a Georgia Banker To Be Key Witness Against Lance" (articles: 3, fp: 1, dates: 1979-03-28..1979-03-30)
+  #7 [Score 158.3] "Amin Reported to Flee Kampala With Remnants of Uganda Army" (articles: 3, fp: 1, dates: 1979-03-27..1979-03-30)
+  #8 [Score 148.7] "U.S. to Tighten Price Guidelines For Companies" (articles: 3, fp: 2, dates: 1979-03-28..1979-03-30)
+  #9 [Score 146.8] "MAO'S IDEAS ON WAR ARE LOSING GROUND" (articles: 4, fp: 1, dates: 1979-03-25..1979-03-28)
+  #10 [Score 140.8] "LEGISLATURE VOTES CONVENTION CENTER FOR NEW YORK CITY" (articles: 2, fp: 1, dates: 1979-03-30)
+Next Song Selected (Era-Matched): "Tragedy" by Bee Gees (1979-03-24)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [REJECTED] (attempts=0) [Score 307, pubDate=1979-03-27] "EGYPT AND ISRAEL SIGN FORMAL TREATY, ENDING A STATE OF WAR AFTER 30 YEARS" | reasons: stale lead article (1979-03-27 is 3 days before broadcastDate 1979-03-30; fresher page-1 leads exist)
+  - Rank #2 [REJECTED] (attempts=0) [Score 258, pubDate=1979-03-27] "OPEC PARLEY WEIGHS NEW OIL PRICE RISES AND CUTS IN OUTPUT" | reasons: stale lead article (1979-03-27 is 3 days before broadcastDate 1979-03-30; fresher page-1 leads exist)
+  - Rank #3 [AIRED] (attempts=2 | path=model) [Score 187.6, pubDate=1979-03-30] "TRUCKING INDUSTRY AND THE TEAMSTERS CLOSER TO CONTRACT" | reasons: Attempt 1: First sentence echoes headline content words (5/5 words: "trucking industry teamsters closer contract")
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The International Brotherhood of Teamsters is making progress toward a contract agreement with the trucking industry. The Government has shown willingness to be flexible, which could help avoid a national strike. This development comes after a Federal judge declined to issue an immediate injunction under Taft-Hartley. Coming up, it's "Tragedy" by Bee Gees."
+
+--------------------------------------------------------------------------------
+DATE: 1979-11-05
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1979-11-05:
+  #1 [Score 252] "66‐Nation Study Points to a Surge In Bomb‐Grade Nuclear Materials" (articles: 17, fp: 2, dates: 1979-11-02..1979-11-05)
+  #2 [Score 235.9] "Shooting Erupts in Bolivian Capital As Army Support for Coup Falters" (articles: 4, fp: 3, dates: 1979-11-03..1979-11-05)
+  #3 [Score 235.7] "GOVERNMENT IN IRAN VOWS HELP IN SIEGE" (articles: 2, fp: 2, dates: 1979-11-05)
+  #4 [Score 201.1] "FOUR SHOT TO DEATH AT ANTI‐KLAN MARCH" (articles: 2, fp: 2, dates: 1979-11-04..1979-11-05)
+  #5 [Score 165] "I. R. A. Bomb Expert, Long Wanted by Irish, Seized in Philadelphia" (articles: 2, fp: 1, dates: 1979-11-04..1979-11-05)
+  #6 [Score 159.1] "Huge Crowd Mourns Park at Funeral Rite in Seoul" (articles: 5, fp: 1, dates: 1979-11-02..1979-11-05)
+  #7 [Score 147.7] "74 Die in a DC‐10 Crash in Mexico As Pilot Lands on Closed Runway; 74 Die in Mexico City Jetliner Crash; United Press International" (articles: 5, fp: 1, dates: 1979-11-01..1979-11-04)
+  #8 [Score 145.4] "CONFEREES APPROVE $29.9 BILLION DEFICIT IN BUDGET FOR 1980; GAP RISES $2 BILLION ABOVE ‘79 House Side Accepts More Military Spending — Senators Agree to Widen Social Outlays; Formal Limit on Spending; Conferees Approve a 1980 Budget; Trim of Only $700 Million; GENERAL GIAP IN ALGERIA TO MARK REVOLUTION: Vo Nguyen Giap, Vietnamese war hero, in Algiers as celebration of country's 25th anniversary began. General Giap may meet with Zbigniew Brzezinski. Page A10." (articles: 4, fp: 2, dates: 1979-11-01..1979-11-03)
+  #9 [Score 144.2] "TOP SEOUL GENERALS SEARCH FOR ACCORD ON A NEV PRESIDENT" (articles: 6, fp: 3, dates: 1979-10-29..1979-11-01)
+  #10 [Score 135.2] "His Town Hails 100th Birthday Of Will Rogers" (articles: 2, fp: 1, dates: 1979-11-01..1979-11-04)
+Next Song Selected (Era-Matched): "Pop Muzik" by M (1979-11-03)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 252, pubDate=1979-11-04] "66‐Nation Study Points to a Surge In Bomb‐Grade Nuclear Materials"
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, An international study points to a significant surge in nuclear power plants over the next two decades. This expansion will lead to an unavoidable increase in supplies of bomb-grade nuclear materials. Senator Edward Kennedy raised these concerns at yesterday's Jefferson-Jackson Day dinner, urging President Carter to address safety issues and consider halting new plant construction until problems are resolved. Don't touch that dial. Here's M with "Pop Muzik"."
+
+--------------------------------------------------------------------------------
+DATE: 1980-05-18
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1980-05-18:
+  #1 [Score 226] "Homeowners Are Bitter and Fearful as Results of Study Are Released; 'My Kids Might Be Dying' Families at Love Canal Voice Fear And Bitterness Over Test's Results A Night of Anxiety 'The President Is Killing Us'" (articles: 5, fp: 3, dates: 1980-05-16..1980-05-18)
+  #2 [Score 225] "NATO ACCUSES SOVIET OF IMPERILING PEACE WITH AFGHAN THRUST; DEFENSE MEASURES APPROVED Iran Also Rebuked Over Hostages  Muskie Condemns French Olympic Panel's Decision Olympic Decision Assailed NATO Decides to Bolster Defenses Over Afghan Crisis Concern About Sanctions on Iran Call for 'Patience' and Ingenuity' Olympics Discussed With German 'Fencing Exercise' With Gromyko" (articles: 6, fp: 5, dates: 1980-05-14..1980-05-18)
+  #3 [Score 218.6] "EUROPE IS EXPECTED TO HEDGE SANCTIONS; Carter's Iran Plan Seen as Unlikely to Be Backed at Naples Talks Plan Approved at the U.N. Common Market Nations Expected To Hedge on Iranian Boycott Plan Seen as Campaign Highlight Risk of Disagreement" (articles: 4, fp: 3, dates: 1980-05-15..1980-05-18)
+  #4 [Score 195.9] "Coast Guard Vessels and Aircraft Deployed to Cut Off Boats to Cuba; Coast Guard Net Is Deployed to Stop Flotilla to Cuba 'My Family Comes First'" (articles: 5, fp: 3, dates: 1980-05-16..1980-05-18)
+  #5 [Score 194.4] "TOUGH STEPS TAKEN BY SEOUL TO QUELL STUDENTS' PROTESTS; MARTIAL LAW POWER WIDENED Campuses Are Closed, Censorship Set and Gatherings Curbed -- Critics of Regime Seized Meeting Stormed by Riot Police South Korea Acts to Curb Protests" (articles: 2, fp: 2, dates: 1980-05-17..1980-05-18)
+  #6 [Score 153.6] "Quebec Facing Self-Rule Issue In Tuesday Vote; Appeal to Undecided Voters Quebec Vote Tuesday Is Critical Test for Canada's Future 'The Revenge of the Cradle' Church Leads Resistance Association Between Equals Sought Radical Independence Movement" (articles: 4, fp: 1, dates: 1980-05-18)
+  #7 [Score 150.7] "SADAT WILL ASSUME BROADENED POWERS, HE INFORMS THE U.S.; EGYPT'S PRIME MINISTER QUITS Carter Confers With Mideast Aides on Expected Shifts Muskie Off to Europe Tomorrow First Key Assignment for Muskie Sadat to Assume Broader Powers Khalil Submits Resignation" (articles: 5, fp: 2, dates: 1980-05-13..1980-05-16)
+  #8 [Score 149.5] "China Launches First ICBM" (articles: 2, fp: 1, dates: 1980-05-18)
+  #9 [Score 149.4] "The Saga Beyond 'Star Wars'; The Saga Beyond 'Star Wars'" (articles: 2, fp: 1, dates: 1980-05-18)
+  #10 [Score 143.7] "PRESIDENT TOUGHENS CURBS ON FERRYING OF CUBAN REFUGEES; OFFERS ORDERLY U.S. AIRLIFT Policy Needs Castro's Agreement --17 Americans Called Home as Havana Unrest Grows Withdrawal Viewed as Temporary President Toughens Restraint on Cuban Flotilla and Offers an Airlift 'Dumping Ground' Rejected Family Registry Planned The Haitian Question Confusion and Worry in Havana" (articles: 4, fp: 2, dates: 1980-05-14..1980-05-16)
+Next Song Selected (Era-Matched): "Call Me" by Blondie (1980-05-17)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 226, pubDate=1980-05-18] "Homeowners Are Bitter and Fearful as Results of Study Are Released; 'My Kids Might Be Dying' Families at Love Canal Voice Fear And Bitterness Over Test's Results A Night of Anxiety 'The President Is Killing Us'" | reasons: Attempt 1: Draft copies 5+ consecutive headline words ("homeowners are bitter and fearful")
+  - Rank #2 [REJECTED] (attempts=0) [Score 225, pubDate=1980-05-15] "NATO ACCUSES SOVIET OF IMPERILING PEACE WITH AFGHAN THRUST; DEFENSE MEASURES APPROVED Iran Also Rebuked Over Hostages  Muskie Condemns French Olympic Panel's Decision Olympic Decision Assailed NATO Decides to Bolster Defenses Over Afghan Crisis Concern About Sanctions on Iran Call for 'Patience' and Ingenuity' Olympics Discussed With German 'Fencing Exercise' With Gromyko" | reasons: stale lead article (1980-05-15 is 3 days before broadcastDate 1980-05-18; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 150.7, pubDate=1980-05-13] "SADAT WILL ASSUME BROADENED POWERS, HE INFORMS THE U.S.; EGYPT'S PRIME MINISTER QUITS Carter Confers With Mideast Aides on Expected Shifts Muskie Off to Europe Tomorrow First Key Assignment for Muskie Sadat to Assume Broader Powers Khalil Submits Resignation" | reasons: stale lead article (1980-05-13 is 5 days before broadcastDate 1980-05-18; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Patricia Sandonato discovered yesterday that her home in Love Canal might carry a hidden danger. The Environmental Protection Agency reported Friday, finding evidence of chromosome damage from buried toxic chemicals. Families now live with fear and uncertainty as details continue to emerge. This is Blondie with "Call Me"."
+
+--------------------------------------------------------------------------------
+DATE: 1981-03-30
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1981-03-30:
+  #1 [Score 305.4] "POLISH RULING BODY REACHES AN IMPASSE ON AVERTING STRIKE" (articles: 8, fp: 5, dates: 1981-03-27..1981-03-30)
+  #2 [Score 248.7] "AIDE TERMS HAIG 'WOUNDED LION' OVER BUSH'S ROLE" (articles: 11, fp: 4, dates: 1981-03-26..1981-03-29)
+  #3 [Score 204.7] "DROUGHT STIMULATES INTEREST IN WELLS" (articles: 5, fp: 1, dates: 1981-03-27..1981-03-30)
+  #4 [Score 193.5] "REAGAN AIDE CONCEDES PROPOSAL ON WELFARE COULD ADD PROBLEM" (articles: 3, fp: 1, dates: 1981-03-29..1981-03-30)
+  #5 [Score 185.1] "U.S. HOSTAGE IS SHOT ON INDONESIAN JET AT BANGKOK AIRPORT" (articles: 2, fp: 1, dates: 1981-03-29..1981-03-30)
+  #6 [Score 178] "LEADERS IN POLAND CONTINUE MEETINGS IN A 'GOOD' CLIMATE" (articles: 5, fp: 1, dates: 1981-03-27..1981-03-29)
+  #7 [Score 177.4] "ADMINISTRATION SEEKS GREATER ROLE FOR ENTREPRENEURS AT FEDERAL PARKS" (articles: 4, fp: 1, dates: 1981-03-27..1981-03-29)
+  #8 [Score 168.4] "MILITARY PLANNERS VIEW THE SHUTTLE AS WAY TO OPEN SPACE FOR WARFARE" (articles: 3, fp: 1, dates: 1981-03-28..1981-03-30)
+  #9 [Score 153.8] "LABOR PARTY REBELS OFFICIALLY FROM SOCIAL DEMOCRATIC PARTY IN BRITAIN" (articles: 3, fp: 2, dates: 1981-03-26..1981-03-29)
+  #10 [Score 153.5] "SCHOOL REJECTS A 'FREE' OLDENBURG" (articles: 3, fp: 2, dates: 1981-03-26..1981-03-29)
+Next Song Selected (Era-Matched): "Rapture" by Blondie (1981-03-28)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 305.4, pubDate=1981-03-30] "POLISH RULING BODY REACHES AN IMPASSE ON AVERTING STRIKE" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("meeting in an unparalleled atmosphere of crisis members of") from source sentence (max allowed: 8)
+  - Rank #2 [REJECTED] (attempts=0) [Score 248.7, pubDate=1981-03-28] "AIDE TERMS HAIG 'WOUNDED LION' OVER BUSH'S ROLE" | reasons: stale lead article (1981-03-28 is 2 days before broadcastDate 1981-03-30; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The Central Committee met in a tense session yesterday, with members sharply criticizing the Communist Party leadership for being out of touch and moving too slowly on reforms. Despite the harsh rebukes, they declined to accept resignations from the Politburo, leaving the ruling body intact but under scrutiny. Coming your way, Blondie and "Rapture"."
+
+--------------------------------------------------------------------------------
+DATE: 1985-07-13
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1985-07-13:
+  #1 [Score 205.2] "IN DROUGHT-RAVAGED SUDAN, SUDDEN DOWNPOURS SLOW AID" (articles: 4, fp: 2, dates: 1985-07-10..1985-07-13)
+  #2 [Score 205] "SOME VOICE DOUBT ON GAINING ACCORD ON BUDGET DETAILS" (articles: 4, fp: 2, dates: 1985-07-11..1985-07-13)
+  #3 [Score 197.4] "FOREIGN AID BILL MAY BE VETOED OVER STRICTURES" (articles: 3, fp: 2, dates: 1985-07-12..1985-07-13)
+  #4 [Score 189.7] "OPERATION TODAY" (articles: 4, fp: 1, dates: 1985-07-11..1985-07-13)
+  #5 [Score 182.6] "CITES AIR RAIDS FROM AFGHANISTAN" (articles: 3, fp: 2, dates: 1985-07-09..1985-07-12)
+  #6 [Score 182.4] "TURK IN ROME CASE DETAILS SMUGGLING" (articles: 3, fp: 1, dates: 1985-07-11..1985-07-13)
+  #7 [Score 177.2] "SOUTH AFRICAN POLICE KILL 7 BLACKS IN A TOWNSHIP NEAR JOHANNESBURG" (articles: 3, fp: 2, dates: 1985-07-10..1985-07-12)
+  #8 [Score 176] "INTELLIGENCE EXPERTS GIVE ACCOUNT OF HOW THEY THINK SPIES WORKED" (articles: 6, fp: 3, dates: 1985-07-09..1985-07-12)
+  #9 [Score 164.8] "SENATE VOTES CONFIRMATION OF 23 FOR DIPLOMATIC POSTS" (articles: 4, fp: 1, dates: 1985-07-12..1985-07-13)
+  #10 [Score 159.7] "SHANKER BACKS TEACHER MERIT PAY BASED ON STANDARD NATIONAL TEST" (articles: 2, fp: 1, dates: 1985-07-12..1985-07-13)
+Next Song Selected (Era-Matched): "A View To A Kill" by Duran Duran (1985-07-13)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 205.2, pubDate=1985-07-13] "IN DROUGHT-RAVAGED SUDAN, SUDDEN DOWNPOURS SLOW AID"
+  - Rank #2 [REJECTED] (attempts=0) [Score 205, pubDate=1985-07-11] "SOME VOICE DOUBT ON GAINING ACCORD ON BUDGET DETAILS" | reasons: stale lead article (1985-07-11 is 2 days before broadcastDate 1985-07-13; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 177.2, pubDate=1985-07-10] "SOUTH AFRICAN POLICE KILL 7 BLACKS IN A TOWNSHIP NEAR JOHANNESBURG" | reasons: stale lead article (1985-07-10 is 3 days before broadcastDate 1985-07-13; fresher page-1 leads exist)
+  - Rank #8 [REJECTED] (attempts=0) [Score 176, pubDate=1985-07-09] "INTELLIGENCE EXPERTS GIVE ACCOUNT OF HOW THEY THINK SPIES WORKED" | reasons: stale lead article (1985-07-09 is 4 days before broadcastDate 1985-07-13; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Heavy rains have complicated efforts to deliver aid in drought-ravaged Sudan. The downpours have washed out roads and bridges, slowing relief operations for hundreds of thousands facing starvation in Darfur. Unless repairs are swift, deaths from hunger and disease could rise sharply. Check this one out, "A View To A Kill" by Duran Duran."
+
+--------------------------------------------------------------------------------
+DATE: 1986-01-29
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1986-01-29:
+  #1 [Score 268.2] "THE SHUTTLE EXPLODES: 6 IN CREW AND HIGH-SCHOOL TEACHER ARE KILLED 74 SECONDS AFTER LIFTOFF" (articles: 4, fp: 2, dates: 1986-01-29)
+  #2 [Score 247] "MARCOS MOUNTS ATTACK" (articles: 10, fp: 2, dates: 1986-01-26..1986-01-29)
+  #3 [Score 221.6] "NO IDEOLOGICAL SHIFT IS DISCERNED" (articles: 6, fp: 2, dates: 1986-01-27..1986-01-29)
+  #4 [Score 219.8] "AFTER THE SHOCK, A NEED TO SHARE GRIEF AND LOSS" (articles: 3, fp: 1, dates: 1986-01-29)
+  #5 [Score 187] "2 INQUIRIES OPENED ON CITY CONTRACT FOR TICKET DEVICE" (articles: 2, fp: 2, dates: 1986-01-27..1986-01-28)
+  #6 [Score 182.2] "SCIENTISTS REPORT A MOON OF URANUS IS 'BIZARRE HYBRID'" (articles: 7, fp: 3, dates: 1986-01-25..1986-01-28)
+  #7 [Score 178.5] "REBELS IN UGANDA SAY THEY OUSTED MILITARY LEADERS" (articles: 6, fp: 3, dates: 1986-01-26..1986-01-29)
+  #8 [Score 173.8] "STATE OF UNION PROMPTS DEBATE IN WHITE HOUSE" (articles: 3, fp: 1, dates: 1986-01-28..1986-01-29)
+  #9 [Score 160.8] "AQUINO STIRS A CROWD" (articles: 2, fp: 1, dates: 1986-01-25..1986-01-28)
+  #10 [Score 152.3] "FROM THE BEGINNING TO THE END" (articles: 1, fp: 1, dates: 1986-01-29)
+Next Song Selected (Era-Matched): "That's What Friends Are For" by Dionne and Friends (1986-01-25)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 268.2, pubDate=1986-01-29] "THE SHUTTLE EXPLODES: 6 IN CREW AND HIGH-SCHOOL TEACHER ARE KILLED 74 SECONDS AFTER LIFTOFF" | reasons: Attempt 1: Substance check failed: contains 1 verified concrete facts (minimum 2 required)
+  - Rank #6 [REJECTED] (attempts=0) [Score 182.2, pubDate=1986-01-27] "SCIENTISTS REPORT A MOON OF URANUS IS 'BIZARRE HYBRID'" | reasons: stale lead article (1986-01-27 is 2 days before broadcastDate 1986-01-29; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 178.5, pubDate=1986-01-27] "REBELS IN UGANDA SAY THEY OUSTED MILITARY LEADERS" | reasons: stale lead article (1986-01-27 is 2 days before broadcastDate 1986-01-29; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The space shuttle Challenger exploded just seconds after liftoff yesterday morning at 11:39 A.M., with no survivors among its seven-member crew. Officials are still investigating the cause of this tragic accident, the worst in American space history. Flaming debris fell into the Atlantic Ocean for an hour following the explosion. Here's a good one, "That's What Friends Are For" by Dionne and Friends."
+
+--------------------------------------------------------------------------------
+DATE: 1989-11-09
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1989-11-09:
+  #1 [Score 269.3] "BONN TIES MORE AID FOR EAST GERMANY TO FREE ELECTIONS" (articles: 6, fp: 4, dates: 1989-11-06..1989-11-09)
+  #2 [Score 250.5] "JOY OF DEMOCRATS DILUTED IN VIRGINIA" (articles: 5, fp: 4, dates: 1989-11-06..1989-11-09)
+  #3 [Score 187.3] "Industries in U.S. and Japan Form Alliance on New TV Technology" (articles: 7, fp: 1, dates: 1989-11-06..1989-11-09)
+  #4 [Score 169.2] "Bolshevik Rally And Anti-Rally In Soviet Streets" (articles: 3, fp: 2, dates: 1989-11-05..1989-11-08)
+  #5 [Score 156] "Arts Endowment Withdraws Grant for AIDS Show" (articles: 2, fp: 1, dates: 1989-11-08..1989-11-09)
+  #6 [Score 150] "Black Success With Measured Approach" (articles: 2, fp: 1, dates: 1989-11-05..1989-11-08)
+  #7 [Score 141.5] "BROAD DISPARITIES IN VOTES AND POLLS RAISING QUESTIONS" (articles: 2, fp: 1, dates: 1989-11-09)
+  #8 [Score 131.8] "In Savings Debacle, Many Fingers Point Here" (articles: 2, fp: 1, dates: 1989-11-07..1989-11-09)
+  #9 [Score 130.4] "Senators Sought Deal, Savings Official Says" (articles: 2, fp: 1, dates: 1989-11-08)
+  #10 [Score 128.5] "Politburo Ranks Are Shaken Up By New Leader <" (articles: 1, fp: 1, dates: 1989-11-09)
+Next Song Selected (Era-Matched): "Listen To Your Heart" by Roxette (1989-11-04)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=6 | path=gemini_fallback) [Score 269.3, pubDate=1989-11-09] "BONN TIES MORE AID FOR EAST GERMANY TO FREE ELECTIONS" | reasons: Attempt 1: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 2: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 3: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 4: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 5: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections")
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Chancellor Helmut Kohl spoke to Parliament about offering support to East Germany. He indicated that Bonn is prepared to provide help if the nation shifts its economic structure and holds open votes. Details are still coming in regarding how these changes might affect the region. Listen to "Listen To Your Heart" by Roxette."
+
+--------------------------------------------------------------------------------
+DATE: 1991-12-26
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1991-12-26:
+  #1 [Score 308.6] "GORBACHEV, LAST SOVIET LEADER, RESIGNS; U.S. RECOGNIZES REPUBLICS' INDEPENDENCE" (articles: 5, fp: 3, dates: 1991-12-23..1991-12-26)
+  #2 [Score 236.8] "GORBACHEV PLANS TO GIVE UP POWER TO YELTSIN TODAY" (articles: 7, fp: 4, dates: 1991-12-22..1991-12-25)
+  #3 [Score 206.8] "FED CUTS KEY RATE IT CHARGES BANKS TO A 27-YEAR LOW" (articles: 10, fp: 4, dates: 1991-12-21..1991-12-24)
+  #4 [Score 164] "MAXWELL RESIGNS AS NEWS PUBLISHER" (articles: 3, fp: 1, dates: 1991-12-24..1991-12-25)
+  #5 [Score 151.4] "MINORITY BUSINESS SET BACK SHARPLY BY COURTS' RULINGS" (articles: 9, fp: 1, dates: 1991-12-23..1991-12-26)
+  #6 [Score 149.8] "A Disney Dress Code Chafes In the Land of Haute Couture" (articles: 3, fp: 1, dates: 1991-12-22..1991-12-25)
+  #7 [Score 146.1] "RETAILERS REPORT SALES FELL SHORT OF DIM FORECASTS" (articles: 2, fp: 1, dates: 1991-12-25..1991-12-26)
+  #8 [Score 136.4] "Without Presidency to Shoot For, Cuomo Takes Aim at Republicans" (articles: 2, fp: 1, dates: 1991-12-22..1991-12-25)
+  #9 [Score 133.3] "HAITI PAYS DEARLY FOR MILITARY COUP" (articles: 1, fp: 1, dates: 1991-12-25)
+  #10 [Score 126.3] "New Israelis From U.S.S.R. Often New to Judaism, Too" (articles: 4, fp: 2, dates: 1991-12-22..1991-12-24)
+Next Song Selected (Era-Matched): "Black Or White" by Michael Jackson (1991-12-21)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 308.6, pubDate=1991-12-26] "GORBACHEV, LAST SOVIET LEADER, RESIGNS; U.S. RECOGNIZES REPUBLICS' INDEPENDENCE"
+  - Rank #3 [REJECTED] (attempts=0) [Score 206.8, pubDate=1991-12-21] "FED CUTS KEY RATE IT CHARGES BANKS TO A 27-YEAR LOW" | reasons: stale lead article (1991-12-21 is 5 days before broadcastDate 1991-12-26; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 164, pubDate=1991-12-24] "MAXWELL RESIGNS AS NEWS PUBLISHER" | reasons: stale lead article (1991-12-24 is 2 days before broadcastDate 1991-12-26; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 151.4, pubDate=1991-12-23] "MINORITY BUSINESS SET BACK SHARPLY BY COURTS' RULINGS" | reasons: stale lead article (1991-12-23 is 3 days before broadcastDate 1991-12-26; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Mikhail Gorbachev announced last night that he was stepping down as President of the Soviet Union. In a statement, he declared an end to his tenure and effectively dissolved the union after years of decline. President Bush swiftly recognized Russia and other former republics, signaling a new chapter in international relations. A little something from Michael Jackson, "Black Or White"."
+
+--------------------------------------------------------------------------------
+DATE: 1995-04-19
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1995-04-19:
+  #1 [Score 215.4] "DOLLAR SETS LOWS VS. YEN AND MARK" (articles: 6, fp: 3, dates: 1995-04-16..1995-04-19)
+  #2 [Score 214.4] "NEW POLICY CUTS NUMBERS ON RELIEF IN NEW YORK CITY" (articles: 3, fp: 2, dates: 1995-04-16..1995-04-19)
+  #3 [Score 175] "Clinton Seeks New Welfare Bill, Saying G.O.P. Plan Is Too Harsh" (articles: 3, fp: 1, dates: 1995-04-16..1995-04-19)
+  #4 [Score 171.3] "Treasury Chief Goes to India And Is Upstaged by Iranian" (articles: 2, fp: 2, dates: 1995-04-18..1995-04-19)
+  #5 [Score 156.1] "Earth Day at 25: The State of Nature" (articles: 4, fp: 1, dates: 1995-04-16..1995-04-18)
+  #6 [Score 149.8] "The Pulitzer Prizes" (articles: 2, fp: 1, dates: 1995-04-19)
+  #7 [Score 135.8] "Washington Memo; Debate on Flat Tax Revives Simplicity vs. Fairness Issue" (articles: 2, fp: 1, dates: 1995-04-18..1995-04-19)
+  #8 [Score 114.2] "STRENGTH IS SEEN IN A U.S. EXPORT: LAW ENFORCEMENT" (articles: 3, fp: 1, dates: 1995-04-16..1995-04-19)
+  #9 [Score 110.1] "JAPANESE SETTLE ON PLAN TO CURB THE SURGING YEN" (articles: 5, fp: 2, dates: 1995-04-12..1995-04-14)
+  #10 [Score 108.9] "Megachurches -- Second article of a series: The Gospels of Management; The Minister as Marketer: Learning From Business" (articles: 1, fp: 1, dates: 1995-04-18)
+Next Song Selected (Era-Matched): "This Is How We Do It" by Montell Jordan (1995-04-15)
+Candidate Evaluations (No Silent Skipping):
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 215.4, pubDate=1995-04-19] "DOLLAR SETS LOWS VS. YEN AND MARK"
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, The American dollar continues to weaken against major currencies like the Japanese yen and German mark, hitting new lows in New York today. Currency traders are dumping dollars amid threats of sanctions from Clinton Administration officials if trade talks with Japan fail. Mazda is cutting production by shutting down factories for days this month, reflecting growing pressures on U.S.-bound car exports due to the stronger yen. Coming through the speakers, "This Is How We Do It" by Montell Jordan."
+
+================================================================================
+ROUND 6 ITEM 8 SUMMARY: FALLBACK RATE & CANDIDATE OUTCOMES
+================================================================================
+1962-10-23 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Monster Mash - Bobby "Boris" Pickett And The Crypt-Kickers | Rejections: None
+1968-06-06 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Mrs. Robinson - Simon and Garfunkel | Rejections: Attempt 1: Unverified proper name "Democratic" not found in fact packet
+1970-05-05 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: ABC - Jackson 5 | Rejections: None
+1975-04-30 | Rank #2 | Attempts: 1 | Path: model | Lint: PASS | Song: (Hey Won't You Play) Another Somebody Done Somebody Wrong Song - B.J. Thomas | Rejections: None
+1988-07-04 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Dirty Diana - Michael Jackson | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("a united states navy warship in the persian gulf") from source sentence (max allowed: 8)
+1965-02-22 | Rank #4 | Attempts: 1 | Path: model | Lint: PASS | Song: This Diamond Ring - Gary Lewis And The Playboys | Rejections: None
+1976-07-05 | Rank #1 | Attempts: 4 | Path: model | Lint: PASS | Song: Silly Love Songs - Wings | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("105 mainly israeli hostages and air france crew members") from source sentence (max allowed: 8) ;; Attempt 2: Unverified proper name "Ugandan" not found in fact packet ;; Attempt 3: Wholesale copying: reproduces 9 consecutive words ("105 mainly israeli hostages and air france crew members") from source sentence (max allowed: 8)
+1980-11-05 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Woman In Love - Barbra Streisand | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("prepared a bill that would nationalize american claims against") from source sentence (max allowed: 8)
+1971-06-13 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Want Ads - The Honey Cone | Rejections: None
+1971-06-14 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Want Ads - The Honey Cone | Rejections: None
+1993-02-27 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: I Will Always Love You - Whitney Houston | Rejections: None
+1963-08-29 | Rank #2 | Attempts: 6 | Path: gemini_fallback | Lint: PASS | Song: Fingertips - Pt 2 - Little Stevie Wonder | Rejections: Attempt 1: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 2: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 3: Model news draft contains relative-day word "tomorrow" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 4: Model news draft contains relative-day word "today" when article date (1963-08-28) != broadcast date (1963-08-29) ;; Attempt 5: Model news draft contains relative-day word "tomorrow" when article date (1963-08-28) != broadcast date (1963-08-29)
+1963-11-22 | Rank #11 | Attempts: 2 | Path: model | Lint: PASS | Song: Deep Purple - Nino Tempo and April Stevens | Rejections: Attempt 1: Unverified proper name "Department" not found in fact packet
+1967-06-06 | Rank #2 | Attempts: 1 | Path: model | Lint: PASS | Song: Respect - Aretha Franklin | Rejections: None
+1968-04-04 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: (Sittin' On) The Dock Of The Bay - Otis Redding | Rejections: None
+1969-07-21 | Rank #2 | Attempts: 1 | Path: model | Lint: PASS | Song: In The Year 2525 - Zager and Evans | Rejections: None
+1969-08-15 | Rank #10 | Attempts: 3 | Path: model | Lint: PASS | Song: In The Year 2525 - Zager and Evans | Rejections: Attempt 1: Draft copies 5+ consecutive headline words ("increase necessary to keep health") ;; Attempt 2: Read-aloud lint: contains 4+ consecutive all-caps words ("STATE APPROVES AVERAGE RISE")
+1971-05-01 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Joy To The World - Three Dog Night | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("remain in south vietnam indefinitely no matter how long") from source sentence (max allowed: 8)
+1972-06-17 | Rank #1 | Attempts: 4 | Path: model | Lint: PASS | Song: The Candy Man - Sammy Davis, Jr. and The Mike Curb Congregation | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("after the united states mined north vietnam s ports") from source sentence (max allowed: 8) ;; Attempt 2: Unverified proper name "Soviets" not found in fact packet ;; Attempt 3: Wholesale copying: reproduces 9 consecutive words ("after the united states mined north vietnam s ports") from source sentence (max allowed: 8)
+1973-10-20 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Angie - The Rolling Stones | Rejections: None
+1974-08-09 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Annie's Song - John Denver | Rejections: Attempt 1: First sentence echoes headline content words (4/4 words: "political scene sharply altered")
+1976-03-10 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Love Machine (Part 1) - The Miracles | Rejections: None
+1977-08-17 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: I Just Want To Be Your Everything - Andy Gibb | Rejections: None
+1979-03-30 | Rank #3 | Attempts: 2 | Path: model | Lint: PASS | Song: Tragedy - Bee Gees | Rejections: Attempt 1: First sentence echoes headline content words (5/5 words: "trucking industry teamsters closer contract")
+1979-11-05 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Pop Muzik - M | Rejections: None
+1980-05-18 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Call Me - Blondie | Rejections: Attempt 1: Draft copies 5+ consecutive headline words ("homeowners are bitter and fearful")
+1981-03-30 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: Rapture - Blondie | Rejections: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("meeting in an unparalleled atmosphere of crisis members of") from source sentence (max allowed: 8)
+1985-07-13 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: A View To A Kill - Duran Duran | Rejections: None
+1986-01-29 | Rank #1 | Attempts: 2 | Path: model | Lint: PASS | Song: That's What Friends Are For - Dionne and Friends | Rejections: Attempt 1: Substance check failed: contains 1 verified concrete facts (minimum 2 required)
+1989-11-09 | Rank #1 | Attempts: 6 | Path: gemini_fallback | Lint: PASS | Song: Listen To Your Heart - Roxette | Rejections: Attempt 1: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 2: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 3: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 4: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections") ;; Attempt 5: First sentence echoes headline content words (6/8 words: "bonn aid east germany free elections")
+1991-12-26 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: Black Or White - Michael Jackson | Rejections: None
+1995-04-19 | Rank #1 | Attempts: 1 | Path: model | Lint: PASS | Song: This Is How We Do It - Montell Jordan | Rejections: None
+
+Total Dates Tested: 32
+  Local Model Passed: 30/32 (93.8%)
+  Gemini Fallback Passed: 2/32 (6.3%)
+  Extractive Fallback Used: 0/32 (0.0%)
+  Read-Aloud Lint Pass Rate: 100%

@@ -1,0 +1,176 @@
+================================================================================
+ROUND 6 FRESH BLIND TEST (Generated 2026-11-12T20:12:50.064Z)
+================================================================================
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1964-08-05
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1964-08-05 (Total Clusters: 1353):
+  #1 [Score 307.1] "JOHNSON DIRECTS NAVY TO DESTROY ANY NEW RAIDERS; 2d Destroyer and Air Cover Ordered in Gulf of Tonkin After Maddox Attack; HANOI TO GET PROTEST; Communist Regime Charge of Raids by U.S. Forces Termed Groundless" (articles: 4, fp: 4, dates: [1964-08-03, 1964-08-04, 1964-08-05])
+  #2 [Score 304.1] "LINDSAY REJEGTS NATIONAL TICKET; TO RUN ON HIS OWN; He Attacks Positions Taken by G.O.P. Convention in Nominating Goldwater" (articles: 16, fp: 4, dates: [1964-08-02, 1964-08-03, 1964-08-04, 1964-08-05])
+  #3 [Score 238.2] "AID PROMISED CITY IN POVERTY FIGHT; Wagner Reports Success in His Talks in Capital With Wirtz and Celebrezze" (articles: 9, fp: 4, dates: [1964-08-02, 1964-08-03, 1964-08-04, 1964-08-05])
+  #4 [Score 232.2] "NEW RACIAL RIOT HITS JERSEY CITY AS PARLEY FAILS; Bombs and Bricks Hurled by Gangs of Youths—400 Policemen Called In; PANEL TRUCK SET AFIRE; Violence Erupts as Negro Leaders and Officials Hold Futile Meetings" (articles: 4, fp: 3, dates: [1964-08-03, 1964-08-04, 1964-08-05])
+  #5 [Score 217.7] "HUMPHREY SEEKS BUSINESS BACKING; In Series of Meetings, He Calls Himself a Moderate" (articles: 13, fp: 2, dates: [1964-08-02, 1964-08-03, 1964-08-04, 1964-08-05])
+  #6 [Score 202.6] "KHRUSHCHEV ASKS A GERMAN PEACE; Calls It Major Step Toward Easing World Tensions" (articles: 6, fp: 2, dates: [1964-08-02, 1964-08-03, 1964-08-04])
+  #7 [Score 200.4] "Congolese Rebels Pressing On; Two Key Cities Are Imperiled; One Force Is Only 30 Miles From Stanleyville—Kivu's Capital Fears Attack" (articles: 2, fp: 2, dates: [1964-08-04, 1964-08-05])
+  #8 [Score 195.7] "PRESIDENT HAILS NEW LUNAR FEAT; Calls Ranger Flight ‘Basic Step’ to Manned Landing—Praises Scientists" (articles: 6, fp: 4, dates: [1964-07-31, 1964-08-01, 1964-08-02, 1964-08-03])
+  #9 [Score 189.9] "U.S. Commander in Pacific Discusses Naval Clash; RAID FROM LAOS ALLEGED BY HANOI; Vietnam Communists Say 4 U.S. Planes Attacked Border Village and Post" (articles: 4, fp: 2, dates: [1964-08-02, 1964-08-03, 1964-08-04])
+  #10 [Score 184] "APOLLO OFFICIALS TO STUDY PICTURES; Space Aides, Elated by Data on Moon's Surface, Are Due on Coast Tomorrow" (articles: 14, fp: 2, dates: [1964-08-01, 1964-08-02, 1964-08-03, 1964-08-04, 1964-08-05])
+Next Song Selected (Era-Matched): "A Hard Day's Night" by The Beatles (1964-08-01)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 307.1, pubDate=1964-08-04] "JOHNSON DIRECTS NAVY TO DESTROY ANY NEW RAIDERS; 2d Destroyer and Air Cover Ordered in Gulf of Tonkin After Maddox Attack; HANOI TO GET PROTEST; Communist Regime Charge of Raids by U.S. Forces Termed Groundless"
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, President Johnson has ordered the Navy to destroy any attackers in future incidents in the Gulf of Tonkin. The Defense Department reported yesterday that North Vietnamese PT boats launched a deliberate attack on two U.S. destroyers patrolling international waters there. Details are still coming in as tensions escalate between Hanoi and Washington. Let's take a listen to "A Hard Day's Night" by The Beatles."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1972-02-22
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1972-02-22 (Total Clusters: 1021):
+  #1 [Score 292] "SHIFT IN SCHEDULE" (articles: 18, fp: 3, dates: [1972-02-19, 1972-02-20, 1972-02-21, 1972-02-22])
+  #2 [Score 228.7] "ABM COMPROMISE WITH SOVIET SEEN" (articles: 4, fp: 4, dates: [1972-02-18, 1972-02-19, 1972-02-20, 1972-02-21])
+  #3 [Score 206.6] "WARRANT ISSUED IN POLICE SLAYING" (articles: 6, fp: 3, dates: [1972-02-17, 1972-02-19, 1972-02-20])
+  #4 [Score 202] "PRESIDENT LEAVES ON TRIP TO CHINA; STOPS IN HAWAII" (articles: 22, fp: 3, dates: [1972-02-17, 1972-02-18, 1972-02-19, 1972-02-20])
+  #5 [Score 188.4] "Cahill Declares President Neglects the Urban States" (articles: 10, fp: 2, dates: [1972-02-18, 1972-02-19, 1972-02-20, 1972-02-21])
+  #6 [Score 183.6] "NEW CENSUS STUDY PROJECTS DECLINE IN RATE OF BIRTHS" (articles: 7, fp: 3, dates: [1972-02-16, 1972-02-17, 1972-02-19, 1972-02-20, 1972-02-21])
+  #7 [Score 165] "All‐Volunteer Army Unit Training at Dix" (articles: 4, fp: 1, dates: [1972-02-19, 1972-02-20, 1972-02-22])
+  #8 [Score 160.5] "PRESIDENT LEANS TO AN AMENDMENT ON PUPIL BUSING" (articles: 2, fp: 1, dates: [1972-02-21, 1972-02-22])
+  #9 [Score 159.2] "Walter Winchell Is Dead on Coast at 74(2)" (articles: 3, fp: 2, dates: [1972-02-21, 1972-02-22])
+  #10 [Score 159] "GINLEY'S THE NAME" (articles: 2, fp: 2, dates: [1972-02-21, 1972-02-22])
+Next Song Selected (Era-Matched): "Without You" by Nilsson (1972-02-19)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 292, pubDate=1972-02-22] "SHIFT IN SCHEDULE"
+  - Rank #2 [REJECTED] (attempts=0) [Score 228.7, pubDate=1972-02-18] "ABM COMPROMISE WITH SOVIET SEEN" | reasons: stale lead article (1972-02-18 is 4 days before broadcastDate 1972-02-22; fresher page-1 leads exist)
+  - Rank #3 [REJECTED] (attempts=0) [Score 206.6, pubDate=1972-02-19] "WARRANT ISSUED IN POLICE SLAYING" | reasons: stale lead article (1972-02-19 is 3 days before broadcastDate 1972-02-22; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 202, pubDate=1972-02-18] "PRESIDENT LEAVES ON TRIP TO CHINA; STOPS IN HAWAII" | reasons: stale lead article (1972-02-18 is 4 days before broadcastDate 1972-02-22; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 183.6, pubDate=1972-02-17] "NEW CENSUS STUDY PROJECTS DECLINE IN RATE OF BIRTHS" | reasons: stale lead article (1972-02-17 is 5 days before broadcastDate 1972-02-22; fresher page-1 leads exist)
+  - Rank #10 [REJECTED] (attempts=0) [Score 159, pubDate=1972-02-22] "GINLEY'S THE NAME" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, President Nixon's week-long summit in China reached a significant milestone Sunday with an unexpected meeting with Chairman Mao Tse-tung. The encounter underscores the diplomatic breakthrough as Nixon continues his historic visit to Peking, despite disapproval from Nationalist China’s Assembly. Prior to landing in this Western Pacific Territory, Nixon spent Saturday night on American soil, marking a brief respite before embarking on this pivotal journey. Take a listen to Nilsson with "Without You"."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1978-11-20
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1978-11-20 (Total Clusters: 1087):
+  #1 [Score 233.4] "BEGIN REJECTS PLAN FOR LINK IN TREATY TO THE PALESTINIANS" (articles: 5, fp: 3, dates: [1978-11-17, 1978-11-18, 1978-11-20])
+  #2 [Score 225.4] "Iran's Affluent, Indebted to Shah, Give Him Little Support in Crisis" (articles: 5, fp: 2, dates: [1978-11-17, 1978-11-18, 1978-11-19, 1978-11-20])
+  #3 [Score 216.3] "PRESIDENT EXPECTS HIS INFLATION PLAN TO BAR DEPRESSION" (articles: 6, fp: 3, dates: [1978-11-16, 1978-11-17, 1978-11-19])
+  #4 [Score 174.4] "Kenya Survives Its Long‐Feared Transfer of Power" (articles: 3, fp: 1, dates: [1978-11-17, 1978-11-19, 1978-11-20])
+  #5 [Score 164] "Pension System in Soviet Leaves Many of the Aged Impoverished" (articles: 3, fp: 2, dates: [1978-11-16, 1978-11-19])
+  #6 [Score 158.1] "SHAH WON'T ALLOW HELP FROM ABROAD TO DEAL WITH CRISIS" (articles: 3, fp: 1, dates: [1978-11-19, 1978-11-20])
+  #7 [Score 155.8] "Education Boards See Levittown As a Model for Resisting Strikes" (articles: 2, fp: 1, dates: [1978-11-18, 1978-11-20])
+  #8 [Score 154.7] "West Houston: A Hybrid Culture" (articles: 3, fp: 1, dates: [1978-11-17, 1978-11-18, 1978-11-19])
+  #9 [Score 153.3] "Women have come off the sidelines, even in traditionally male —" (articles: 5, fp: 1, dates: [1978-11-16, 1978-11-19])
+  #10 [Score 135.7] "ARMS SPENDING RISE SAID TO BE OPPOSED BY BUDGET DIRECTOR" (articles: 2, fp: 2, dates: [1978-11-19])
+Next Song Selected (Era-Matched): "MacArthur Park" by Donna Summer (1978-11-18)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=2 | path=model) [Score 233.4, pubDate=1978-11-20] "BEGIN REJECTS PLAN FOR LINK IN TREATY TO THE PALESTINIANS" | reasons: Attempt 1: Contains relative time word "this Sunday" but event is not within 7 days of broadcast date (1978-11-20) or weekday mismatch
+  - Rank #2 [REJECTED] (attempts=0) [Score 225.4, pubDate=1978-11-18] "Iran's Affluent, Indebted to Shah, Give Him Little Support in Crisis" | reasons: stale lead article (1978-11-18 is 2 days before broadcastDate 1978-11-20; fresher page-1 leads exist)
+  - Rank #3 [REJECTED] (attempts=0) [Score 216.3, pubDate=1978-11-17] "PRESIDENT EXPECTS HIS INFLATION PLAN TO BAR DEPRESSION" | reasons: stale lead article (1978-11-17 is 3 days before broadcastDate 1978-11-20; fresher page-1 leads exist)
+  - Rank #4 [REJECTED] (attempts=0) [Score 174.4, pubDate=1978-11-20] "Kenya Survives Its Long‐Feared Transfer of Power" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+  - Rank #9 [REJECTED] (attempts=0) [Score 153.3, pubDate=1978-11-19] "Women have come off the sidelines, even in traditionally male —" | reasons: no clean body sentences available (all candidate text was index-style or empty)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Secretary of State Cyrus Vance said that Egypt's latest ideas for linking an Egyptian-Israeli peace treaty to resolving issues for Palestinians living in the West Bank and Gaza Strip were constructive. The United States is now waiting for Israel's response as Defense Minister Ezer Weizman returns home ahead of a crucial Cabinet meeting. Take a listen to Donna Summer with "MacArthur Park"."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1982-06-07
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1982-06-07 (Total Clusters: 656):
+  #1 [Score 380] "2 SIDES FIRE ACROSS LEBANESE LINE; REAGAN ADVISERS MEET URGENTLY IN VERSAILLES ON THE MIDEAST CRISIS" (articles: 15, fp: 6, dates: [1982-06-05, 1982-06-06, 1982-06-07])
+  #2 [Score 307] "BRITAIN CONFIRMS THE LANDING OF 3,000 SOLDIERS FROM QE2" (articles: 18, fp: 6, dates: [1982-06-04, 1982-06-05, 1982-06-06, 1982-06-07])
+  #3 [Score 262.1] "8 BELIEVED DEAD" (articles: 2, fp: 2, dates: [1982-06-07])
+  #4 [Score 239.3] "LIMITED SUMMIT AGREEMENT SET ON TRADE AND CURRENCY" (articles: 7, fp: 3, dates: [1982-06-05, 1982-06-06, 1982-06-07])
+  #5 [Score 190] "ISRAELI AMBASSADOR WOUNDED IN LONDON SHOOTING" (articles: 5, fp: 2, dates: [1982-06-04, 1982-06-05, 1982-06-06, 1982-06-07])
+  #6 [Score 189.3] "JERSEYANS TO VOTE TUESDAY IN SENATE PRIMARIES" (articles: 6, fp: 1, dates: [1982-06-04, 1982-06-05, 1982-06-06, 1982-06-07])
+  #7 [Score 182] "BRITAIN REPORTS SEIZING KEY HILLS OUTSIDE STANLEY" (articles: 22, fp: 5, dates: [1982-05-31, 1982-06-01, 1982-06-02, 1982-06-03])
+  #8 [Score 158.2] "MOSCOW REBUTS AMERICAN PLAN FOR ARMS CUTS" (articles: 3, fp: 3, dates: [1982-06-02, 1982-06-04, 1982-06-05])
+  #9 [Score 152.5] "RACIST WHO KILLED 2 INDICTED IN SHOOTING OF VERNON JORDAN" (articles: 3, fp: 1, dates: [1982-06-03, 1982-06-06])
+  #10 [Score 140.5] "NEW BILLS PLANNED" (articles: 4, fp: 1, dates: [1982-06-02, 1982-06-03, 1982-06-05])
+Next Song Selected (Era-Matched): "Ebony And Ivory" by Paul McCartney And Stevie Wonder (1982-06-05)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 380, pubDate=1982-06-06] "2 SIDES FIRE ACROSS LEBANESE LINE; REAGAN ADVISERS MEET URGENTLY IN VERSAILLES ON THE MIDEAST CRISIS"
+  - Rank #5 [REJECTED] (attempts=0) [Score 190, pubDate=1982-06-04] "ISRAELI AMBASSADOR WOUNDED IN LONDON SHOOTING" | reasons: stale lead article (1982-06-04 is 3 days before broadcastDate 1982-06-07; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 182, pubDate=1982-06-02] "BRITAIN REPORTS SEIZING KEY HILLS OUTSIDE STANLEY" | reasons: stale lead article (1982-06-02 is 5 days before broadcastDate 1982-06-07; fresher page-1 leads exist)
+  - Rank #8 [REJECTED] (attempts=0) [Score 158.2, pubDate=1982-06-04] "MOSCOW REBUTS AMERICAN PLAN FOR ARMS CUTS" | reasons: stale lead article (1982-06-04 is 3 days before broadcastDate 1982-06-07; fresher page-1 leads exist)
+  - Rank #9 [REJECTED] (attempts=0) [Score 152.5, pubDate=1982-06-03] "RACIST WHO KILLED 2 INDICTED IN SHOOTING OF VERNON JORDAN" | reasons: stale lead article (1982-06-03 is 4 days before broadcastDate 1982-06-07; fresher page-1 leads exist)
+  - Rank #10 [REJECTED] (attempts=0) [Score 140.5, pubDate=1982-06-02] "NEW BILLS PLANNED" | reasons: stale lead article (1982-06-02 is 5 days before broadcastDate 1982-06-07; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "In yesterday's Times, President Reagan's advisers met urgently early Saturday to discuss the growing Mideast crisis. Israeli forces are reportedly mobilizing for a possible invasion of southern Lebanon, raising tensions across the region. Secretary Haig called the bombings "a very serious turn of events" and stressed efforts to restore peace. Got a great track for you from Paul McCartney And Stevie Wonder, "Ebony And Ivory"."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1984-11-07
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1984-11-07 (Total Clusters: 739):
+  #1 [Score 334] "PRESIDENT SWEEPS THE TRISTATE AREA" (articles: 7, fp: 4, dates: [1984-11-04, 1984-11-05, 1984-11-07])
+  #2 [Score 262] "BRADLEY WINS HANDILY IN JERSEY DESPITE STRONG VOTE FOR REAGAN" (articles: 18, fp: 3, dates: [1984-11-04, 1984-11-05, 1984-11-06, 1984-11-07])
+  #3 [Score 222.2] "NICARAGUA SAID TO GET SOVIET ATTACK COPTERS" (articles: 5, fp: 1, dates: [1984-11-05, 1984-11-06, 1984-11-07])
+  #4 [Score 220.3] "SIKHS BEGIN TO REAPPEAR IN PUBLIC" (articles: 12, fp: 2, dates: [1984-11-04, 1984-11-05, 1984-11-06, 1984-11-07])
+  #5 [Score 211.3] "TWO PARTIES PRESS CONGRESS CONTESTS IN VOTE TOMORROW" (articles: 3, fp: 2, dates: [1984-11-05, 1984-11-07])
+  #6 [Score 202] "MONDALE STRIVES TO CUT REAGAN LEAD IN NORTHEAST" (articles: 18, fp: 2, dates: [1984-11-02, 1984-11-03, 1984-11-04, 1984-11-05])
+  #7 [Score 198.2] "CITY, CITING STALLED TALKS, SEEKS ARBITRATOR FOR ALL UNION CONTRACTS" (articles: 5, fp: 2, dates: [1984-11-04, 1984-11-06, 1984-11-07])
+  #8 [Score 197] "1,000 FEARED DEAD AS INDIA PREPARES FOR GANDHI RITES" (articles: 20, fp: 4, dates: [1984-11-01, 1984-11-02, 1984-11-03, 1984-11-04])
+  #9 [Score 190.1] "STATE OF SIEGE IS IMPOSED IN CHILE" (articles: 4, fp: 1, dates: [1984-11-04, 1984-11-06, 1984-11-07])
+  #10 [Score 172] "THOUSANDS CROWD GARMENT DISTRICT TO CHEER MONDALE" (articles: 17, fp: 1, dates: [1984-11-02, 1984-11-03, 1984-11-04, 1984-11-05])
+Next Song Selected (Era-Matched): "Caribbean Queen (No More Love On The Run)" by Billy Ocean (1984-11-03)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=5 | path=model) [Score 334, pubDate=1984-11-07] "PRESIDENT SWEEPS THE TRISTATE AREA" | reasons: Attempt 1: Wholesale copying: reproduces 9 consecutive words ("control of both houses of the general assembly for") from source sentence (max allowed: 8) ;; Attempt 2: Wholesale copying: reproduces 9 consecutive words ("president reagan swept new york new jersey and connecticut") from source sentence (max allowed: 8) ;; Attempt 3: Wholesale copying: reproduces 9 consecutive words ("both houses of the general assembly for the first") from source sentence (max allowed: 8) ;; Attempt 4: Wholesale copying: reproduces 9 consecutive words ("president reagan swept new york new jersey and connecticut") from source sentence (max allowed: 8)
+  - Rank #5 [REJECTED] (attempts=0) [Score 211.3, pubDate=1984-11-05] "TWO PARTIES PRESS CONGRESS CONTESTS IN VOTE TOMORROW" | reasons: stale lead article (1984-11-05 is 2 days before broadcastDate 1984-11-07; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 202, pubDate=1984-11-02] "MONDALE STRIVES TO CUT REAGAN LEAD IN NORTHEAST" | reasons: stale lead article (1984-11-02 is 5 days before broadcastDate 1984-11-07; fresher page-1 leads exist)
+  - Rank #8 [REJECTED] (attempts=0) [Score 197, pubDate=1984-11-03] "1,000 FEARED DEAD AS INDIA PREPARES FOR GANDHI RITES" | reasons: stale lead article (1984-11-03 is 4 days before broadcastDate 1984-11-07; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, President Reagan secured strong wins in New York, Jersey, and Connecticut this election day. Despite his success in those states, Republicans didn't see similar gains in local offices outside of Connecticut. There, they managed to take control of both legislative houses for the first time in ten years. Listen to "Caribbean Queen (No More Love On The Run)" by Billy Ocean."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1990-02-12
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1990-02-12 (Total Clusters: 658):
+  #1 [Score 276] "MANDELA, FREED, URGES STEP-UP IN PRESSURE TO END WHITE RULE" (articles: 8, fp: 3, dates: [1990-02-10, 1990-02-11, 1990-02-12])
+  #2 [Score 275] "Upheaval in the East;   Bonn's Politicians Invade East Germany" (articles: 20, fp: 5, dates: [1990-02-09, 1990-02-10, 1990-02-11])
+  #3 [Score 207] "GORBACHEV ACCEPTS DEEP CUTS IN EUROPE IF FORCES ARE EQUAL; BAKER HINTS SHIFT ON GERMANY" (articles: 2, fp: 2, dates: [1990-02-10, 1990-02-12])
+  #4 [Score 194.3] "The Price of Peace" (articles: 9, fp: 1, dates: [1990-02-09, 1990-02-10, 1990-02-11, 1990-02-12])
+  #5 [Score 157.1] "SOVIET LEADERS AGREE TO SURRENDER COMMUNIST PARTY MONOPOLY ON POWER" (articles: 4, fp: 2, dates: [1990-02-08, 1990-02-10, 1990-02-11])
+  #6 [Score 150.6] "A WAR OF SNIPING ON LEBANON'S TV" (articles: 2, fp: 1, dates: [1990-02-08, 1990-02-10])
+  #7 [Score 147.3] "Caution: The Soviet Party Is Not Over" (articles: 4, fp: 3, dates: [1990-02-07, 1990-02-08, 1990-02-10])
+  #8 [Score 133.6] "AIDS and the Fashion World: Industry Fears for Its Health" (articles: 4, fp: 2, dates: [1990-02-08, 1990-02-11])
+  #9 [Score 127] "GOTTI NOT GUILTY ON ALL 6 CHARGES IN ASSAULT TRIAL" (articles: 2, fp: 1, dates: [1990-02-10])
+  #10 [Score 124.7] "Test of a 'New South Africa': A Bus Ride in Johannesburg" (articles: 7, fp: 1, dates: [1990-02-10, 1990-02-11, 1990-02-12])
+Next Song Selected (Era-Matched): "Opposites Attract" by Paula Abdul (Duet and The Wild Pair) (1990-02-10)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 276, pubDate=1990-02-12] "MANDELA, FREED, URGES STEP-UP IN PRESSURE TO END WHITE RULE"
+  - Rank #2 [REJECTED] (attempts=0) [Score 275, pubDate=1990-02-09] "Upheaval in the East;   Bonn's Politicians Invade East Germany" | reasons: stale lead article (1990-02-09 is 3 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #3 [REJECTED] (attempts=0) [Score 207, pubDate=1990-02-10] "GORBACHEV ACCEPTS DEEP CUTS IN EUROPE IF FORCES ARE EQUAL; BAKER HINTS SHIFT ON GERMANY" | reasons: stale lead article (1990-02-10 is 2 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #5 [REJECTED] (attempts=0) [Score 157.1, pubDate=1990-02-08] "SOVIET LEADERS AGREE TO SURRENDER COMMUNIST PARTY MONOPOLY ON POWER" | reasons: stale lead article (1990-02-08 is 4 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 150.6, pubDate=1990-02-10] "A WAR OF SNIPING ON LEBANON'S TV" | reasons: stale lead article (1990-02-10 is 2 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #7 [REJECTED] (attempts=0) [Score 147.3, pubDate=1990-02-08] "Caution: The Soviet Party Is Not Over" | reasons: stale lead article (1990-02-08 is 4 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #9 [REJECTED] (attempts=0) [Score 127, pubDate=1990-02-10] "GOTTI NOT GUILTY ON ALL 6 CHARGES IN ASSAULT TRIAL" | reasons: stale lead article (1990-02-10 is 2 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+  - Rank #10 [REJECTED] (attempts=0) [Score 124.7, pubDate=1990-02-10] "Test of a 'New South Africa': A Bus Ride in Johannesburg" | reasons: stale lead article (1990-02-10 is 2 days before broadcastDate 1990-02-12; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, Nelson Mandela walked to freedom yesterday after nearly 27 and a half years behind bars. He immediately called for his supporters worldwide to intensify pressure against South Africa's white minority rule that had long kept him imprisoned. President Bush expressed joy over Mandela's release, speaking with him by phone and inviting him to the White House. Let's spend a few minutes with Paula Abdul (Duet and The Wild Pair) and "Opposites Attract"."
+
+--------------------------------------------------------------------------------
+BLIND TEST DATE: 1994-06-18
+--------------------------------------------------------------------------------
+Top 10 Ranked Clusters for 1994-06-18 (Total Clusters: 514):
+  #1 [Score 213] "A Shift on North Korea" (articles: 6, fp: 3, dates: [1994-06-16, 1994-06-17, 1994-06-18])
+  #2 [Score 196.5] "CLINTON MAY BEND ON WAY TO FINANCE HEALTH CARE PLAN" (articles: 4, fp: 2, dates: [1994-06-15, 1994-06-17, 1994-06-18])
+  #3 [Score 173.8] "Grim Findings on Tobacco And a Decade of Frustration" (articles: 3, fp: 3, dates: [1994-06-16, 1994-06-17, 1994-06-18])
+  #4 [Score 161.6] "Simpson Is Charged, Chased, Arrested" (articles: 2, fp: 1, dates: [1994-06-18])
+  #5 [Score 150.6] "Hospital Aide Held in Ruse That Helped Killers Escape" (articles: 2, fp: 1, dates: [1994-06-18])
+  #6 [Score 141.2] "Setback in European Vote Hurts French Socialist Chief" (articles: 4, fp: 1, dates: [1994-06-13, 1994-06-15, 1994-06-16])
+  #7 [Score 141.1] "GENERALS OPPOSE COMBAT BY WOMEN" (articles: 2, fp: 2, dates: [1994-06-15, 1994-06-17])
+  #8 [Score 135.3] "L.I.R.R. Workers Go on Strike; Commuters Brace for Gridlock" (articles: 2, fp: 1, dates: [1994-06-16, 1994-06-17])
+  #9 [Score 134.9] "As Military Pay Slips Behind, Poverty Invades the Ranks" (articles: 6, fp: 3, dates: [1994-06-11, 1994-06-12, 1994-06-13, 1994-06-14])
+  #10 [Score 116] "CHARGES EXTENDED TO TOP MANAGERS IN CO-OP BRIBERY" (articles: 2, fp: 1, dates: [1994-06-16])
+Next Song Selected (Era-Matched): "I Swear" by All-4-One (1994-06-18)
+Candidate Evaluations:
+  - Rank #1 [AIRED] (attempts=1 | path=model) [Score 213, pubDate=1994-06-18] "A Shift on North Korea"
+  - Rank #2 [REJECTED] (attempts=0) [Score 196.5, pubDate=1994-06-15] "CLINTON MAY BEND ON WAY TO FINANCE HEALTH CARE PLAN" | reasons: stale lead article (1994-06-15 is 3 days before broadcastDate 1994-06-18; fresher page-1 leads exist)
+  - Rank #6 [REJECTED] (attempts=0) [Score 141.2, pubDate=1994-06-16] "Setback in European Vote Hurts French Socialist Chief" | reasons: stale lead article (1994-06-16 is 2 days before broadcastDate 1994-06-18; fresher page-1 leads exist)
+Break Type: major_news | Lint Pass: true
+Full Aired Script:
+  "On the front page of today's Times, North Korea's latest offer to ease tensions over its nuclear program doesn't seem to introduce much new ground. However, President Clinton is now open to exploring this opportunity to prevent a potential confrontation. Officials are still considering Pentagon recommendations to reinforce American forces in South Korea, while keeping the door open for diplomatic talks with North Korea if they agree to freeze their suspected nuclear weapons development. We've got All-4-One coming up with "I Swear"."

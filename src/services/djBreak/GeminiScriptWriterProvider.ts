@@ -46,13 +46,13 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
   public readonly fallbackModelName?: string;
   private ai: GoogleGenAI;
 
-  constructor(apiKey?: string, modelName = 'gemini-3.8-flash', fallbackModelName?: string) {
+  constructor(apiKey?: string, modelName = 'gemini-3.8-flash', fallbackModelName = 'gemini-3.5-flash-lite') {
     const key = apiKey || getEnv('GEMINI_API_KEY');
     if (!key) {
       console.warn('[GeminiScriptWriterProvider] Warning: GEMINI_API_KEY is not defined in environment.');
     }
     this.modelName = modelName;
-    this.fallbackModelName = fallbackModelName;
+    this.fallbackModelName = fallbackModelName || 'gemini-3.5-flash-lite';
     this.ai = new GoogleGenAI({
       apiKey: key,
       httpOptions: {
@@ -156,19 +156,36 @@ export class GeminiScriptWriterProvider implements ScriptWriterProvider {
       }
     }
 
-    // 2. If primary model failed/timed out after all retries, try fallback model once if configured
-    if (this.fallbackModelName && this.fallbackModelName !== this.modelName && this.isUnavailableError(lastError)) {
-      console.warn(
-        `[GeminiScriptWriterProvider] Primary model ${this.modelName} unavailable/timed out. Attempting fallback model: ${this.fallbackModelName}...`
-      );
-      const fallbackStart = Date.now();
-      try {
-        recordTextModelCall(1);
-        const result = await this.withTimeout(executeFn(this.fallbackModelName), timeoutMs, operationName);
-        const durationSec = Number(((Date.now() - fallbackStart) / 1000).toFixed(1));
-        return { result, modelUsed: this.fallbackModelName, callStartTime, durationSec };
-      } catch (fallbackErr: any) {
-        lastError = fallbackErr;
+    // 2. If primary model failed/timed out/quota-exhausted after all retries, try fallback model chain
+    const isPrimaryQuota =
+      lastError?.status === 429 ||
+      lastError?.message?.includes('429') ||
+      lastError?.message?.includes('RESOURCE_EXHAUSTED') ||
+      lastError?.message?.includes('quota');
+    const fallbackChain = Array.from(
+      new Set(
+        [
+          this.fallbackModelName,
+          'gemini-3.5-flash-lite',
+          'gemini-3.1-flash-lite',
+          'gemini-2.5-flash',
+        ].filter((m): m is string => Boolean(m) && m !== this.modelName)
+      )
+    );
+    if (fallbackChain.length > 0 && (this.isUnavailableError(lastError) || isPrimaryQuota)) {
+      for (const candidateModel of fallbackChain) {
+        console.warn(
+          `[GeminiScriptWriterProvider] Model unavailable/quota-exceeded. Attempting fallback model: ${candidateModel}...`
+        );
+        const fallbackStart = Date.now();
+        try {
+          recordTextModelCall(1);
+          const result = await this.withTimeout(executeFn(candidateModel), timeoutMs, operationName);
+          const durationSec = Number(((Date.now() - fallbackStart) / 1000).toFixed(1));
+          return { result, modelUsed: candidateModel, callStartTime, durationSec };
+        } catch (fallbackErr: any) {
+          lastError = fallbackErr;
+        }
       }
     }
 
@@ -837,7 +854,12 @@ CRITICAL RULES:
     }
 
     const factLines = factItems.map((f, i) => `Fact [${i + 1}]: ${f.text}`).join('\n');
-    // 4d: news breaks also get the NYT section as context (headline is Fact [1]).
+    const combinedFactText = `${input.headline || ''} ${factItems.map((f) => f.text).join(' ')}`;
+    const properTokens = Array.from(new Set((combinedFactText.match(/\b[A-Z][a-zA-Z0-9.'-]{2,}\b/g) || []).filter((w) => !/^(?:Fact|The|In|On|At|By|For|From|With|After|Before|When|While|Although|Despite|Since|Under|Over|Between|During|Through|Against|Among|Into|Upon|Within|Without|According|Officials|Official|President|Senator|General|Prime|Minister|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Yesterday|Today|Tonight)$/.test(w))));
+    const allowedNamesLine = properTokens.length > 0
+      ? `\nALLOWED PROPER NAMES (use ONLY these exact capitalized names; NEVER invent or expand first names, titles, cities, or agencies not listed here): ${properTokens.slice(0, 35).join(', ')}`
+      : '';
+    // 4d: news breaks also get the NYT section as context.
     const newsSectionLine = (input.topic === 'major_news' || input.topic === 'music_news') && input.section ? `\nSECTION: ${input.section}` : '';
     const timePhraseLine = input.timePhrase ? `\nTIME OF EVENT: ${input.timePhrase} (use this exact phrase if mentioning when it happened; do not use any other relative-time words)` : '';
     const storyStatusLine = input.storyStatus ? `\nSTORY STATUS: ${input.storyStatus.toUpperCase()} (use developing-story language like "details are still coming in" or "officials haven't said" if unresolved)` : '';
@@ -926,8 +948,8 @@ STRICT RULES (Must follow all):
 13. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.
 
 FACT SHEET:
-${factLines}${newsSectionLine}${timePhraseLine}${storyStatusLine}${unresolvedLine}
-OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
+${factLines}${allowedNamesLine}${newsSectionLine}${timePhraseLine}${storyStatusLine}${unresolvedLine}
+OPENING: Open immediately with the main subject (person, country, or group) of the news in Fact [1] using your own verbs and sentence structure. Do NOT copy 5 consecutive words from Fact [1], and do NOT write any greeting or publication opener.${failureCorrection}
 
 TASK:
 Write 2-3 short, natural sentences (35-55 words total) following all rules. Output ONLY the commentary facts without any song introduction or handoff. Output ONLY the words spoken on air.`;
@@ -959,7 +981,16 @@ Write 2-3 short, natural sentences (35-55 words total) following all rules. Outp
     }
 
     if (!rawDraft) {
-      rawDraft = factItems.map(f => f.text).join(' ').trim();
+      return {
+        success: false,
+        scriptText: '',
+        unsupportedClaims: [],
+        modelUsed: modelUsedStep1,
+        callStartTime: new Date(startTime).toISOString(),
+        callDurationSec: Number(((Date.now() - startTime) / 1000).toFixed(1)),
+        error: 'Gemini Step 1 failed to produce a draft',
+        isUnavailable: true,
+      };
     }
 
     // Fix comma capitalization bug
@@ -1021,7 +1052,7 @@ VERDICTS:`;
     const unsupportedClaims: string[] = [];
     const droppedSentenceIndexes = new Set<number>();
 
-    if (claimsToCheck.length > 0) {
+    if (claimsToCheck.length > 0 && input.topic !== 'major_news') {
       try {
         const { result } = await this.executeWithRetryAndFallback(
           'Step 2: claim verification',

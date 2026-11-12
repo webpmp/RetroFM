@@ -1,0 +1,19 @@
+bun test v1.4.3 (c6da4a4d3)
+
+src/services/djBreak/__tests__/readAloudLint.test.ts:
+(pass) lintReadAloudScript (Round 6 Item 1) > rejects the 1962-10-23 bad script (4+ consecutive all-caps words and index abbreviations) [2.04ms]
+(pass) lintReadAloudScript (Round 6 Item 1) > rejects the 1968-06-06 bad script (index abbreviations exchs/repts and semicolon chains) [1.59ms]
+(pass) lintReadAloudScript (Round 6 Item 1) > rejects the 1970-05-05 bad script (broken OCR word "Univer sity", semicolon chain, and abbreviations) [0.16ms]
+(pass) lintReadAloudScript (Round 6 Item 1) > rejects the 1975-04-30 bad script (day abbreviation "Apr 29", semicolon chain, and index abbreviations Amers/mil) [0.67ms]
+(pass) lintReadAloudScript (Round 6 Item 1) > rejects the 1988-07-04 bad script (repeated duplicate sentences) [0.44ms]
+(pass) lintReadAloudScript (Round 6 Item 1) > accepts clean spoken radio prose with a natural handoff [0.06ms]
+
+src/services/news/__tests__/timeWords.test.ts:
+(pass) resolveRelativeTimeWords (Round 6 Item 5) > fixes the 1970-05-05 Kent State script ("this afternoon" -> "yesterday afternoon" when pub_date === broadcastDate) [0.46ms]
+(pass) resolveRelativeTimeWords (Round 6 Item 5) > normalizes "today", "tonight", "this morning", "this evening", and "last night" to yesterday equivalents when pub_date === broadcastDate [0.29ms]
+(pass) resolveRelativeTimeWords (Round 6 Item 5) > normalizes time words to the filing weekday name when pub_date < broadcastDate [0.04ms]
+
+ 9 pass
+ 0 fail
+ 21 expect() calls
+Ran 9 tests across 2 files. [24.00ms]

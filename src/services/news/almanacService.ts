@@ -400,24 +400,37 @@ export function resolveRelativeTimeWords(text: string, printDate: string, broadc
     }
   }
 
-  if (/\blast night\b/i.test(updated)) {
-    updated = updated.replace(/\blast night\b/gi, `${nightBeforeFilingDay} night`);
+  const isSameDayPaper = Boolean(broadcastDate && broadcastDate === printDate);
+
+  // Convert original "yesterday" FIRST before converting "this morning"/"this afternoon"/"today" into "yesterday ..."
+  if (/\byesterday\b/i.test(updated)) {
+    updated = updated.replace(/\byesterday\b/gi, dayBeforeFilingDay);
     eventDate = nightBeforeFilingDateStr;
     converted = true;
   }
-  if (/\btoday\b/i.test(updated)) {
-    updated = updated.replace(/\btoday\b/gi, filingDay);
+  if (/\b(?:last night|tonight)\b/i.test(updated)) {
+    updated = updated.replace(/\b(?:last night|tonight)\b/gi, isSameDayPaper ? 'last night' : `${filingDay} night`);
     eventDate = filingDateStr;
     converted = true;
   }
   if (/\bthis morning\b/i.test(updated)) {
-    updated = updated.replace(/\bthis morning\b/gi, `${filingDay} morning`);
+    updated = updated.replace(/\bthis morning\b/gi, isSameDayPaper ? 'yesterday morning' : `${filingDay} morning`);
     eventDate = filingDateStr;
     converted = true;
   }
-  if (/\byesterday\b/i.test(updated)) {
-    updated = updated.replace(/\byesterday\b/gi, dayBeforeFilingDay);
-    eventDate = nightBeforeFilingDateStr;
+  if (/\bthis afternoon\b/i.test(updated)) {
+    updated = updated.replace(/\bthis afternoon\b/gi, isSameDayPaper ? 'yesterday afternoon' : `${filingDay} afternoon`);
+    eventDate = filingDateStr;
+    converted = true;
+  }
+  if (/\bthis evening\b/i.test(updated)) {
+    updated = updated.replace(/\bthis evening\b/gi, isSameDayPaper ? 'yesterday evening' : `${filingDay} evening`);
+    eventDate = filingDateStr;
+    converted = true;
+  }
+  if (/\btoday\b/i.test(updated)) {
+    updated = updated.replace(/\btoday\b/gi, isSameDayPaper ? 'yesterday' : filingDay);
+    eventDate = filingDateStr;
     converted = true;
   }
   if (/\bthis week\b/i.test(updated)) {

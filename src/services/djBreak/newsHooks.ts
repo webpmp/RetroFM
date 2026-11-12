@@ -78,9 +78,10 @@ export function stripModelPublicationPhrases(text: string): string {
     }
   }
 
-  // Also strip inline awkward occurrences like "in today's Times," or "according to today's Times"
-  cleaned = cleaned.replace(/,\s*(?:in\s+today['’]s\s+times|in\s+yesterday['’]s\s+times|according\s+to\s+today['’]s\s+times|according\s+to\s+the\s+times)\b/gi, '');
-  cleaned = cleaned.replace(/\b(?:in\s+today['’]s\s+times|in\s+yesterday['’]s\s+times|according\s+to\s+today['’]s\s+times|according\s+to\s+the\s+times)[,:\s]*/gi, '');
+  // Also strip inline awkward occurrences like "in today's Times," or "according to today's Times" or "in today's paper"
+  cleaned = cleaned.replace(/,\s*(?:in\s+today['’]s\s+(?:times|paper)|in\s+yesterday['’]s\s+(?:times|paper)|according\s+to\s+today['’]s\s+(?:times|paper)|according\s+to\s+the\s+times)\b/gi, '');
+  cleaned = cleaned.replace(/\s+\b(?:in\s+today['’]s\s+(?:times|paper)|in\s+yesterday['’]s\s+(?:times|paper))\b(?=[.,;])/gi, '');
+  cleaned = cleaned.replace(/\b(?:in\s+today['’]s\s+(?:times|paper)|in\s+yesterday['’]s\s+(?:times|paper)|according\s+to\s+today['’]s\s+(?:times|paper)|according\s+to\s+the\s+times)[,:\s]+/gi, '');
 
   // Strip awkward "over a couple of days ago" -> "a couple of days ago" or remove "over"
   cleaned = cleaned.replace(/\bover\s+(a\s+couple\s+of\s+days\s+ago)\b/gi, '$1');

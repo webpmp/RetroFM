@@ -90,6 +90,118 @@ export interface SegmentValidationContext {
  * 4. No banned hype words or artificial transitions ("smash hit", "absolute banger", "stay tuned", "coming up next").
  * 5. Does NOT require every content word to match the packet (allows natural conversational connective tissue).
  */
+/**
+ * Read-aloud lint check (Round 6 Item 1):
+ * Every spoken break (both model and extractive) must pass this check before airing.
+ * Rejects:
+ *   1. 4+ consecutive all-caps words (e.g. "BIG FORCE MASSES TO BLOCKADE CUBA")
+ *   2. Semicolon chains (2+ semicolons)
+ *   3. Known index/wire abbreviations (mil, Amer, Amers, repts, reptd, exchs, illus, Natl, Univ, "S Vietnamese", "N Vietnamese", etc.) or index date abbreviations ("Apr 29")
+ *   4. OCR broken words ("Univer sity", "gun fire", hyphen-space breaks like "at- tempting")
+ *   5. Repeated/duplicate sentences (normalized alphanumeric comparison)
+ */
+export function lintReadAloudScript(text: string): { valid: boolean; reason?: string; rejectedReason?: string } {
+  const fail = (msg: string) => ({ valid: false, reason: msg, rejectedReason: msg });
+  if (!text || !text.trim()) {
+    return fail('Read-aloud lint: empty script');
+  }
+  const trimmed = text.trim();
+
+  // 1. Check 4+ consecutive all-caps words (ignoring single-letter words like 'A' or 'I')
+  const words = trimmed.split(/\s+/).map((w) => w.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9.]+$/g, ''));
+  let capsRun = 0;
+  const runTokens: string[] = [];
+  for (const w of words) {
+    if (!w) continue;
+    const stripped = w.replace(/\./g, '');
+    if (stripped.length >= 2 && /^[A-Z0-9]+$/.test(stripped) && /[A-Z]/.test(stripped)) {
+      capsRun++;
+      runTokens.push(w);
+      if (capsRun >= 4) {
+        return fail(`Read-aloud lint: contains 4+ consecutive all-caps words ("${runTokens.join(' ')}")`);
+      }
+    } else {
+      capsRun = 0;
+      runTokens.length = 0;
+    }
+  }
+
+  // 2. Check semicolon chains (2+ semicolons)
+  const semiCount = (trimmed.match(/;/g) || []).length;
+  if (semiCount >= 2) {
+    return fail(`Read-aloud lint: contains semicolon chain (${semiCount} semicolons)`);
+  }
+
+  // 3. Check index abbreviations and day abbreviations
+  const INDEX_ABBREV_PATTERNS: Array<{ regex: RegExp; label: string }> = [
+    { regex: /\b(?:mil|Amer|Amers|repts?|reptd(?:ly)?|exchs?|illus|Natl|Univ|Coll|Sens|Reprs?|Assn|recd|anon|ct|revd|Dem|Repub|Adm|Legis|Bd|Fed|NYS|NYC|USSR|pol|orgn|conf|comm|chmn|lr|lrs|bldg|munic|indus|econ|govt|hrs?|wks?|yrs?|1st|2d|3d)\b/, label: 'index abbreviation' },
+    { regex: /\b(?:mil|amer|amers|repts?|reptd(?:ly)?|exchs?|illus|natl|univ|assn|recd|anon|revd|orgn|munic|indus|hrs|wks|yrs)\b/i, label: 'index abbreviation' },
+    { regex: /\b[NS]\s+Vietnamese\b/, label: 'directional index abbreviation ("S/N Vietnamese")' },
+    { regex: /\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}\b/, label: 'abbreviated month-day ("Apr 29")' },
+    { regex: /,\s*(?:California|Calif|Los Angeles|Washington|New York|NYC|NYS|Wisconsin|Wis|Maryland|Md|statement)\.?$/, label: 'trailing index location/citation tag' },
+  ];
+  for (const { regex, label } of INDEX_ABBREV_PATTERNS) {
+    const m = trimmed.match(regex);
+    if (m) {
+      return fail(`Read-aloud lint: contains ${label} ("${m[0]}")`);
+    }
+  }
+
+  // 4. Check broken OCR words ("Univer sity", "gun fire", hyphen followed by space like "at- tempting")
+  const BROKEN_WORD_PATTERNS = [
+    /\bUniver\s+sity\b/i,
+    /\bgun\s+fire\b/i,
+    /\bde\s+scribed\b/i,
+    /\bViet\s+nam\b/i,
+    /\bal\s+lied\b/i,
+    /\bsus\s+pected\b/i,
+    /\bwel\s+comed\b/i,
+    /\bto\s+clay\b/i,
+    /\bcon\s+sideration\b/i,
+    /\bat\s+tacked\b/i,
+    /\bisola\s+tionists?\b/i,
+    /\bIndi\s+ana\b/i,
+    /\bCam\s+bodia\b/i,
+    /\bAdministra\s+tion\b/i,
+    /\bdemon\s+strate\b/i,
+    /\bde\s+termination\b/i,
+    /\bin\s+volvement\b/i,
+    /\bpro\s+test\b/i,
+    /\bcam\s+puses\b/i,
+    /\bsur\s+prised\b/i,
+    /\bclos\s+est\b/i,
+    /\b[a-z]{2,}[\-\u2010]\s+[a-z]{2,}\b/i,
+    /\?\?/,
+  ];
+  for (const pat of BROKEN_WORD_PATTERNS) {
+    const m = trimmed.match(pat);
+    if (m) {
+      return fail(`Read-aloud lint: contains broken OCR word ("${m[0]}")`);
+    }
+  }
+
+  // 5. Check repeated / duplicate sentences (normalized alphanumeric comparison, stripping datelines, lead-ins, and relative time words)
+  const sentences = splitVerbatimSentences(trimmed)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 5);
+  const seenNorm = new Set<string>();
+  for (const s of sentences) {
+    const withoutLeadIn = s
+      .replace(/^(?:From the front page of|In|From)\s+(?:today's|yesterday's)\s+Times\s*:\s*/i, '')
+      .replace(/^[A-Z][A-Z\s.,]+\s*[—\-–]+\s*/, '')
+      .replace(/\b(?:today|yesterday|tonight|last night|sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, '');
+    const norm = withoutLeadIn.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (norm.length >= 15) {
+      if (seenNorm.has(norm)) {
+        return fail(`Read-aloud lint: contains duplicate sentence ("${s}")`);
+      }
+      seenNorm.add(norm);
+    }
+  }
+
+  return { valid: true };
+}
+
 export function validateSegmentBreakOutput(
   scriptText: string,
   context: SegmentValidationContext
@@ -109,6 +221,16 @@ export function validateSegmentBreakOutput(
     return {
       valid: false,
       rejectedReason: 'Contains non-English characters',
+      sanitizedText: '',
+    };
+  }
+
+  // Round 6 Item 1: Read-aloud lint check on every spoken break
+  const lintResult = lintReadAloudScript(trimmed);
+  if (!lintResult.valid) {
+    return {
+      valid: false,
+      rejectedReason: lintResult.reason || 'Failed read-aloud lint',
       sanitizedText: '',
     };
   }
@@ -177,13 +299,16 @@ export function validateSegmentBreakOutput(
           }
         }
 
-        // Check if most (>=60%) of the headline's content words are reused
+        // Check if most of the headline's content words are reused in the first sentence.
+        // For short 3-7 content-word headlines where the core nouns are unavoidable to name the subject,
+        // require >= 85% overlap (i.e. all or nearly all words); for 8+ content-word headlines, require >= 70%.
         const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'as', 'it', 'its']);
         const contentHlWords = hlWords.filter((w) => !STOPWORDS.has(w) && w.length > 2);
         if (contentHlWords.length >= 3) {
           const matchedWords = contentHlWords.filter((w) => fsWords.includes(w));
           const ratio = matchedWords.length / contentHlWords.length;
-          if (ratio >= 0.60) {
+          const threshold = contentHlWords.length <= 7 ? 0.85 : 0.70;
+          if (ratio >= threshold) {
             return {
               valid: false,
               rejectedReason: `First sentence echoes headline content words (${matchedWords.length}/${contentHlWords.length} words: "${matchedWords.join(' ')}")`,
@@ -337,10 +462,10 @@ export function validateSegmentBreakOutput(
     // Protect periods after initials, titles/abbreviations, and numbers so they never split a sentence
     let s = text;
     s = s.replace(/\bU\.S\.(A\.)?/g, (m) => m.replace(/\./g, '§D§'));
-    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|No|Nos|Vol|Op|Inc|Corp|Co|Mt|Ft)\./gi, '$1§D§');
+    s = s.replace(/\b(Col|Gen|Sen|Rep|Gov|Dr|Mr|Mrs|Ms|St|Jr|Sr|Lt|Capt|Prof|Rev|No|Nos|Vol|Op|Inc|Corp|Co|Mt|Ft|Pres|Min|Sec|Adm|Sgt|Maj)\./gi, '$1§D§');
     s = s.replace(/\b([A-Z])\./g, '$1§D§');
     s = s.replace(/\b(\d+)\.(?=\s)/g, '$1§D§');
-    const raw = s.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    const raw = s.split(/(?<!§D§)(?<=[.!?])\s+(?=[A-Z])/);
     return raw.map((p) => p.replace(/§D§/g, '.').trim()).filter(Boolean);
   };
   const allSentences = splitCandidateSentences(trimmed);
@@ -534,6 +659,11 @@ export function validateSegmentBreakOutput(
   ];
   for (const pat of BANNED_HYPE) {
     if (pat.test(trimmed)) {
+      if (pat.source === '\\bhimself\\b') {
+        const packetFacts = context.factPacket?.facts || [];
+        const hasHimself = packetFacts.some((f: any) => /\bhimself\b/i.test(typeof f === 'string' ? f : (f.text || '')));
+        if (hasHimself) continue;
+      }
       return {
         valid: false,
         rejectedReason: `Contains banned hype or intensifier: ${pat}`,
@@ -1091,6 +1221,7 @@ export function validateSegmentBreakOutput(
     if (commonRadioWords.has(nameLower)) continue;
 
     if (!corpus.includes(nameLower)) {
+      if (nameLower === 'caribbean' && corpus.includes('carribbean')) continue;
       return {
         valid: false,
         rejectedReason: `Unverified proper name "${name}" not found in fact packet`,

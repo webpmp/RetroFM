@@ -1,0 +1,374 @@
+================================================================================
+ROUND 6 DIAGNOSTICS (Generated 2026-11-12T20:18:31.988Z)
+================================================================================
+
+--- ITEM 2A: 1965-02-22 (Why Malcolm X was skipped / filtered) ---
+Found 17 articles matching "Malcolm" in 1965-02-15..1965-02-22:
+  [1965-02-15] Page="1" Desk="None" Type="Archives" Eligible=true Headline="MALCOLM X FLEES FIREBOMB ATTACK; Wife and 4 Daughters Also Escape as Flames Sweep Brick House in Queens"
+    Abstract: Queens home of Malcolm X firebombed; illus; his dispute with Black Muslims, who hold title to house, noted; he has asked ct to stay eviction; speculates on attackers; says he and wife have recd anon p
+  [1965-02-16] Page="18" Desk="None" Type="Archives" Eligible=true Headline="Malcolm Accuses Muslims of Blaze; They Point to Him"
+    Abstract: Malcolm X charges firebombing of his Queens, NYC, home was done by Black Muslims on leader E Muhammad's orders; local Muslim leader James X charges Malcolm X did bombing himself for publicity; Malcolm
+  [1965-02-17] Page="34" Desk="None" Type="Archives" Eligible=true Headline="Bottle of Gasoline Found on a Dresser In Malcolm X Home"
+    Abstract: detective finds gasoline-filled bottle in house; Malcolm says his wife first discovered it
+  [1965-02-19] Page="31" Desk="None" Type="Archives" Eligible=true Headline="MALCOLM X AVERTS WRIT BY MOVING OUT"
+    Abstract: vacates house before eviction order is served
+  [1965-02-20] Page="25" Desk="None" Type="Archives" Eligible=true Headline="CHRISTINE H. FORBES, RETIRED AD MANAGER"
+    Abstract: Forbes, (Mrs) Malcolm (Christine H)
+  [1965-02-21] Page="10" Desk="None" Type="Archives" Eligible=true Headline="Malcolm X And Muslims"
+    Abstract: The head of the Black Muslims, Elijah Muhammed, is an elderly man who lives in seclusion in Chicago most of the time. Malcolm X, a vigorous and articulate man, was their leader in New York when he cam
+  [1965-02-22] Page="1" Desk="None" Type="Archives" Eligible=true Headline="Malcolm X Shot to Death at Rally Here; Three Other Negroes Wounded -- One Is Held in Killing Malcolm X Is Shot to Death at a Rally of Black Nationalists in a Ballroom Here WOUNDED NEGRO HELD IN SLAYING Police Believe Others May Be Involved -- Long Feud With Muslims Noted"
+    Abstract: Malcolm said he feared for life; discussed break with Muhammad and Muslims, felt he was 'marked man,'
+  [1965-02-22] Page="1" Desk="None" Type="Archives" Eligible=true Headline="Malcolm Knew He Was a 'Marked Man'; VICTIM PREDICTED HIS OWN SLAYING"
+    Abstract: " I live like a man who's already dead," Malcolm X said last Thursday in a two-hour interview in the Harlem office of his Organization for Afro-American Unity.
+  [1965-02-22] Page="11" Desk="None" Type="Archives" Eligible=true Headline="Malcolm Fought [or Top Power In Muslim Movement, and Lost"
+    Abstract: history of Muslim movement and Malcolm's losing struggle for top power
+  [1965-02-22] Page="11" Desk="None" Type="Archives" Eligible=true Headline="RIGHTS LEADERS DECRY 'VIOLENCE'; Wilkins and Others Shocked by Murder of Malcolm"
+    Abstract: Harlem residents reactions to slaying
+  [1965-02-22] Page="10" Desk="None" Type="Archives" Eligible=true Headline="Police Save Suspect From the Crowd"
+    Abstract: R Francis, Malcolm bodyguard, charged with shooting Hagan
+  [1965-02-22] Page="11" Desk="None" Type="Archives" Eligible=true Headline="Malcolm X's Sister Says He Was "Living in Fear'"
+    Abstract: 
+  [1965-02-22] Page="10" Desk="None" Type="Archives" Eligible=true Headline="Malcolm Asked Gun Permit After Home Was Bombed"
+    Abstract: Malcolm had applied for pistol permit after bombing of home
+  [1965-02-22] Page="20" Desk="None" Type="Archives" Eligible=true Headline="Malcolm X"
+    Abstract: ed on slaying; fears it could touch off war of vengeance
+  [1965-02-22] Page="10" Desk="None" Type="Archives" Eligible=true Headline="Precautions Taken"
+    Abstract: Chicago police guard Muhammad's home against possible attack by Malcolm followers
+  [1965-02-22] Page="11" Desk="None" Type="Archives" Eligible=true Headline="HARLEM IS QUIET AS NEWS SPREADS; Some Weep Over Slaying -- Extra Police on Duty"
+    Abstract: Malcolm's sister Mrs E M Collins says he feared for life
+  [1965-02-22] Page="10" Desk="None" Type="Archives" Eligible=true Headline="Malcolm X Lived in 2 Worlds, White and Black, Both Bitter"
+    Abstract: assn with E Muhammad and Black Muslims and subsequent break with them revd
+Top 5 ranked clusters on 1965-02-22:
+  #1 [Score 300] "POWELL ACCUSES 3 OF A MURDER HERE; Uses House Floor to Review Court Fight and Charge Police With Corruption" (articles: 7, fp: 4)
+  #2 [Score 270] "TOP COUNCIL ACTS; 'No Confidence' Voted Despite End of Coup Against Leader KHANH IS FACING NEW OUSTER MOVE" (articles: 6, fp: 4)
+  #3 [Score 242.9] "M'NAMARA FEARS 220 MILLION TOLL; Estimates a Missile War With Soviet Union Would Kill 120 Million in U.S." (articles: 10, fp: 3)
+  #4 [Score 241.7] "Malcolm X Shot to Death at Rally Here; Three Other Negroes Wounded -- One Is Held in Killing Malcolm X Is Shot to Death at a Rally of Black Nationalists in a Ballroom Here WOUNDED NEGRO HELD IN SLAYING Police Believe Others May Be Involved -- Long Feud With Muslims Noted" (articles: 8, fp: 2)
+  #5 [Score 239.5] "AGE IS A PROBLEM IN LABOR COUNCIL; Some in A.F.L.-C.I.O. Feel Older Chiefs Should Quit -- Most Are Over 65 AGE IS A PROBLEM IN LABOR COUNCIL" (articles: 7, fp: 2)
+Packets for #1..#3 on 1965-02-22:
+  Packet #1: "POWELL ACCUSES 3 OF A MURDER HERE; Uses House Floor to Review Court Fight and Charge Police With Corruption" (facts: 0, leadParagraph: "")
+  Packet #2: "TOP COUNCIL ACTS; 'No Confidence' Voted Despite End of Coup Against Leader KHANH IS FACING NEW OUSTER MOVE" (facts: 0, leadParagraph: "")
+  Packet #3: "M'NAMARA FEARS 220 MILLION TOLL; Estimates a Missile War With Soviet Union Would Kill 120 Million in U.S." (facts: 0, leadParagraph: "")
+
+--- ITEM 2B: 1980-11-05 (Why Reagan landslide was skipped) ---
+Top 5 ranked clusters on 1980-11-05:
+  #1 [Score 357.7] "MUSKIE IS HEARTENED BY 'PROGRESS' MADE ON HOSTAGE RELEASE; SAYS SOLUTION MAY TAKE TIME Algeria Will Act as an Intermediary for Iran in Dealing With U.S.-- Text of Terms Delivered Official Texts Received Muskie Says He Is Pleased With 'Progress' on Iran Crisis" (articles: 12, fp: 7, dates: [1980-11-02, 1980-11-03, 1980-11-04, 1980-11-05])
+  #2 [Score 322.9] "PRESIDENT CONCEDES; Republican Gains Victories in All Areas and Vows to Act on Economy Concession by Carter Reagan, Sweeping Midwest And South, Defeats Carter Pocketbook Issues Stressed G.O.P. Hopes in Senate Carter Pledge in Plains Assessments of Outcome Appeal to Anderson Backers" (articles: 6, fp: 5, dates: [1980-11-04, 1980-11-05])
+  #3 [Score 235.7] "FOREIGN POLICY AIDE TO REAGAN RESIGNS TO FORESTALL ISSUE; Richard Allen Denies Impropriety Under Nixon--G.O.P. Seeks to Avoid Campaign Snag Withdrawal Termed Temporary Carter Aide Quit Earlier FOREIGN POLICY AIDE TO REAGAN RESIGNS Conflict of Interest Suggested" (articles: 25, fp: 7, dates: [1980-10-29, 1980-10-30, 1980-10-31, 1980-11-01])
+  #4 [Score 218.7] "Reagan and Carter Stand Nearly Even in Last Polls; Differences on War Issue Reagan and Carter Stand Almost Even in Final Polls Effects of the Debate Male-Female Preferences Catholics and Conservatives Fears About the Economy The New York Times/CBS News Poll" (articles: 4, fp: 4, dates: [1980-11-02, 1980-11-03, 1980-11-04])
+  #5 [Score 210.1] "IRAN DELAYS DEBATE ON HOSTAGE RELEASE AT LEAST TO SUNDAY; PARLIAMENT LACKS A QUORUM Some Lawmakers Oppose Solution Before the U.S. Elections-- Tempers Flare on Issue Iraq's Invasion a Factor Some Deputies at the Front Iran's Parliament Again Delays Hostage Release Vote" (articles: 7, fp: 4, dates: [1980-10-31, 1980-11-02, 1980-11-03])
+Top 3 packets on 1980-11-05:
+  Packet #1: "MUSKIE IS HEARTENED BY 'PROGRESS' MADE ON HOSTAGE RELEASE; SAYS SOLUTION MAY TAKE TIME Algeria Will Act as an Intermediary for Iran in Dealing With U.S.-- Text of Terms Delivered Official Texts Received Muskie Says He Is Pleased With 'Progress' on Iran Crisis" (facts: 2, leadDate: 1980-11-04)
+    Fact 1: The Carter Administration has prepared a bill that would nationalize American claims against Iran and thereby prevent American individuals or companies from directly suing the Iranian Government for past claims, according to attorneys involved in such litigation.
+    Fact 2: Barbara Rosen, wife of one of the American hostages in Iran, received a cablegram from Chancellor Helmut Schmidt of West Germany Monday pledging his Government's continued cooperation "to bring about the release of your husband and his colleagues."
+  Packet #2: "PRESIDENT CONCEDES; Republican Gains Victories in All Areas and Vows to Act on Economy Concession by Carter Reagan, Sweeping Midwest And South, Defeats Carter Pocketbook Issues Stressed G.O.P. Hopes in Senate Carter Pledge in Plains Assessments of Outcome Appeal to Anderson Backers" (facts: 5, leadDate: 1980-11-05)
+    Fact 1: Ronald Wilson Reagan, riding a tide of economic discontent against Jimmy Carter and promising "to put America back to work again," was elected the nation's 40th President Monday with a sweep of surprising victories in the East, South and the crucial battlegrounds of the Middle West.
+    Fact 2: President Carter and Ronald Reagan campaigned on Mr. Carter's record Sunday as they made their final appeals to the approximately 85 million Americans whose votes will decide the nation's 49th Presidential election Monday.
+    Fact 3: Bolstered by a conservative tide and a sweep by Ronald Reagan, Republicans cut deeply into the Democrats' Senate majority Monday and appeared within striking distance of ending 26 years of Democratic control.
+    Fact 4: The old Democratic coalition deserted President Carter Monday, with defections reminiscent of the defeat of George McGovern in 1972.
+    Fact 5: Despite a victory by Ronald Reagan at the top of the ticket, Representative Christopher J. Dodd Monday defeated his Republican opponent, James L. Buckley, to win a Connecticut seat in the United States Senate where his late father served.
+  Packet #3: "FOREIGN POLICY AIDE TO REAGAN RESIGNS TO FORESTALL ISSUE; Richard Allen Denies Impropriety Under Nixon--G.O.P. Seeks to Avoid Campaign Snag Withdrawal Termed Temporary Carter Aide Quit Earlier FOREIGN POLICY AIDE TO REAGAN RESIGNS Conflict of Interest Suggested" (facts: 5, leadDate: 1980-10-31)
+    Fact 1: President Carter and Ronald Reagan undertook intensive homestretch campaigning Tuesday, each claiming new confidence from his showing in Tuesday night's Presidential debate.
+    Fact 2: Initial polls rated their performances as close to even or gave a modest edge to Mr. Reagan.
+    Fact 3: Ronald Reagan opposes busing, even if ordered by the courts to overcome official acts of segregation.
+    Fact 4: Jimmy Carter approves of busing, as a last resort.
+    Fact 5: Senator Jacob K. Javits campaigned Wednesday with Ronald Reagan and, in response to reporters' questions, brushed aside suggestions that he withdraw from his race for re-election.
+  Packet #4: "Reagan and Carter Stand Nearly Even in Last Polls; Differences on War Issue Reagan and Carter Stand Almost Even in Final Polls Effects of the Debate Male-Female Preferences Catholics and Conservatives Fears About the Economy The New York Times/CBS News Poll" (facts: 1, leadDate: 1980-11-03)
+    Fact 1: Ronald Reagan and President Carter, their already close race tightened by their debate last Tuesday, appeared to be running about even in popular support with two days to go until the Presidential election.
+  Packet #5: "IRAN DELAYS DEBATE ON HOSTAGE RELEASE AT LEAST TO SUNDAY; PARLIAMENT LACKS A QUORUM Some Lawmakers Oppose Solution Before the U.S. Elections-- Tempers Flare on Issue Iraq's Invasion a Factor Some Deputies at the Front Iran's Parliament Again Delays Hostage Release Vote" (facts: 4, leadDate: 1980-10-31)
+    Fact 1: Several nights ago, when the evening news brought word to Globe, Ariz., that the Iranian Parliament had once again balked at freeing the American hostages, 9-year-old Marcie Lopez turned fearfully to her mother.
+    Fact 2: Q. You've heard the conditions that appear to have been stated by the Iranian Parliament, and among those conditions is a conditional phasing of the release of the American hostages.
+    Fact 3: With billions of dollars at stake, bankers reacted cautiously Saturday to the conditions set down by the Iranian Parliament for the release of the 52 American hostages being held in Iran.
+    Fact 4: With the ingrained caution of a year of repeatedly crushed hopes, most families of the American hostages in Iran voiced guarded optimism or refrained from comment Saturday after Parliament in Teheran set the terms for the release of their loved ones.
+  Packet #6: "WORLD GRAIN PINCH PREDICTED FOR 1981; Agriculture Dept. Expects Lowest Ratio of Reserves in 5 Years Food as a Diplomatic Tool World Grain Pinch Predicted by Agriculture Dept. Large Wheat Crop in U.S. Specter of Belt Tightening" (facts: 0, leadDate: 1980-11-03)
+  Packet #7: "A New York Dip In Voters Posing Threat to Carter; Ballots Are Crowded New York Dip in Voters Posing a Threat to Carter City Strength Declining" (facts: 3, leadDate: 1980-11-04)
+    Fact 1: Despite intensive registration drives by President Carter's campaign, the number of people in New York State who are eligible to vote Monday has dropped by 400,000 since the last Presidential election, with 75 percent of the falloff coming in strongly Democratic New York City.
+    Fact 2: WASHINGTON THE nation that will elect a President, a Congress and thousands of state and local officials this Tuesday is enormously different from the way it was in past Presidential years.
+    Fact 3: Its people are older and less optimistic about their future than in 1972, when Richard Nixon was elected to a second term, or just four years ago when Jimmy Carter won the Presidency.
+  Packet #8: "Anderson Looks Beyond the Voting; Calls Dramatic Shifts Possible On to His Alma Mater" (facts: 0, leadDate: 1980-11-04)
+  Packet #9: "Javits Is Far Behind; Murphy and Thompson Lose D'Amato Is Victorious in New York's Senate Contest Little Emphasis on Issues" (facts: 2, leadDate: 1980-11-05)
+    Fact 1: Alfonse M. D'Amato, a political unknown outside Nassau County six months ago, defeated Representative Elizabeth Holtzman Monday in a close contest for the United States Senate.
+    Fact 2: The incumbent, Senator Jacob K. Javits, a veteran of 24 years in the Senate, trailed far behind.
+  Packet #10: "The Election At a Glance; Summary of Presidential Vote THE SENATE THE HOUSE" (facts: 2, leadDate: 1980-11-05)
+    Fact 1: Following is the county-by-county vote for U.S. senator in New York State.
+    Fact 2: The first column shows the number of election districts, the second shows the number of election districts reporting.
+
+--- ITEM 3: 1968-06-06 (RFK "KENNEDY IS DEAD, VICTIM OF ASSASSIN") ---
+Found 12 Page-1 articles matching "Kennedy" in 1968-05-30..1968-06-06:
+  [1968-06-02] Page="1" Desk="None" Type="Archives" Eligible=true Headline="KENNEDY DISPUTES M'CARTHY ON WAR IN TV DISCUSSION; Rivals Differ Over Whether Peace Parleys Should Urge a Coalition Government"
+    Abstract: Sens R F Kennedy and McCarthy agree tax rise is needed, TV discusssion
+  [1968-06-03] Page="1" Desk="None" Type="Archives" Eligible=true Headline="CALIFORNIA VOTE TO TEST IMPACT OF VIDEO DEBATE; Primary Campaign Resumed by Kennedy and McCarthy After Confrontation on TV BOTH SIDES CLAIM GAIN But Concede Main Question Is Effect on Viewers and the Voters Tomorrow California Vote to Test Impact Of Kennedy-McCarthy Debate Debate Participants"
+    Abstract: debate seen inconclusive (Wicker rept); both claim victory but concede that questions and answers matter less than impact on viewers; McCarthy seen having gained from getting equal exposure with Kennedy; only clash occurred over exch involving US int
+  [1968-06-04] Page="1" Desk="None" Type="Archives" Eligible=true Headline="CANDIDATES END CALIFORNIA DRIVE; PRIMARY IS TODAY; McCarthy and Kennedy Both Predict Victory -- Reagan Unopposed in G.O.P. Vote"
+    Abstract: Kuchel given slight lead
+  [1968-06-05] Page="1" Desk="None" Type="Archives" Eligible=true Headline="Kennedy Claims Victory, And Then Shots Ring Out"
+    Abstract: Kennedy had just completed claiming Calif victory when he was shot
+  [1968-06-05] Page="1" Desk="None" Type="Archives" Eligible=true Headline="KENNEDY SHOT AND GRAVELY WOUNDED AFTER WINNING CALIFORNIA PRIMARY; SUSPECT SEIZED IN LOS ANGELES HOTEL; CONDITION 'STABLE' Aide Reports Senator Is 'Breathing Well' --Last Rites Given KENNEDY IS SHOT BY YOUTH ON COAST"
+    Abstract: Sen Kennedy, Dem, shot, Los Angeles, during campaign to win US Pros nomination
+  [1968-06-05] Page="1" Desk="None" Type="Archives" Eligible=true Headline="COAST TALLY SLOW; New Yorker Captures Lead Over McCarthy in Late Tabulation KENNEDY WINNER IN COAST PRIMARY"
+    Abstract: loses Calif primary; table
+  [1968-06-05] Page="1" Desk="None" Type="Archives" Eligible=true Headline="Kennedy Triumphs In Dakota Primary; Kennedy Wins in South Dakota; Nixon Gains 14 Delegate Votes"
+    Abstract: Sen McGovern, renominated unopposed, faces Gubbrud in Nov; Repr Berry, Dem, wins renomination; Repr Reifel, Repub, renominated, unopposed; opponents noted
+  [1968-06-06] Page="1" Desk="None" Type="Archives" Eligible=true Headline="SUSPECT, ARAB IMMIGRANT, ARRAIGNED; NOTES ON KENNEDY IN SUSPECT'S HOME Cite 'Necessity' to Murder Senator Before June 5, Anniversary of War NOTES ON KENNEDY IN SUSPECT'S HOME"
+    Abstract: Los Angeles Mayor Yorty repts notebook found in home of S B Sirhan, alleged assassin of Sen R F Kennedy, and an immigrant from Jordan, had a ref to 'necessity' to kill Kennedy before June 5, 1968, 1st anniv of 6-day war; Dr M T Mehdi, sec-gen of Acti
+  [1968-06-06] Page="1" Desk="None" Type="Archives" Eligible=true Headline="A Pall Over Politics; Murder Raises Grave Questions for Presidency Races Now and in Future A Pall Over Politics"
+    Abstract: WASHINGTON, Thursday, June 6 -- The murder of Robert F. Kennedy shattered the 1968 Presidential campaign and lowered a pall of uncertainty over American politics now and in the years to come. For the immediate future, it may well have assured the nom
+  [1968-06-06] Page="1" Desk="None" Type="Archives" Eligible=false Headline="TRANSIT PACKAGE SUBMITTED TO CITY; M.T.A. Seeks Approval of 8 New Subway Routes TRANSIT PACKAGE SUBMITTED TO CITY"
+    Abstract: MTA presents $1.27-billion plan for subway and commuter rr additions and improvements to Estimate Bd and Mayor Lindsay; asks speedy city approval of new routes and engineering designs; plan consists of 8 new subway routes, including 2d Av subway and 
+  [1968-06-06] Page="1" Desk="None" Type="Archives" Eligible=true Headline="KENNEDY IS DEAD, VICTIM OF ASSASSIN; SURGERY IN VAIN President Calls Death Tragedy, Proclaims a Day of Mourning Kennedy Dies, Victim of Assassin, After Doctors Perform 3-Hour Brain Operation ARAB ARRAIGNED; $250,000 BAIL SET Revolver Traced to Suspect -- Senator, 42, Failed to Regain Consciousness."
+    Abstract: Sen Kennedy, top Dem officeholder in state, dies after being shot by assassin, Calif
+  [1968-06-06] Page="1" Desk="None" Type="Archives" Eligible=true Headline="HANOI INSISTS U.S. HALT ITS BOMBING; Aides Call Talks Response to Johnson -- Suspicion Voiced of a Plot Against Kennedy HANOI INSISTS U.S. HALT ITS BOMBING"
+    Abstract: N Vietnamese negotiators contend Hanoi responded to Johnson's bombing restrictions by entering official talks; assert next move of total bombing halt is up to US; N Vietnamese argument produces sharp exchs; Xuan Thuy asks Harriman when US will stop b
+All ranked clusters matching "Kennedy" on 1968-06-06:
+  Rank #1 [Score 298.9] "KENNEDY IS DEAD, VICTIM OF ASSASSIN; SURGERY IN VAIN President Calls Death Tragedy, Proclaims a Day of Mourning Kennedy Dies, Victim of Assassin, After Doctors Perform 3-Hour Brain Operation ARAB ARRAIGNED; $250,000 BAIL SET Revolver Traced to Suspect -- Senator, 42, Failed to Regain Consciousness."
+    Score Breakdown: {"fpScore":95,"freshnessScore":60,"persistenceScore":0,"volumeScore":8.9,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":25,"sameDayFpScore":45,"penalties":0,"total":298.9}
+  Rank #2 [Score 269.4] "KENNEDY SHOT AND GRAVELY WOUNDED AFTER WINNING CALIFORNIA PRIMARY; SUSPECT SEIZED IN LOS ANGELES HOTEL; CONDITION 'STABLE' Aide Reports Senator Is 'Breathing Well' --Last Rites Given KENNEDY IS SHOT BY YOUTH ON COAST"
+    Score Breakdown: {"fpScore":95,"freshnessScore":60,"persistenceScore":12,"volumeScore":12.4,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":25,"sameDayFpScore":0,"penalties":0,"total":269.4}
+  Rank #4 [Score 249.3] "KENNEDY DISPUTES M'CARTHY ON WAR IN TV DISCUSSION; Rivals Differ Over Whether Peace Parleys Should Urge a Coalition Government"
+    Score Breakdown: {"fpScore":80,"freshnessScore":40,"persistenceScore":10,"volumeScore":29.3,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":25,"sameDayFpScore":0,"penalties":0,"total":249.3}
+  Rank #34 [Score 86.5] "KENNEDY PLEDGES TO QUIT IF BEATEN IN CALIFORNIA BID; Agrees to TV Debate This Weekend With McCarthy After Oregon Defeat Kennedy Vows to Quit if Beaten In California Race on Tuesday"
+    Score Breakdown: {"fpScore":65,"freshnessScore":0,"persistenceScore":5,"volumeScore":6.5,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":25,"sameDayFpScore":0,"penalties":-50,"total":86.5}
+  Rank #41 [Score 65] "ATTACK ON KENNEDY LEADS TO TV SHIFTS"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":25,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":65}
+  Rank #106 [Score 17] "Witness Links Ferguson to Assassination Talk"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":17}
+  Rank #165 [Score 9.8] "M'CARTHY RENEWS KENNEDY ATTACK; Taunts Rival on Suggestion That He Might Quit Race"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":12,"volumeScore":12.8,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-80,"total":9.8}
+  Rank #256 [Score -12.9] "Kennedy Aides Optimistic"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.1,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-12.9}
+  Rank #260 [Score -13] "South Dakota Ballot a Triumph For Kennedy Over Both Rivals"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-13}
+  Rank #416 [Score -33.8] "M'CARTHY CALLS DEBATE STANDOFF; Says That Neither He Nor Kennedy Gained Much"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":6.2,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-80,"total":-33.8}
+  Rank #451 [Score -35.9] "M'CARTHY'S DRIVE BEGAN LAST WEEK; Direct Challenge to Kennedy Said to Spark Victory"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":4.1,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-80,"total":-35.9}
+  Rank #560 [Score -47.9] "Members of Cup Tennis Team Are Dispirited Over Kennedy"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.1,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-47.9}
+  Rank #873 [Score -82.6] "Kennedy Asked Local Law"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.4,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-85,"total":-82.6}
+  Rank #1064 [Score -97.8] "Varieties of Kennedyism"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.2,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-100,"total":-97.8}
+  Rank #1155 [Score -97.9] "KENNEDY MEMORIAL DEDICATED IN DUBLIN"
+    Score Breakdown: {"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.1,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-100,"total":-97.9}
+
+--- ITEM 4A: 1971-06-13 and 1971-06-14 Page-1 Articles ---
+
+Date 1971-06-13 — Total Page-1 articles in cache: 35
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "American Made‐In Japan"
+    Cluster Rank: #309, Score=-19.4, Lead="American Made‐In Japan", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":5.6,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-19.4}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "News of the Rialto"
+    Cluster Rank: #502, Score=-46.7, Lead="News of the Rialto", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":3.3,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-46.7}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Geraldine's Long Journey"
+    Cluster Rank: #442, Score=-35.4, Lead="Geraldine's Long Journey", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":14.6,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-35.4}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Dostoevsky as Rorschach Test"
+    Cluster Rank: #417, Score=-34.4, Lead="Dostoevsky as Rorschach Test", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":15.6,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-34.4}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "Km Ranch Agrees To Buy Canonero, Baptista Asserts"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Newyork"
+    Cluster Rank: #72, Score=23.6, Lead="Newyork", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":18.6,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":23.6}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "Editorial Cartoon 1 — No Title"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "LUNN'S 206 LEADS KEMPER BY SHOT"
+    Cluster Rank: #83, Score=17.8, Lead="LUNN'S 206 LEADS KEMPER BY SHOT", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":10,"volumeScore":7.8,"broadImpactScore":0,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":17.8}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "What We Don't Know Nearly Always Hurts"
+    Cluster Rank: #490, Score=-46.2, Lead="What We Don't Know Nearly Always Hurts", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":3.8,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-46.2}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Tricia Nixon Takes Vows In Garden at White House"
+    Cluster Rank: #8, Score=157.9, Lead="Tricia Nixon Takes Vows In Garden at White House", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":5,"volumeScore":7.9,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":157.9}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Vietnam Archive: Pentagon Study Traces 3 Decades of Growing U. S. Involvement"
+    Cluster Rank: #1, Score=264, Lead="Vast Review of War Took a Year", Breakdown={"fpScore":65,"freshnessScore":60,"persistenceScore":0,"volumeScore":44,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":30,"penalties":0,"total":264}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Theater in London"
+    Cluster Rank: #313, Score=-19.5, Lead="Theater in London", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":5.5,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-19.5}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "DRUMTOP SETS MARK IN BOWLING GREEN AT ELMONT"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "WHITE SOX HAND ORIOLES 7‐3 LOSS"
+    Cluster Rank: #379, Score=-25.8, Lead="WHITE SOX HAND ORIOLES 7‐3 LOSS", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":4.2,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-25.8}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "New Fashions in Honeymoons: Hip, Super Hip And Super Square"
+    Cluster Rank: #904, Score=-79.7, Lead="New Fashions in Honeymoons: Hip, Super Hip And Super Square", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":15.3,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-95,"total":-79.7}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "CITY TO DISCLOSE BUDGETARY TRIMS FOR DEPARTMENTS"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "Front Page 1 ‐‐ No Title"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "NIXON CRITICIZED AS MAYORS MEET"
+    Cluster Rank: #3, Score=179.9, Lead="NIXON CRITICIZED AS MAYORS MEET", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":5,"volumeScore":4.9,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":25,"sameDayFpScore":0,"penalties":0,"total":179.9}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "TATE CAPTURES TWO A.A.U. JUMPS"
+    Cluster Rank: #368, Score=-25.2, Lead="TATE CAPTURES TWO A.A.U. JUMPS", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":4.8,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-25.2}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "5 Favored Porsches Drop Out of Race at Le Mans,"
+    Cluster Rank: #318, Score=-19.7, Lead="5 Favored Porsches Drop Out of Race at Le Mans,", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":5,"volumeScore":5.3,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-19.7}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Crime Rate of Women Up Sharply Over Men's"
+    Cluster Rank: #31, Score=83.4, Lead="Crime Rate of Women Up Sharply Over Men's", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":3.4,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-65,"total":83.4}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "A Meaty Whodunit: Grilling of Magret"
+    Cluster Rank: #489, Score=-45.9, Lead="A Meaty Whodunit: Grilling of Magret", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":4.1,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-45.9}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "On the Champs — Elysees: ‘Hey, Aren't You the Girl Who Sits Across From Me in Abnormal Psych?’"
+    Cluster Rank: #424, Score=-34.7, Lead="On the Champs — Elysees: ‘Hey, Aren't You the Girl Who Sits Across From Me in Abnormal Psych?’", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":15.3,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-34.7}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Vast Review of War Took a Year"
+    Cluster Rank: #1, Score=264, Lead="Vast Review of War Took a Year", Breakdown={"fpScore":65,"freshnessScore":60,"persistenceScore":0,"volumeScore":44,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":30,"penalties":0,"total":264}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "A'S BLUE STOPS YANKS, 134;"
+    Cluster Rank: #204, Score=-10, Lead="A'S BLUE STOPS YANKS, 134;", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":10,"volumeScore":10,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-10}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "GIANTS BEAT METE, 5‐1;"
+    Cluster Rank: #209, Score=-11.6, Lead="GIANTS BEAT METE, 5‐1;", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":10,"volumeScore":8.4,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-11.6}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Florida Banker at Bay"
+    Cluster Rank: #185, Score=3.6, Lead="FLORIDA INDIANS ASSUME OWN RULE", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":10,"volumeScore":23.6,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":3.6}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "OFFIRACK BETTING ON BELMONT CARD STARTS THIS WEEK"
+    Cluster Rank: #519, Score=-47.1, Lead="OFFIRACK BETTING ON BELMONT CARD STARTS THIS WEEK", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":2.9,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-47.1}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Newyork"
+    Cluster Rank: #72, Score=23.6, Lead="Newyork", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":18.6,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":23.6}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Jet Hijacker Held Here in $200,000 Bail"
+    Cluster Rank: #12, Score=150.2, Lead="Jet Hijacker Held Here in $200,000 Bail", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":5.2,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":150.2}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "THE WEEK IN FINANCE"
+    Cluster Rank: #188, Score=-1.1, Lead="THE WEEK IN FINANCE", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":10,"volumeScore":18.9,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-1.1}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Meat Prices Headed Up"
+    Cluster Rank: #507, Score=-46.8, Lead="Meat Prices Headed Up", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":3.2,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-50,"total":-46.8}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Newyork"
+    Cluster Rank: #72, Score=23.6, Lead="Newyork", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":18.6,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":23.6}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT"
+    Cluster Rank: #4, Score=178, Lead="U.S. URGES INDIANS AND PAKISTANIS TO USE RESTRAINT", Breakdown={"fpScore":65,"freshnessScore":60,"persistenceScore":10,"volumeScore":8,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":178}
+  [1971-06-13] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Whatever Became of Richard Burton?"
+    Cluster Rank: #362, Score=-24.2, Lead="Whatever Became of Richard Burton?", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":5.8,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":-24.2}
+
+Date 1971-06-14 — Total Page-1 articles in cache: 9
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Eased Laws Alter U.S. Ethnic Profile"
+    Cluster Rank: #27, Score=93.4, Lead="Eased Laws Alter U.S. Ethnic Profile", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":3.4,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-20,"total":93.4}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "19 POLICE INJURED AT PARADE HERE"
+    Cluster Rank: #6, Score=153, Lead="19 POLICE INJURED AT PARADE HERE", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":3,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":25,"sameDayFpScore":0,"penalties":-20,"total":153}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Many Colleges Shift To an Informal Air In Commencements"
+    Cluster Rank: #22, Score=105.5, Lead="Many Colleges Shift To an Informal Air In Commencements", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":15.5,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-20,"total":105.5}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Women's Prison Closed; Inmates Moved to Bikers"
+    Cluster Rank: #3, Score=162.9, Lead="Women's Prison Closed; Inmates Moved to Bikers", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":10,"volumeScore":7.9,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":162.9}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Tanker Bound for Israel Attached Near Red Sea"
+    Cluster Rank: #7, Score=149.7, Lead="Tanker Bound for Israel Attached Near Red Sea", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":4.7,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":149.7}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=false
+    Headline: "LINDSAY REVISES BUDGET TO CUT IT BY $300 — MILLION"
+    Cluster: NOT IN ANY CLUSTER (Filtered out or no title)
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "For City Residents: A Painful Tax Bite"
+    Cluster Rank: #28, Score=92.9, Lead="For City Residents: A Painful Tax Bite", Breakdown={"fpScore":50,"freshnessScore":60,"persistenceScore":0,"volumeScore":2.9,"broadImpactScore":0,"magnitudeScore":0,"bannerScore":0,"sameDayFpScore":0,"penalties":-20,"total":92.9}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "PRESIDENT ORDERS DRIVE TO PROVIDE JOBS TO VETERANS"
+    Cluster Rank: #2, Score=251.4, Lead="PRESIDENT ORDERS DRIVE TO PROVIDE JOBS TO VETERANS", Breakdown={"fpScore":95,"freshnessScore":60,"persistenceScore":10,"volumeScore":26.4,"broadImpactScore":35,"magnitudeScore":0,"bannerScore":25,"sameDayFpScore":0,"penalties":0,"total":251.4}
+  [1971-06-14] Page=1 Desk="None" Type="Archives" Eligible=true
+    Headline: "Vietnam Archive: A Consensus to Bomb Developed Before ’64 Election, Study Says"
+    Cluster Rank: #1, Score=260, Lead="Vietnam Archive: A Consensus to Bomb Developed Before ’64 Election, Study Says", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":5,"volumeScore":50,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":0,"total":260}
+
+--- ITEM 4B: 1993-02-27 Articles matching Trade Center / explosion / blast / bomb ---
+Date 1993-02-27 — Matching articles in cache: 14
+  [1993-02-27] Page="36" Section="Business Day" Desk="Financial Desk" Eligible=true
+    Headline: "Blast Halts Some Trading"
+    Cluster Rank: #42, Score=39.8, Lead="Blast Halts Some Trading", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":4.8,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":39.8}
+  [1993-02-27] Page="" Section="New York" Desk="New York Region" Eligible=true
+    Headline: "Blast Hits Trade Center, Bomb Suspected; Many Are Trapped for Hours in Darkness and Confusion"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="24" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: Vignettes; Ordinary Lives Hurtled Into the Extraordinary"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="23" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: The Children; For 17 Kindergartners, 5 Hours in an Elevator"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="21" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "METRO DIGEST"
+    Cluster Rank: #42, Score=39.8, Lead="Blast Halts Some Trading", Breakdown={"fpScore":0,"freshnessScore":0,"persistenceScore":0,"volumeScore":4.8,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":0,"penalties":-30,"total":39.8}
+  [1993-02-27] Page="24" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: Car Bombs; A Tool of Foreign Terror, Little Known in U.S."
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="1" Section="New York" Desk="Metropolitan Desk" Eligible=true
+    Headline: "EXPLOSION AT THE TWIN TOWERS: The Scene; First, Darkness, Then Came the Smoke"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="24" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: Fire Safety; Tougher Code May Not Have Helped"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="1" Section="New York" Desk="Metropolitan Desk" Eligible=true
+    Headline: "EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="23" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: Television; News Coverage Plays Central Role in Story"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="1" Section="New York" Desk="Metropolitan Desk" Eligible=true
+    Headline: "EXPLOSION AT THE TWIN TOWERS: Disruptions; Manhattan Is Held in the Grip Of Traffic Snarls and Anxiety"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="" Section="World" Desk="International" Eligible=true
+    Headline: "Explosion at the Twin Towers: Blast Hits Trade Center, Bomb Suspected; 5 Killed, Thousands Flee Smoke in Towers"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+  [1993-02-27] Page="2" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "NEWS SUMMARY"
+    Cluster: EXCLUDED BY FILTER
+  [1993-02-27] Page="23" Section="New York" Desk="Metropolitan Desk" Eligible=false
+    Headline: "EXPLOSION AT THE TWIN TOWERS: The Response; Size of Blast 'Destroyed' Rescue Plan"
+    Cluster Rank: #1, Score=292, Lead="EXPLOSION AT THE TWIN TOWERS: The Overview; BLAST HITS TRADE CENTER, BOMB SUSPECTED; 5 KILLED, THOUSANDS FLEE SMOKE IN TOWERS", Breakdown={"fpScore":80,"freshnessScore":60,"persistenceScore":0,"volumeScore":42,"broadImpactScore":35,"magnitudeScore":30,"bannerScore":0,"sameDayFpScore":45,"penalties":0,"total":292}
+
+--- ITEM 6: 1976-07-05 Entebbe #1 Cluster Facts and Source Articles ---
+#1 Cluster Lead: "HOSTAGES FREED AS ISRAELIS RAID UGANDA AIRPORT" (Score: 317.5, Articles: 8)
+Cluster Articles:
+  - [1976-07-05] Page="1" Words=318 Headline="ISRAELIS RETURN WITH 103 RESCUED IN UGANDA RAID"
+    Abstract: July 5: Israeli commando unit arrives in Israel with hostages it released; officials say 103 hostages were flown to Israel; say 4 Israelis, 7 of 10 hijackers and 20 Uganda soldiers
+    LeadParagraph: “fully cooperating with the hijackers while putting on false pretenses.”
+  - [1976-07-05] Page="1" Words=984 Headline="French Officials See Signs Amin, Hijackers Colluded"
+    Abstract: Officials and released hostages say in Paris that they have substantial evidence that Amin was in collusion with hijackers in seizure of plane as well as after it landed in Uganda;
+    LeadParagraph: PARIS. July 4 — Officials and released hostages said here today that they had substantial evidence that President Idi Amin had been in collusion with the hijackers of an Air France
+  - [1976-07-04] Page="1" Words=1215 Headline="HOSTAGES FREED AS ISRAELIS RAID UGANDA AIRPORT"
+    Abstract: July 4: Israeli airborne commandos stage daring night-time raid on Entebbe Airport, freeing 105 hostages and Air France crew held by pro-Palestinian hijackers and flying them back 
+    LeadParagraph: JERUSALEM, Sunday, July 4 —Israeli airborne commandos staged a daring night‐time raid, on Entebbe airport in Uganda last night, freeing the 105 mainly Israeli hostages and Air Fran
+  - [1976-07-02] Page="1" Words=841 Headline="ISRAEL, YIELDING, TELLS HIJACKERS IT WILL NEGOTIATE"
+    Abstract: Israel reluctantly breaks long-standing policy and announces its willingness to negotiate release of unspecified Arab prisoners in exch for hostages in Entebbe; Cabinet votes unani
+    LeadParagraph: JERUSALEM, July 1—Breaking a long‐standing policy, Israel today announced its willingness to negotiate the release of an unspecified number of convicted Arab prisoners in exchange 
+  - [1976-07-05] Page="4" Words=759 Headline="RESCUE BY ISRAEL HAILED IN EUROPE"
+    Abstract: several top Eur officials, including former W Ger Chancellor Willy Brandt and opposition leader Helmut Kohl, Brit Labor and Conservative MPs, Danish Prime Min Anker Jorgensen and F
+    LeadParagraph: PARIS. July 4—Several top European officials expressed warm approval today of Israel's rescue of the hijacking victims in Uganda as a victory against terrorism generally.
+  - [1976-07-05] Page="3" Words=103 Headline="Armed Israeli Action Ended 1972 Hijacking"
+    Abstract: Israeli forces have rescued hostages inside Israel itself, but Uganda operation was 1st that freed hostages held abroad; "72 hijacking incident recalled (S)
+    LeadParagraph: TEL AVIV, July 4 (AP)—Israeli forces have often fought guerrilla raiders and rescued hostages inside Israel itself, but the Uganda operation today was the first that free hostages 
+  - [1976-07-05] Page="4" Words=68 Headline="Palestinian Criticism"
+    Abstract: Palestinian source says Israel's action demonstrated Israel's disregard of sovereignty, independence and territorial integrity of other states; says PLO condemned hijacking; says I
+    LeadParagraph: BEIRUT, Lebanon, July 4—A Palestinian source said here today that Israel's action in Uganda last night “demonstrated Israel's complete disregard of the sovereignty, independence an
+  - [1976-07-03] Page="3" Words=226 Headline="Arab in Protest Against Tax Killed by Israelis"
+    Abstract: Israeli troops clash with Palestinian rioters in Nablus, on West Bank, killing 1 and injuring 30; outburst is prompted by Israel's imposition of 8% value-added tax (S)
+    LeadParagraph: TEL AVIV, July 2 (AP) Israeli troops opened fire on Palestinian rioters today in the occupied, West Bank of the Jordan River, killing one person and wounding about 30, Arab sources
+
+Current Packet Facts for #1 Cluster:
+  Fact [1]: "Israeli airborne commandos staged a daring night‐time raid, on Entebbe airport in Uganda Saturday night, freeing the 105 mainly Israeli hostages and Air France crew members held by pro‐Palestinian hijackers and flying them back to Israel aboard three Israeli planes."
+    Source Article: [1976-07-04] "HOSTAGES FREED AS ISRAELIS RAID UGANDA AIRPORT" (id=undefined)
+  Fact [2]: "Breaking a long‐standing policy, Israel Thursday announced its willingness to negotiate the release of an unspecified number of convicted Arab prisoners in exchange for hostages being held by airplane hijackers in Uganda."
+    Source Article: [1976-07-02] "ISRAEL, YIELDING, TELLS HIJACKERS IT WILL NEGOTIATE" (id=undefined)
+  Fact [3]: "Officials and released hostages said here yesterday that they had substantial evidence that President Idi Amin had been in collusion with the hijackers of an Air France airbus in the seizure of the plane as well as after it landed in Uganda."
+    Source Article: [1976-07-05] "French Officials See Signs Amin, Hijackers Colluded" (id=undefined)
+  Fact [4]: "Several top European officials expressed warm approval yesterday of Israel's rescue of the hijacking victims in Uganda as a victory against terrorism generally."
+    Source Article: [1976-07-05] "RESCUE BY ISRAEL HAILED IN EUROPE" (id=undefined)
+  Fact [5]: "TEL AVIV, July 2 (AP) Israeli troops opened fire on Palestinian rioters Friday in the occupied, West Bank of the Jordan River, killing one person and wounding about 30, Arab sources said."
+    Source Article: [1976-07-03] "Arab in Protest Against Tax Killed by Israelis" (id=undefined)
