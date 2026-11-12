@@ -2666,13 +2666,15 @@ export default function App() {
   };
 
   // Returns the authoritative duration for a song pick, prioritizing library duration_sec over player anomalies
-  const getEffectiveSongDuration = (pick: SongPick | null, playerDuration: number): number => {
+  const getEffectiveSongDuration = (pick: SongPick | null, playerDuration: number, curTime: number = 0): number => {
     const libDur = (pick?.song as any)?.duration_sec;
-    if (typeof libDur === 'number' && libDur > 0) {
-      if (playerDuration <= 0 || isNaN(playerDuration) || Math.abs(playerDuration - libDur) > 20) {
-        return libDur;
+    if (typeof playerDuration === 'number' && playerDuration > 0 && !isNaN(playerDuration)) {
+      if (playerDuration >= 45 || curTime >= 15) {
+        return playerDuration;
       }
-      return playerDuration;
+    }
+    if (typeof libDur === 'number' && libDur > 0) {
+      return libDur;
     }
     return playerDuration > 0 && !isNaN(playerDuration) ? playerDuration : 0;
   };

@@ -6462,6 +6462,16 @@ console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Ma
       }
     }, {}, () => {});
 
+    // Feed verified silence audio frame so lastAudioUpdateTime is fresh
+    runtimeMessageListener({
+      type: 'VU_AUDIO_LEVELS',
+      payload: {
+        l: 0,
+        r: 0,
+        active: true
+      }
+    }, {}, () => {});
+
     // Call checkSilenceDetector during active playback - must not throw ReferenceError: isJingle is not defined
     let errorDuringPlayback: any = null;
     try {
@@ -6471,11 +6481,19 @@ console.log('\n--- 69. Verified Duck & Restore Delivery (3 Retries), CSP-Safe Ma
     }
     assert(errorDuringPlayback === null, 'checkSilenceDetector() executes without ReferenceError during active playback');
 
-    // Simulate silence hold time passing (2100ms)
+    // Simulate silence hold time passing (2100ms) with continued fresh silence frames
     const baseNow = Date.now();
     const origDateNow = Date.now;
     Date.now = () => baseNow + 2100;
     try {
+      runtimeMessageListener({
+        type: 'VU_AUDIO_LEVELS',
+        payload: {
+          l: 0,
+          r: 0,
+          active: true
+        }
+      }, {}, () => {});
       sandbox.checkSilenceDetector();
     } finally {
       Date.now = origDateNow;

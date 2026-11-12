@@ -26,13 +26,15 @@ assert.strictEqual(queenSong.duration_sec, 355, 'Bohemian Rhapsody duration_sec 
 console.log(`✓ Sample library duration verified: "${queenSong.artist} - ${queenSong.title}" is ${queenSong.duration_sec}s`);
 
 // 2. Test getEffectiveSongDuration logic
-function getEffectiveSongDuration(pick: any, playerDuration: number): number {
+function getEffectiveSongDuration(pick: any, playerDuration: number, curTime: number = 0): number {
   const libDur = pick?.song?.duration_sec;
-  if (typeof libDur === 'number' && libDur > 0) {
-    if (playerDuration <= 0 || isNaN(playerDuration) || Math.abs(playerDuration - libDur) > 20) {
-      return libDur;
+  if (typeof playerDuration === 'number' && playerDuration > 0 && !isNaN(playerDuration)) {
+    if (playerDuration >= 45 || curTime >= 15) {
+      return playerDuration;
     }
-    return playerDuration;
+  }
+  if (typeof libDur === 'number' && libDur > 0) {
+    return libDur;
   }
   return playerDuration > 0 && !isNaN(playerDuration) ? playerDuration : 0;
 }
@@ -44,13 +46,21 @@ const queenPick = {
   state: { recent: [] },
 };
 
-// Case A: Player reports 0 (unready) -> resolves to 355s
-assert.strictEqual(getEffectiveSongDuration(queenPick, 0), 355, 'Unready player (0s) must resolve to 355s');
-// Case B: Player reports ~92s (ad / teaser anomaly) -> resolves to 355s
-assert.strictEqual(getEffectiveSongDuration(queenPick, 92), 355, 'Anomalous duration (92s) must resolve to 355s');
-// Case C: Player reports 359s (actual YouTube video length, within 20s) -> preserves exact player sync 359s
-assert.strictEqual(getEffectiveSongDuration(queenPick, 359), 359, 'Close player duration (359s) should sync to exact video length');
-console.log('✓ Duration resolution logic verified: anomalous or unready player durations safely fall back to 355s.');
+// Case A: Player reports 0 (unready, curTime=0) -> resolves to 355s
+assert.strictEqual(getEffectiveSongDuration(queenPick, 0, 0), 355, 'Unready player (0s) must resolve to 355s');
+// Case B: Player reports ~20s (initial short teaser/ad before playback underway) -> resolves to 355s
+assert.strictEqual(getEffectiveSongDuration(queenPick, 20, 2), 355, 'Initial ad duration (20s) before track underway must resolve to 355s');
+// Case C: Player reports 253s while library reports 300s (actual YouTube video length differs) -> respects YouTube video length 253s
+const songWithDiffDur = {
+  song: { ...queenSong, duration_sec: 300 },
+  tier: 1,
+  genreMatched: true,
+  state: { recent: [] },
+};
+assert.strictEqual(getEffectiveSongDuration(songWithDiffDur, 253, 200), 253, 'Authoritative YouTube video duration (253s) must be respected even when library says 300s');
+// Case D: Player reports 359s (actual YouTube video length) -> preserves exact player sync 359s
+assert.strictEqual(getEffectiveSongDuration(queenPick, 359, 200), 359, 'Active player duration (359s) should sync to exact video length');
+console.log('✓ Duration resolution logic verified: unready player falls back to library, and playing YouTube video length is authoritative.');
 
 // 3. Simulate Hidden Tab Timeline & DJ Break Execution
 async function simulateHiddenTabPlayback() {
@@ -87,7 +97,7 @@ async function simulateHiddenTabPlayback() {
     audioData: 'mock-audio-data',
   };
 
-  const authoritativeDuration = getEffectiveSongDuration(queenPick, 92); // Simulating 92s player glitch corrected to 355s
+  const authoritativeDuration = getEffectiveSongDuration(queenPick, 0); // Simulating initial unready player resolved to 355s
   assert.strictEqual(authoritativeDuration, 355);
 
   const songStartTimeMs = 100000;
