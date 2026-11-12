@@ -1664,7 +1664,12 @@ async function startServer() {
             let valResult: any = null;
             let candidateOpenerUsed = '';
 
-            // Attempt 1: Initial LLM Generation
+            // LLM Generation & Retries (Requirement 2: Up to 5 attempts for major_news, feeding validator rejection back)
+            const isMajorNews = cand.type === 'major_news';
+            const maxDraftAttempts = isMajorNews ? 5 : 2;
+            let currentAttempt = 1;
+            let lastFailureReason = '';
+
             const tWriterStart = Date.now();
             if (writer.writeSegmentBreakScript && packet.facts.length >= 1) {
               const scriptRes = await writer.writeSegmentBreakScript(buildWriterInput(packet));
@@ -1674,12 +1679,8 @@ async function startServer() {
                 candidateOpenerUsed = scriptRes.openerUsed || '';
               }
             }
-            const writerMs = Date.now() - tWriterStart;
-
-            // Fallback to natural extractive monologue if empty
-            if (!scriptText) {
-              scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
-            }
+            let totalWriterMs = Date.now() - tWriterStart;
+            let totalValidatorMs = 0;
 
             if (scriptText) {
               // 1. Resolve orphan pronoun opening if present
@@ -1689,42 +1690,38 @@ async function startServer() {
                 scriptText = orphanCheck.resolvedText;
               }
 
-              // 2. Validate model draft (must not contain next song's title or hand-off phrases)
+              // 2. Validate model draft
               const tValStart = Date.now();
               valResult = validateSegmentBreakOutput(scriptText, {
                 selectedDate,
                 factPacket: packet,
                 isModelDraft: true,
               });
-              let validatorMs = Date.now() - tValStart;
+              totalValidatorMs += (Date.now() - tValStart);
 
-              // When a script fails for ANY reason (copying, banned phrase, relative time word, hype, orphan pronoun, model handoff),
-              // retry/regenerate once naming the exact offending text in failureReason. Do not drop candidate on first failure. Log both attempts.
-              if (!valResult.valid) {
-                const offendingReason = valResult.rejectedReason || 'validation failed';
-                console.log(`[Segment Candidate Attempt 1 Failed] type=${cand.type} key=${cand.itemKey || 'none'} reason="${offendingReason}" -> Regenerating once with reason`);
+              while ((!valResult.valid || unsupportedClaims.length > 0) && currentAttempt < maxDraftAttempts) {
+                lastFailureReason = !valResult.valid
+                  ? (valResult.rejectedReason || 'validation failed')
+                  : `audit unsupported claims: ${unsupportedClaims.join('; ')}`;
                 
-                // For unconverted relative time words: log whether it came from source or model
-                if (/relative time word/i.test(offendingReason)) {
-                  const sourceHasRelative = (packet.facts || []).some((f: any) => /\b(?:last night|yesterday|this morning|today|tomorrow)\b/i.test(f.text));
-                  console.log(`[Unconverted Relative Time Word] Offending text: "${offendingReason}" | Present in source wikitext: ${sourceHasRelative ? 'YES' : 'NO (introduced by model)'}`);
+                console.log(`[Segment Candidate Attempt ${currentAttempt} Failed] type=${cand.type} key=${cand.itemKey || 'none'} reason="${lastFailureReason}" -> Retrying attempt ${currentAttempt + 1}/${maxDraftAttempts} with exact reason`);
+
+                let retryPrompt = `rejected for: ${lastFailureReason}. STRICT PROPER NAMES RULE: Use ONLY names (people, locations, organizations) that explicitly appear in the Fact Sheet. Do NOT announce upcoming song or handoff.`;
+                const copyMatch = lastFailureReason.match(/reproduces \d+ consecutive words \("([^"]+)"\)/);
+                if (copyMatch) {
+                  retryPrompt = `You copied the exact phrase "${copyMatch[1]}" from the source. Rewrite that sentence completely in your own different words without copying that phrase.`;
                 }
 
+                currentAttempt++;
                 if (writer.writeSegmentBreakScript) {
                   const tRegenStart = Date.now();
-                  // 4l: On retry, quote the exact offending phrase to the writer and tell it to rewrite that sentence in different words
-                  let retryPromptReason = `rejected for: ${offendingReason}. You MUST fix this error completely. Do NOT announce upcoming song or handoff.`;
-                  const copyMatch = offendingReason.match(/reproduces \d+ consecutive words \("([^"]+)"\)/);
-                  if (copyMatch) {
-                    retryPromptReason = `You copied the exact phrase "${copyMatch[1]}" from the source. Rewrite that sentence completely in your own different words without copying that phrase.`;
-                  }
-                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, retryPromptReason));
+                  const regenRes = await writer.writeSegmentBreakScript(buildWriterInput(packet, retryPrompt));
+                  totalWriterMs += (Date.now() - tRegenStart);
                   if (regenRes.success && regenRes.scriptText) {
                     scriptText = regenRes.scriptText;
                     unsupportedClaims = regenRes.unsupportedClaims || [];
                     if (regenRes.openerUsed) candidateOpenerUsed = regenRes.openerUsed;
 
-                    // Check orphan pronoun again on retry
                     const orphanCheckRetry = resolveOrphanPronounOpening(scriptText, packet.targetSongTitle, packet.targetSongArtist);
                     if (orphanCheckRetry.replaced) {
                       scriptText = orphanCheckRetry.resolvedText;
@@ -1736,10 +1733,22 @@ async function startServer() {
                       factPacket: packet,
                       isModelDraft: true,
                     });
-                    validatorMs += (Date.now() - tVal2Start);
-                    console.log(`[Segment Candidate Attempt 2] type=${cand.type} key=${cand.itemKey || 'none'} valid=${valResult.valid} reason="${valResult.rejectedReason || 'PASS'}"`);
+                    totalValidatorMs += (Date.now() - tVal2Start);
+                    console.log(`[Segment Candidate Attempt ${currentAttempt}] type=${cand.type} key=${cand.itemKey || 'none'} valid=${valResult.valid} reason="${valResult.rejectedReason || 'PASS'}"`);
                   }
+                } else {
+                  break;
                 }
+              }
+
+              let usedExtractiveFallback = false;
+              // Requirement 2: If all attempts fail for major_news, use the deterministic extractive path built from packet facts plus lead-in
+              if (isMajorNews && (!valResult || !valResult.valid || unsupportedClaims.length > 0)) {
+                console.log(`[Segment Candidate Extractive Fallback] type=${cand.type} key=${cand.itemKey || 'none'} after ${currentAttempt} failed model attempts. Building deterministic extractive segment from packet facts.`);
+                scriptText = buildNaturalExtractiveSegment(packet, selectedDate);
+                valResult = { valid: true };
+                unsupportedClaims = [];
+                usedExtractiveFallback = true;
               }
 
               // When audit flags sentences, delete only those sentences and air the rest if 2 or more supported sentences remain.
@@ -1801,9 +1810,9 @@ async function startServer() {
               const auditMs = Date.now() - tAuditStart;
 
               // Log timing per stage for candidate
-              console.log(`[Candidate Stage Timing] type=${cand.type} writer=${writerMs}ms validator=${validatorMs}ms audit=${auditMs}ms`);
-              if (writerMs > 8000 || validatorMs > 8000 || auditMs > 8000) {
-                console.warn(`[Candidate Stage Timing Warning] One or more stages exceeded 8000ms: writer=${writerMs}ms validator=${validatorMs}ms audit=${auditMs}ms`);
+              console.log(`[Candidate Stage Timing] type=${cand.type} writer=${totalWriterMs}ms validator=${totalValidatorMs}ms audit=${auditMs}ms`);
+              if (totalWriterMs > 8000 || totalValidatorMs > 8000 || auditMs > 8000) {
+                console.warn(`[Candidate Stage Timing Warning] One or more stages exceeded 8000ms: writer=${totalWriterMs}ms validator=${totalValidatorMs}ms audit=${auditMs}ms`);
               }
 
               // Final check for acceptance of model draft
@@ -1876,6 +1885,7 @@ async function startServer() {
                     targetSongArtist: nextSong?.artist,
                   },
                   isModelDraft: false,
+                  isExtractiveFallback: usedExtractiveFallback,
                 });
 
                 if (finalVal.valid) {

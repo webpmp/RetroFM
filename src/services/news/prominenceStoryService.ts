@@ -265,7 +265,8 @@ export function isFeatureOrSeries(h: string, abs: string = ''): boolean {
   return (
     /\b(?:first|second|third|fourth|fifth|last|another)\s+of\s+a\s+series\b/i.test(combined) ||
     /\b(?:a\s+special\s+report|special\s+to\s+the\s+new\s+york\s+times|an\s+analysis|news\s+analysis|an\s+appraisal|a\s+forecast\s+for|the\s+talk\s+of|the\s+week\s+in\s+review)\b/i.test(combined) ||
-    /\b(?:series\s+on|part\s+\d+\s+of|profile\s+of|sidebar)\b/i.test(combined)
+    /\b(?:series\s+on|part\s+\d+\s+of|profile\s+of|sidebar)\b/i.test(combined) ||
+    /\b(?:shelters?\s+refugees?|beer\s+hall|shortages?|smokers?\s+vow|disappear|shortage\s+of|lifestyle|trends?|consumer|living\s+in)\b/i.test(combined)
   );
 }
 
@@ -459,9 +460,36 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     score += 35;
   }
 
-  // Feature / Series penalty: analytical pieces or background series should not displace breaking broadcast news
-  if (isFeatureOrSeries(articles[0]?.headline || '', articles[0]?.abstract || '')) {
-    score -= 30;
+  // Requirement 3: Generic Magnitude Signals (no event or name lists)
+  // (a) High-magnitude words in lead or front-page headlines
+  const HIGH_MAGNITUDE_REGEX = /\b(?:dead|killed|assassin\w*|murder\w*|invasion|invad\w*|war|crisis|resigns?|resignation|collapse\w*|blockade|crash\w*|shot|shooting)\b/i;
+  const leadHeadline = articles[0]?.headline || '';
+  if (HIGH_MAGNITUDE_REGEX.test(leadHeadline)) {
+    score += 30;
+  } else if (frontPages.some(a => HIGH_MAGNITUDE_REGEX.test(a.headline))) {
+    score += 15;
+  }
+
+  // (b) All-caps multi-deck banner headline on Page 1
+  // Historic major events use full all-caps multi-part banner leads on page 1
+  const firstDeck = leadHeadline.split(';')[0].trim();
+  const isAllCapsBanner = frontPages.some(a => {
+    const deck = (a.headline || '').split(';')[0].trim();
+    return deck.length >= 15 && /^[A-Z0-9\s,;:'"—\-]+$/.test(deck);
+  });
+  if (isAllCapsBanner) {
+    score += 25;
+  }
+
+  // (c) Number of same-day page-1 articles about the story on broadcastDate
+  const sameDayFpArticles = frontPages.filter(a => a.pubDate === broadcastDate);
+  if (sameDayFpArticles.length >= 2) {
+    score += Math.min(40, sameDayFpArticles.length * 15);
+  }
+
+  // Demote features and human-interest items (series, "special report", refugee shelter pieces, shortage pieces)
+  if (isFeatureOrSeries(leadHeadline, articles[0]?.abstract || '')) {
+    score -= 45;
   }
 
   // 6. Penalties for back-page only and single-article items

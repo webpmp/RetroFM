@@ -79,6 +79,7 @@ export interface SegmentValidationContext {
     targetSongArtist?: string;
   };
   isModelDraft?: boolean; // When true, model script must not contain hand-offs or target song title
+  isExtractiveFallback?: boolean; // When true, allow deterministic verbatim facts from packet
 }
 
 /**
@@ -746,10 +747,11 @@ export function validateSegmentBreakOutput(
   // 3f. Check invented station frequency or format (only "RetroFM" is permitted).
   // Fix 5e: Catch real frequencies ("101.5 FM", "98.7 FM"), 4-letter all-caps K/W call signs (e.g. WABC, KROQ),
   // and format names ("Top 40", "FM radio").
-  // Do NOT use case-insensitive [KW][A-Z]{3} because it matches normal English words like "with", "were", "what", "week"!
+  // Exclude common English 4-letter words starting with W (e.g. WITH, WERE, WHAT, WEEK, WHEN, WILL, WENT, WIDE, WEST).
+  const COMMON_W_WORDS = new Set(['WITH', 'WERE', 'WHAT', 'WEEK', 'WHEN', 'WILL', 'WENT', 'WIDE', 'WEST', 'WINS', 'WAVE', 'WISH', 'WIFE', 'WORD', 'WORK', 'WARN']);
   const STATION_INVENTED_REGEX = /\b(?:\d{2,3}(?:\.\d)?\s*FM|[KW][A-Z]{3}\b|Top\s*40|FM\s*radio)\b/;
   const stationMatch = trimmed.match(STATION_INVENTED_REGEX);
-  if (stationMatch) {
+  if (stationMatch && !COMMON_W_WORDS.has(stationMatch[0])) {
     console.log(`[Validator Station Ban Matched] matchedText="${stationMatch[0]}" script="${trimmed}"`);
     return {
       valid: false,
@@ -841,34 +843,37 @@ export function validateSegmentBreakOutput(
     return false;
   };
 
+  const isExtractive = Boolean(context.isExtractiveFallback);
   const scriptNorm = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
-  for (const f of context.factPacket.facts || []) {
-    if ((f as any).isLockedSentence) continue;
-    const isShortFactual = /written by|produced by|composed by|released in|album/i.test(f.text);
-    const maxAllowedConsecutive = isShortFactual ? 12 : 8;
-    const srcNorm = f.text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
-    const srcStr = srcNorm.join(' ');
+  if (!isExtractive) {
+    for (const f of context.factPacket.facts || []) {
+      if ((f as any).isLockedSentence) continue;
+      const isShortFactual = /written by|produced by|composed by|released in|album/i.test(f.text);
+      const maxAllowedConsecutive = isShortFactual ? 12 : 8;
+      const srcNorm = f.text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+      const srcStr = srcNorm.join(' ');
 
-    for (let i = 0; i < scriptNorm.length; i++) {
-      for (let len = maxAllowedConsecutive + 1; i + len <= scriptNorm.length; len++) {
-        const phrase = scriptNorm.slice(i, i + len).join(' ');
-        if (srcStr.includes(phrase)) {
-          if (!isExemptCopyPhrase(phrase)) {
-            return {
-              valid: false,
-              rejectedReason: `Wholesale copying: reproduces ${len} consecutive words ("${phrase}") from source sentence (max allowed: ${maxAllowedConsecutive})`,
-              sanitizedText: '',
-            };
+      for (let i = 0; i < scriptNorm.length; i++) {
+        for (let len = maxAllowedConsecutive + 1; i + len <= scriptNorm.length; len++) {
+          const phrase = scriptNorm.slice(i, i + len).join(' ');
+          if (srcStr.includes(phrase)) {
+            if (!isExemptCopyPhrase(phrase)) {
+              return {
+                valid: false,
+                rejectedReason: `Wholesale copying: reproduces ${len} consecutive words ("${phrase}") from source sentence (max allowed: ${maxAllowedConsecutive})`,
+                sanitizedText: '',
+              };
+            }
+          } else {
+            break;
           }
-        } else {
-          break;
         }
       }
     }
   }
 
   // 7e: In news breaks, reject drafts that repeat the headline or 5+ consecutive headline words
-  if (isNewsTopic) {
+  if (isNewsTopic && !isExtractive) {
     const rawHeadline = context.factPacket.headline || context.factPacket.topicTitle || '';
     if (rawHeadline) {
       const hlNorm = rawHeadline.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
