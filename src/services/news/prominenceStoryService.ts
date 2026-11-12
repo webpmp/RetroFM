@@ -260,106 +260,134 @@ export function extractHeadlineWords(h: string): Set<string> {
   );
 }
 
+export function isFeatureOrSeries(h: string, abs: string = ''): boolean {
+  const combined = `${h} ${abs}`.toLowerCase();
+  return (
+    /\b(?:first|second|third|fourth|fifth|last|another)\s+of\s+a\s+series\b/i.test(combined) ||
+    /\b(?:a\s+special\s+report|special\s+to\s+the\s+new\s+york\s+times|an\s+analysis|news\s+analysis|an\s+appraisal|a\s+forecast\s+for|the\s+talk\s+of|the\s+week\s+in\s+review)\b/i.test(combined) ||
+    /\b(?:series\s+on|part\s+\d+\s+of|profile\s+of|sidebar)\b/i.test(combined)
+  );
+}
+
 const GENERIC_ENTITIES = new Set([
   'united states', 'white house', 'new york', 'new york city', 'york city', 'associated press', 'supreme court',
   'news summary', 'notes on', 'national railroad', 'federal government', 'justice department',
   'state department', 'defense department', 'agriculture department', 'president reagan',
-  'president nixon', 'president carter', 'president ford', 'republican party', 'democratic party',
-  'los angeles', 'san francisco', 'washington post', 'times wire'
+  'president nixon', 'president carter', 'president ford', 'president clinton', 'president bush',
+  'republican party', 'democratic party', 'republican', 'democrat', 'republicans', 'democrats',
+  'los angeles', 'san francisco', 'washington post', 'times wire', 'congress', 'senate', 'house',
+  'administration', 'pentagon', 'president', 'presidency', 'federal', 'government',
+  'saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september',
+  'october', 'november', 'december', 'americans', 'america', 'north', 'south', 'east', 'west'
 ]);
 
-function extractContentTokens(text: string): Set<string> {
-  return new Set(
-    normalizeText(text)
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length > 4 && !STOPWORDS.has(w))
-  );
+export function extractSpecificEntities(art: ReducedNYTArticle): Set<string> {
+  const text = `${art.headline || ''} ${art.abstract || ''}`;
+  const raw = text.match(/\b[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*\b/g) || [];
+  const s = new Set<string>();
+  for (const m of raw) {
+    const lower = m.toLowerCase().trim();
+    if (lower.length >= 4 && !STOPWORDS.has(lower) && !GENERIC_ENTITIES.has(lower)) {
+      if (['mr', 'mrs', 'ms', 'dr'].includes(lower)) continue;
+      s.add(lower);
+    }
+  }
+  return s;
+}
+
+function dateDiffDays(d1: string, d2: string): number {
+  return Math.abs(Math.round((new Date(d1).getTime() - new Date(d2).getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 /**
- * Requirement 2: Merge clusters whose lead articles share the same event using shared proper nouns
- * and high headline overlap. Purely data-driven with no hardcoded event strings.
+ * Pairwise article similarity for average-linkage clustering.
+ * Requires lead articles/cluster members to be within 3 days and share distinctive entities or high headline overlap.
  */
-export function shouldMergeClusters(a1: ReducedNYTArticle, a2: ReducedNYTArticle): boolean {
+export function pairSimilarity(a1: ReducedNYTArticle, a2: ReducedNYTArticle): number {
+  if (dateDiffDays(a1.pubDate, a2.pubDate) > 3) return 0;
   const hw1 = extractHeadlineWords(a1.headline || '');
   const hw2 = extractHeadlineWords(a2.headline || '');
-  let hw = 0;
+  let hwShared = 0;
   for (const w of hw1) {
-    if (hw2.has(w)) hw++;
+    if (hw2.has(w)) hwShared++;
   }
-  if (hw >= 3) return true;
-  const minLen = Math.min(hw1.size, hw2.size);
-  if (hw >= 2 && minLen <= 4 && (hw / minLen) >= 0.5) return true;
+  if (hwShared >= 3) return 1.0;
+  if (hwShared >= 2 && (hw1.size <= 4 || hw2.size <= 4)) return 0.8;
 
-  const t1 = ((a1.headline || '') + ' ' + (a1.abstract || '')).toLowerCase();
-  const t2 = ((a2.headline || '') + ' ' + (a2.abstract || '')).toLowerCase();
-
-  // Fix 2: Merge clusters whose lead articles share key proper nouns or event terms
-  // Apollo 11 / lunar landing
-  if (/\b(?:apollo|astronauts?|moon|lunar|eagle|armstrong|aldrin)\b/i.test(t1) &&
-      /\b(?:apollo|astronauts?|moon|lunar|eagle|armstrong|aldrin)\b/i.test(t2)) {
-    return true;
-  }
-  // Reagan surgery / medical procedure
-  if (t1.includes('reagan') && t2.includes('reagan') &&
-      /\b(?:polyp|surgery|biopsy|hospital|colon|colonoscopy|growth|bethesda)\b/i.test(t1) &&
-      /\b(?:polyp|surgery|biopsy|hospital|colon|colonoscopy|growth|bethesda)\b/i.test(t2)) {
-    return true;
-  }
-  // Berlin Wall / East German political upheaval
-  if (/\b(?:berlin|east german\w*|politburo|krenz)\b/i.test(t1) &&
-      /\b(?:berlin|east german\w*|politburo|krenz)\b/i.test(t2)) {
-    return true;
-  }
-  // Live Aid hunger relief concert
-  if (/\b(?:live aid|hunger telethon|global concert gives philadelphia|trans-atlantic concert)\b/i.test(t1) &&
-      /\b(?:live aid|hunger telethon|global concert gives philadelphia|trans-atlantic concert)\b/i.test(t2)) {
-    return true;
-  }
-  // Mayday / Antiwar protests in Washington (distinct from Berrigan indictments)
-  if (/\b(?:200,000 rally|antiwar|anti-war|protest.*capitol|mayday|may day|people's coalition|veterans discard medals|330 protesters held)\b/i.test(t1) &&
-      /\b(?:200,000 rally|antiwar|anti-war|protest.*capitol|mayday|may day|people's coalition|veterans discard medals|330 protesters held)\b/i.test(t2) &&
-      !t1.includes('berrigan') && !t2.includes('berrigan')) {
-    return true;
+  const ent1 = extractSpecificEntities(a1);
+  const ent2 = extractSpecificEntities(a2);
+  const sharedEnts: string[] = [];
+  for (const e of ent1) {
+    if (ent2.has(e)) sharedEnts.push(e);
   }
 
-  // Proper noun phrase match
-  const pn1 = extractProperNounPhrases(`${a1.headline} ${a1.abstract} ${a1.leadParagraph || ''}`);
-  const pn2 = extractProperNounPhrases(`${a2.headline} ${a2.abstract} ${a2.leadParagraph || ''}`);
-  for (const pn of pn1) {
-    if (pn.length >= 8 && !GENERIC_ENTITIES.has(pn) && pn2.has(pn)) {
-      return true;
-    }
-  }
+  const sittingPresidents = new Set([
+    'reagan', 'president reagan', 'carter', 'president carter', 'nixon', 'president nixon',
+    'clinton', 'president clinton', 'bush', 'president bush', 'ford', 'president ford',
+    'kennedy', 'president kennedy', 'johnson', 'president johnson'
+  ]);
+  const nonPresShared = sharedEnts.filter((e) => !sittingPresidents.has(e));
 
-  return false;
+  if (sharedEnts.length >= 2 && nonPresShared.length >= 1) return 0.7;
+  if (sharedEnts.length >= 1 && hwShared >= 1) return 0.6;
+  return 0;
 }
 
 /**
- * Cluster articles into stories (same subject across days) using data-driven headline and entity matching.
- * Requirement 1: Removed identifyCanonicalStoryKey and all hardcoded topic dictionaries.
+ * Requirement 1: Cluster articles into stories using average-linkage clustering.
+ * Enforces:
+ *   - Lead articles within 3 days
+ *   - Merges only if pairwise similarity across cluster members averages >= 0.4 with no 0-similarity members
+ *   - Hard cap of 40 articles and 8 distinct days per cluster
  */
 export function clusterArticlesIntoStories(articles: ReducedNYTArticle[]): ReducedNYTArticle[][] {
+  const sorted = [...articles].sort((a, b) => {
+    const featA = isFeatureOrSeries(a.headline || '', a.abstract || '') ? 1 : 0;
+    const featB = isFeatureOrSeries(b.headline || '', b.abstract || '') ? 1 : 0;
+    if (featA !== featB) return featA - featB;
+
+    const fpA = isFrontPageArticle(a) ? 1 : 0;
+    const fpB = isFrontPageArticle(b) ? 1 : 0;
+    if (fpB !== fpA) return fpB - fpA;
+    if (b.pubDate !== a.pubDate) return b.pubDate.localeCompare(a.pubDate);
+    const lenA = (a.wordCount || 0) || (a.headline?.length || 0) + (a.abstract?.length || 0);
+    const lenB = (b.wordCount || 0) || (b.headline?.length || 0) + (b.abstract?.length || 0);
+    return lenB - lenA;
+  });
+
   const clusters: ReducedNYTArticle[][] = [];
 
-  for (const art of articles) {
-    const hw = extractHeadlineWords(art.headline || '');
-    let matched: ReducedNYTArticle[] | null = null;
-    for (const cl of clusters) {
-      const repHw = extractHeadlineWords(cl[0].headline || '');
-      let match = 0;
-      for (const w of hw) {
-        if (repHw.has(w)) match++;
+  for (const art of sorted) {
+    let bestClusterIdx = -1;
+    let bestAvgSim = 0;
+
+    for (let cIdx = 0; cIdx < clusters.length; cIdx++) {
+      const cluster = clusters[cIdx];
+      if (cluster.length >= 40) continue;
+      const days = new Set(cluster.map((a) => a.pubDate));
+      if (!days.has(art.pubDate) && days.size >= 8) continue;
+      const lead = cluster[0];
+      if (dateDiffDays(art.pubDate, lead.pubDate) > 3) continue;
+
+      let sumSim = 0;
+      let minSim = 1.0;
+      for (const m of cluster) {
+        const sim = pairSimilarity(art, m);
+        sumSim += sim;
+        if (sim < minSim) minSim = sim;
       }
-      if (match >= 3 || (match >= 2 && (hw.size <= 4 || repHw.size <= 4))) {
-        matched = cl;
-        break;
+      const avgSim = sumSim / cluster.length;
+      if (avgSim >= 0.4 && minSim > 0) {
+        if (avgSim > bestAvgSim) {
+          bestAvgSim = avgSim;
+          bestClusterIdx = cIdx;
+        }
       }
     }
-    if (matched) {
-      matched.push(art);
+
+    if (bestClusterIdx >= 0) {
+      clusters[bestClusterIdx].push(art);
     } else {
       clusters.push([art]);
     }
@@ -431,18 +459,13 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     score += 35;
   }
 
-  // Fix 8: Modest boost (+85) for anticipated or scheduled major events
-  // (a major concert like Live Aid or Woodstock/Bethel, massive rally/encampment like Mayday, or election on broadcast date)
-  const isMajorScheduledEvent =
-    /\b(?:live\s*aid|hunger telethon|woodstock|bethel.*festival|rock festival.*bethel|200,000 rally|antiwar protest at capitol|mayday encampment|may day encampment)\b/i.test(combinedText) ||
-    (/\b(?:concert|rally|demonstration|march|election|launch)\b/i.test(combinedText) &&
-     articles.some((a) => a.pubDate === broadcastDate && (a.abstract || '').toLowerCase().includes(broadcastDate.slice(5))));
-  if (isMajorScheduledEvent) {
-    score += 85;
+  // Feature / Series penalty: analytical pieces or background series should not displace breaking broadcast news
+  if (isFeatureOrSeries(articles[0]?.headline || '', articles[0]?.abstract || '')) {
+    score -= 30;
   }
 
-  // 6. Penalties for back-page only and local items
-  if (fpCount === 0 && !isMajorScheduledEvent) {
+  // 6. Penalties for back-page only and single-article items
+  if (fpCount === 0) {
     score -= 30;
   }
   if (count === 1) {
@@ -451,17 +474,16 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
 
   if (
     /\b(?:local|borough|suburb|zoning|bridge toll|clocks set ahead|daylight time|hearing on|city hall|albany|manhattan criminal court|courts' efficiency)\b/i.test(combinedText) &&
-    !/\b(?:vietnam|war|nixon|watergate|amtrak|space|soyuz|challenger|three mile island|antiwar|berrigan|civil rights|live aid|reagan|apollo|moon|berlin)\b/i.test(combinedText)
+    !BROAD_IMPACT_REGEX.test(combinedText)
   ) {
     score -= 35;
   }
 
-  // Select representative lead article: front page first, then most recent, then longest
+  // Select representative lead article: non-features first, front page first, then most recent, then longest
   const sortedArticles = [...articles].sort((a, b) => {
-    // If a rally/concert has a designated landmark headline, prefer it
-    const isLandmarkA = /\b(?:200,000 Rally|Live Aid|Voice From Moon|Eagle Has Landed)\b/i.test(a.headline || '') ? 1 : 0;
-    const isLandmarkB = /\b(?:200,000 Rally|Live Aid|Voice From Moon|Eagle Has Landed)\b/i.test(b.headline || '') ? 1 : 0;
-    if (isLandmarkB !== isLandmarkA) return isLandmarkB - isLandmarkA;
+    const featA = isFeatureOrSeries(a.headline || '', a.abstract || '') ? 1 : 0;
+    const featB = isFeatureOrSeries(b.headline || '', b.abstract || '') ? 1 : 0;
+    if (featA !== featB) return featA - featB;
 
     const fpA = isFrontPageArticle(a) ? 1 : 0;
     const fpB = isFrontPageArticle(b) ? 1 : 0;
@@ -480,6 +502,22 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     status = 'ongoing';
   } else {
     status = 'developing';
+  }
+
+  // Lead content nouns for fact coherence filtering (Requirement 2):
+  // Facts must share key subject nouns with the lead article to prevent multi-topic mixing.
+  const leadNouns = new Set<string>();
+  const leadCombined = `${lead.headline || ''} ${lead.abstract || ''}`.toLowerCase().replace(/[^a-z0-9]/g, ' ');
+  const GENERIC_SUBJECT_NOUNS = new Set([
+    'president', 'republican', 'democrat', 'house', 'senate', 'congress', 'white', 'house', 'bill',
+    'plan', 'proposal', 'action', 'meeting', 'press', 'conference', 'washington', 'nation', 'administration',
+    'leader', 'leaders', 'officials', 'official', 'statement', 'report', 'today', 'yesterday', 'urges',
+    'says', 'said', 'week', 'year', 'years', 'support', 'opposes', 'calls', 'seeks', 'move', 'moves'
+  ]);
+  for (const w of leadCombined.split(/\s+/)) {
+    if (w.length >= 4 && !STOPWORDS.has(w) && !GENERIC_SUBJECT_NOUNS.has(w)) {
+      leadNouns.add(w);
+    }
   }
 
   // Extract 2-5 verified facts taken strictly from the fetched articles, cleaned of abbreviations (Fix 6)
@@ -501,8 +539,18 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
       for (const sent of sentences) {
         const norm = sent.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (norm && !seenFacts.has(norm)) {
-          seenFacts.add(norm);
-          facts.push(sent);
+          // Fact coherence check: sentence must share at least 1 distinctive subject noun with lead (or be from lead itself)
+          if (art === lead) {
+            seenFacts.add(norm);
+            facts.push(sent);
+          } else {
+            const sentWords = sent.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
+            const matchesLead = sentWords.some((w) => leadNouns.has(w));
+            if (matchesLead) {
+              seenFacts.add(norm);
+              facts.push(sent);
+            }
+          }
           if (facts.length >= 5) break;
         }
       }
@@ -595,38 +643,9 @@ export async function getProminentStoryPackets(broadcastDate: string): Promise<{
     return { allRankedStories: [], selectedPackets: [] };
   }
 
-  // 1. Initial base clustering by headline similarity
+  // 1. Average-linkage clustering directly clusters articles with pairwise constraints and caps (Requirement 1 & 2)
   const clusters = clusterArticlesIntoStories(eligibleArticles);
-
-  // 2. Fix 2: Merge clusters whose lead articles share the same event using Union-Find
-  const parent = Array.from({ length: clusters.length }, (_, i) => i);
-  function findRoot(i: number): number {
-    if (parent[i] === i) return i;
-    parent[i] = findRoot(parent[i]);
-    return parent[i];
-  }
-  function unionRoots(i: number, j: number) {
-    const rootI = findRoot(i);
-    const rootJ = findRoot(j);
-    if (rootI !== rootJ) parent[rootI] = rootJ;
-  }
-
-  for (let i = 0; i < clusters.length; i++) {
-    for (let j = i + 1; j < clusters.length; j++) {
-      if (shouldMergeClusters(clusters[i][0], clusters[j][0])) {
-        unionRoots(i, j);
-      }
-    }
-  }
-
-  const grouped = new Map<number, ReducedNYTArticle[]>();
-  for (let i = 0; i < clusters.length; i++) {
-    const root = findRoot(i);
-    if (!grouped.has(root)) grouped.set(root, []);
-    grouped.get(root)!.push(...clusters[i]);
-  }
-
-  let scoredClusters = Array.from(grouped.values()).map((arts) => scoreStory(arts, broadcastDate));
+  let scoredClusters = clusters.map((arts) => scoreStory(arts, broadcastDate));
 
   // Requirement 1 & 4: Strict continuous ordering and tie-breaking:
   // 1. Prominence score (fine continuous decimal spread)

@@ -1642,16 +1642,17 @@ async function startServer() {
         };
       };
 
-      // Evaluate categories in order, capping at 2 attempts per category.
-      // Give each candidate its own time budget via the provider timeout rather than a shared 25s cutoff
-      // that would starve later categories when an earlier candidate fails slowly.
+      // Evaluate categories in order.
+      // For major_news, attempt all available prominent story candidates before falling back to music_news.
+      // For other categories, cap at 2 candidate attempts.
       categoryLoop:
       for (const queue of candidateQueues) {
         if (queue.length === 0) continue;
         let attemptsThisCategory = 0;
+        const maxAttemptsForCategory = (queue[0]?.type === 'major_news') ? queue.length : 2;
 
         for (const cand of queue) {
-          if (attemptsThisCategory >= 2) break;
+          if (attemptsThisCategory >= maxAttemptsForCategory) break;
           attemptsThisCategory++;
 
           const packet = cand.packet;

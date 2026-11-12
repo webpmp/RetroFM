@@ -596,12 +596,25 @@ export function validateSegmentBreakOutput(
   }
 
   // 8b / 10b / C3: In news drafts (or draft bodies), if article date != broadcast date,
-  // reject any draft containing relative-day words: tomorrow, tonight, today, yesterday, this/next/last week,
-  // this weekend, this morning, this afternoon, this evening, last night, later today, or bare weekday names.
+  // reject any draft containing relative-day words unless supported by the packet's timePhrase.
+  // DJ must not say "today" or "tonight" unless event is on broadcast date. If article is 1 day before broadcast date,
+  // "yesterday" or "in yesterday's paper" is permitted if matching the packet.
   if (isNewsTopic && context.isModelDraft) {
     const artDate = context.factPacket?.printDate || (context.factPacket?.facts?.[0] as any)?.printDate || (context.factPacket?.facts?.[0] as any)?.date;
     if (artDate && context.selectedDate && artDate !== context.selectedDate) {
-      const BANNED_REL_DAY = /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+      const isYesterday = (() => {
+        try {
+          const diff = Math.round((new Date(context.selectedDate).getTime() - new Date(artDate).getTime()) / (1000 * 60 * 60 * 24));
+          return diff === 1;
+        } catch {
+          return false;
+        }
+      })();
+
+      const BANNED_REL_DAY = isYesterday
+        ? /\b(?:tomorrow|tonight|today|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|later\s+today)\b/i
+        : /\b(?:tomorrow|tonight|today|yesterday|this\s+week|next\s+week|last\s+week|this\s+weekend|this\s+morning|this\s+afternoon|this\s+evening|last\s+night|later\s+today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+
       const relMatch = trimmed.match(BANNED_REL_DAY);
       if (relMatch) {
         return {
