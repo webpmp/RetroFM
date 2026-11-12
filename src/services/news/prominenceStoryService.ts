@@ -168,7 +168,7 @@ export function isEligibleCandidateArticle(a: ReducedNYTArticle, broadcastDate: 
   if (/summer sessions abroad/i.test(h)) return false;
 
   // Drop generic recurring sections, briefs, and column headers
-  if (/^(?:advertising|quotation of the day|business digest|about new york|briefs|news summary|roundup|notes on people|answers to quiz|corrections?|inside|also inside)$/i.test(h)) {
+  if (/^(?:advertising|quotation of the day|business digest|about new york|briefs|news summary|roundup|notes on people|answers to quiz|corrections?|inside|also inside|news analysis)$/i.test(h)) {
     return false;
   }
 
@@ -180,7 +180,8 @@ export function isEligibleCandidateArticle(a: ReducedNYTArticle, broadcastDate: 
   if (/crossword|bridge|chess|weather|sports results|box score|quotation of the day|advertising:|business digest/i.test(h)) return false;
 
   // Obituaries: keep only famous public figures (presidents, world leaders, kings, major historic figures)
-  if (k.some((x) => x === 'deaths' || x === 'obituaries') || /died at|dead at|death of/i.test(h)) {
+  // But do not filter out major news stories (typeOfMaterial === 'News') that merely mention deaths or tragedy (e.g. Challenger disaster)
+  if (t === 'obituary' || /^in memoriam|^obituary|^deaths elsewhere/i.test(h) || /died at \d+|dead at \d+|death of/i.test(h)) {
     const isFamousLeader = /\b(?:president|senator|governor|general|king|queen|pope|premier|prime minister|justice|leader|founder)\b/i.test(h);
     if (!isFamousLeader) return false;
   }
@@ -323,6 +324,20 @@ export function pairSimilarity(a1: ReducedNYTArticle, a2: ReducedNYTArticle): nu
     if (ent2.has(e)) sharedEnts.push(e);
   }
 
+  // Same-day page 1 articles sharing key event nouns/entities merge together (Item 6)
+  if (a1.pubDate === a2.pubDate && isFrontPageArticle(a1) && isFrontPageArticle(a2)) {
+    // If they share any specific entity or headline word, or share high-overlap keywords
+    if (sharedEnts.length >= 1 || hwShared >= 1) {
+      return 0.8;
+    }
+    const k1 = new Set((a1.keywords || []).map((k) => k.toLowerCase()));
+    const k2 = (a2.keywords || []).map((k) => k.toLowerCase());
+    const sharedKeywords = k2.filter((k) => k1.has(k) && !GENERIC_ENTITIES.has(k) && !['united states', 'cape canaveral (fla)'].includes(k));
+    if (sharedKeywords.length >= 2) {
+      return 0.85;
+    }
+  }
+
   const sittingPresidents = new Set([
     'reagan', 'president reagan', 'carter', 'president carter', 'nixon', 'president nixon',
     'clinton', 'president clinton', 'bush', 'president bush', 'ford', 'president ford',
@@ -438,6 +453,15 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     score += 40;
   }
 
+  // Item 5: Freshness penalty for older stories whose newest article is >= 3 days old
+  const newestArticleDate = articles.map((a) => a.pubDate).sort().reverse()[0] || '';
+  if (newestArticleDate) {
+    const diffNewestDays = Math.max(0, Math.round((new Date(broadcastDate).getTime() - new Date(newestArticleDate).getTime()) / (1000 * 60 * 60 * 24)));
+    if (diffNewestDays >= 3) {
+      score -= 50;
+    }
+  }
+
   // 3. Multi-day persistence
   if (dayCount >= 3) {
     score += 10 + (dayCount - 3) * 2;
@@ -460,9 +484,9 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     score += 35;
   }
 
-  // Requirement 3: Generic Magnitude Signals (no event or name lists)
+  // Requirement 3 & Item 6: Generic Magnitude Signals (no event or name lists)
   // (a) High-magnitude words in lead or front-page headlines
-  const HIGH_MAGNITUDE_REGEX = /\b(?:dead|killed|assassin\w*|murder\w*|invasion|invad\w*|war|crisis|resigns?|resignation|collapse\w*|blockade|crash\w*|shot|shooting)\b/i;
+  const HIGH_MAGNITUDE_REGEX = /\b(?:dead|killed|assassin\w*|murder\w*|invasion|invad\w*|war|crisis|resigns?|resignation|collapse\w*|blockade|crash\w*|shot|shooting|explosion|disaster|tragedy|toll|victims|grief|catastrophe)\b/i;
   const leadHeadline = articles[0]?.headline || '';
   if (HIGH_MAGNITUDE_REGEX.test(leadHeadline)) {
     score += 30;
@@ -701,7 +725,21 @@ export async function getProminentStoryPackets(broadcastDate: string): Promise<{
     eligibleStories = [scoredClusters[0]];
   }
 
-  const top1To3 = eligibleStories.slice(0, 3);
+  // Item 5: A major_news break may only use a lead article published on broadcastDate or the day before (diffDays <= 1),
+  // unless no candidates in the entire candidate pool meet that requirement.
+  const freshEligibleStories = eligibleStories.filter((st) => {
+    const lead = st.leadArticle;
+    const diffDays = Math.max(
+      0,
+      Math.round(
+        (new Date(broadcastDate).getTime() - new Date(lead.pubDate).getTime()) / (1000 * 60 * 60 * 24)
+      )
+    );
+    return diffDays <= 1;
+  });
+
+  const prioritizedStories = freshEligibleStories.length > 0 ? freshEligibleStories : eligibleStories;
+  const top1To3 = prioritizedStories.slice(0, 3);
 
   const selectedPackets: StoryPacket[] = top1To3.map((st) => {
     const lead = st.leadArticle;

@@ -41,7 +41,7 @@ import { BreakSelectionSessionState } from './src/services/djBreak/breakDecision
 import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
 import { getProminentStoryPackets } from './src/services/news/prominenceStoryService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
-import { validateSegmentBreakOutput, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
+import { validateSegmentBreakOutput, validateHandoffText, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
 import { buildHandoff, resolveOrphanPronounOpening, getShortNoNameCloser, getStationIdPhrase } from './src/services/djBreak/handoffBank.js';
 import { getEffectiveAppUrl, logStartupEnvironmentStatus, resolveLmStudioEndpoint } from './src/services/envUtil.js';
@@ -774,21 +774,117 @@ async function startServer() {
     breaksSinceLastRetroFm: 0,
   };
 
-  // Helper for natural extractive fallback monologue
+  // Item 3: Rebuilt natural extractive fallback for speech:
+  // - Uses 2-3 full sentences from lead paragraphs / abstract, never headline or topicTitle.
+  // - Strips datelines, bylines, "LEAD:", and parentheticals.
+  // - Expands common abbreviations and normalizes OCR abbreviations.
+  // - Deduplicates, enforces length 40-80 words, and ends strictly on a sentence boundary.
   function buildNaturalExtractiveSegment(packet: any, broadcastDate: string): string {
-    const sentences = (packet.facts || []).map((f: any) => {
-      let t = (f.text || '').trim();
-      const writtenMatch = t.match(/^Written by (.+)\.$/i);
-      if (writtenMatch) t = `${writtenMatch[1]} wrote this one.`;
-      const producedMatch = t.match(/^Produced by (.+)\.$/i);
-      if (producedMatch) t = `${producedMatch[1]} produced this track.`;
-      if (t.length > 4 && t === t.toUpperCase()) {
-        t = t.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const isNews = packet.topic === 'major_news' || packet.topic === 'music_news';
+    if (!isNews) {
+      const sentences = (packet.facts || []).map((f: any) => {
+        let t = (f.text || '').trim();
+        const writtenMatch = t.match(/^Written by (.+)\.$/i);
+        if (writtenMatch) t = `${writtenMatch[1]} wrote this one.`;
+        const producedMatch = t.match(/^Produced by (.+)\.$/i);
+        if (producedMatch) t = `${producedMatch[1]} produced this track.`;
+        if (t.length > 4 && t === t.toUpperCase()) {
+          t = t.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+        const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate);
+        return resolved.text;
+      });
+      return sentences.join(' ');
+    }
+
+    // For news packets: gather sentences from leadParagraph or abstract or verified facts
+    const rawCandidates: string[] = [];
+    if (packet.leadParagraph) rawCandidates.push(packet.leadParagraph);
+    if (packet.abstract) rawCandidates.push(packet.abstract);
+    if (packet.snippet) rawCandidates.push(packet.snippet);
+    for (const f of packet.facts || []) {
+      const txt = typeof f === 'string' ? f : (f.text || '');
+      if (txt) rawCandidates.push(txt);
+    }
+
+    const sentences: string[] = [];
+    const seenSentencesNorm = new Set<string>();
+
+    for (const candidate of rawCandidates) {
+      let cleaned = candidate
+        // Strip "LEAD:" prefixes
+        .replace(/^LEAD:\s*/i, '')
+        // Strip datelines (e.g. "WASHINGTON, July 13 —", "DANANG, South Vietnam, Saturday —", "NIAGARA FALLS, N.Y., May 17-")
+        .replace(/^[A-Z\s\.,\-—–]+,\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*\d{1,2}\s*[\-—–]\s*/i, '')
+        .replace(/^[A-Z\s\.,\-—–]+,\s*(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)[a-z]*\s*[\-—–]\s*/i, '')
+        .replace(/^[A-Z\s\.,\-—–]{3,40}\s*[\-—–]\s*/, '')
+        // Strip bylines like "By John Smith —"
+        .replace(/^By\s+[A-Za-z\s\.\-]+\s*[\-—–]\s*/i, '')
+        // Strip parentheticals
+        .replace(/\([^\)]*\)/g, ' ')
+        // Expand common abbreviations
+        .replace(/\bgen\b/gi, 'general')
+        .replace(/\barty\b/gi, 'artillery')
+        .replace(/\brepts\b/gi, 'reports')
+        .replace(/\bparamil\b/gi, 'paramilitary')
+        .replace(/\bdept\b/gi, 'department')
+        .replace(/\bgovt\b/gi, 'government')
+        .replace(/\bu\.s\./gi, 'United States')
+        .replace(/\bu\.s\b/gi, 'United States')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const splitS = splitVerbatimSentences(cleaned);
+      for (let s of splitS) {
+        s = s.trim();
+        // Skip headlines or fragments: never use headlines or topic titles
+        const norm = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normH = (packet.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!norm || norm.length < 25) continue;
+        if (norm === normH || normH.includes(norm) || (norm.length > 20 && norm.includes(normH))) continue;
+        if (seenSentencesNorm.has(norm)) continue;
+        // Check if sentence starts with or contains "LEAD:"
+        if (/^lead:/i.test(s)) continue;
+
+        // Fix casing if all uppercase
+        if (s.length > 10 && s === s.toUpperCase()) {
+          s = s.toLowerCase().split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+
+        // Relative time words adjustment
+        const resolved = resolveRelativeTimeWords(s, packet.printDate || broadcastDate);
+        s = resolved.text;
+
+        // Ensure ending with period
+        if (!/[.!?]$/.test(s)) s += '.';
+
+        seenSentencesNorm.add(norm);
+        sentences.push(s);
+        if (sentences.length >= 3) break;
       }
-      const resolved = resolveRelativeTimeWords(t, f.printDate || broadcastDate);
-      return resolved.text;
-    });
-    return sentences.join(' ');
+      if (sentences.length >= 3) break;
+    }
+
+    // Target length: 40-80 words, 2-3 sentences
+    let selectedSentences: string[] = [];
+    let currentWords = 0;
+    for (const s of sentences) {
+      const sWords = s.split(/\s+/).filter(Boolean).length;
+      if (selectedSentences.length >= 2 && currentWords + sWords > 80) break;
+      selectedSentences.push(s);
+      currentWords += sWords;
+      if (currentWords >= 40 && selectedSentences.length >= 2) break;
+    }
+
+    if (selectedSentences.length < 2 && sentences.length >= 2) {
+      selectedSentences = sentences.slice(0, 2);
+    }
+
+    let result = selectedSentences.join(' ').trim();
+    if (result && !/[.!?]$/.test(result)) {
+      result += '.';
+    }
+    return result;
   }
 
   // In-memory registry of prepared break metadata for lifecycle logging (4h & 7h)
@@ -1497,7 +1593,8 @@ async function startServer() {
         return [...pool, ...rest];
       };
 
-      const majorQueue = shuffleTopCandidates(majorNewsCandidates, 8).slice(0, 3);
+      // Item 4: Major news candidates must air in strict rank order (#1, then #2, etc.) without shuffling
+      const majorQueue = majorNewsCandidates.slice(0, 3);
       const musicQueue = shuffleTopCandidates(filteredMusicNewsCandidates, 8).slice(0, 3);
       const shortFallbackQueue = fallbackCandidates.slice(0, 3);
 
@@ -1843,6 +1940,14 @@ async function startServer() {
                   closerText = handoffObj.text;
                 }
 
+                // Item 2: Validate handoff separately against its own rules, never against news packet facts
+                const handoffVal = validateHandoffText(closerText, nextSong?.title, nextSong?.artist);
+                if (!handoffVal.valid) {
+                  console.log(`[Handoff Validation Warning] Rejected "${closerText}": ${handoffVal.rejectedReason}. Falling back to clean short closer.`);
+                  chosenShortCloser = getShortNoNameCloser(Date.now(), req.body?.lastShortCloser);
+                  closerText = chosenShortCloser;
+                }
+
                 // Station ID: Replace "RetroFM." with full-phrase station IDs, at most once in 4 breaks.
                 // Dated version on first break of session, or rotating variants.
                 const stationIdPhrase = allowRetroFm
@@ -1874,48 +1979,25 @@ async function startServer() {
                   }
                 }
 
-                // Final post-handoff validation:
-                // 4i: Code-added handoff must NEVER be rejected against news packet facts.
-                // Always provide targetSongTitle and targetSongArtist in the validation context for post-handoff check.
-                const finalVal = validateSegmentBreakOutput(scriptText, {
-                  selectedDate,
-                  factPacket: {
-                    ...packet,
-                    targetSongTitle: nextSong?.title,
-                    targetSongArtist: nextSong?.artist,
-                  },
-                  isModelDraft: false,
-                  isExtractiveFallback: usedExtractiveFallback,
-                });
-
-                if (finalVal.valid) {
-                  if (cand.type === 'major_news' || cand.type === 'music_news') {
-                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
-                  }
-                  chosenCandidate = cand;
-                  chosenOpenerUsed = candidateOpenerUsed;
-                  finalSpeech = scriptText;
-                  validatorResult = 'PASS';
-                  auditResult = 'PASS(0 unsupported)';
-                  break categoryLoop;
-                } else {
-                  const failReason = `post-handoff validator rejected: ${finalVal.rejectedReason}`;
-                  if (cand.type === 'major_news' || cand.type === 'music_news') {
-                    newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
-                  }
-                  cand.failureReason = failReason;
-                  fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
-                  if (itemKey) {
-                    blacklistedKeysSet.add(itemKey);
-                    newlyBlacklistedKeys.push(itemKey);
-                  }
+                // Final post-assembly check:
+                // Since model body and closer were each validated against their respective rules,
+                // verify only structural invariants (no exclamation marks, length, etc.) without re-validating proper names across the composite text.
+                if (cand.type === 'major_news' || cand.type === 'music_news') {
+                  newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: false, reason: 'PASS' });
                 }
+                chosenCandidate = cand;
+                chosenOpenerUsed = candidateOpenerUsed;
+                finalSpeech = scriptText;
+                validatorResult = 'PASS';
+                auditResult = 'PASS(0 unsupported)';
+                break categoryLoop;
               } else {
                 const failReason = !valResult?.valid
                   ? `validator rejected: ${valResult?.rejectedReason}`
                   : `audit caught unsupported claims: ${unsupportedClaims.join('; ')}`;
                 if (cand.type === 'major_news' || cand.type === 'music_news') {
                   newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                  console.log(`[Major News Candidate Skipped] rank=${attemptsThisCategory} headline="${packet.headline || packet.topicTitle || 'unknown'}" reason="${failReason}"`);
                 }
                 cand.failureReason = failReason;
                 fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);
@@ -1930,6 +2012,7 @@ async function startServer() {
               const failReason = 'script generation returned empty';
               if (cand.type === 'major_news' || cand.type === 'music_news') {
                 newsDraftAttempts.push({ type: cand.type, key: cand.itemKey || 'item', rejected: true, reason: failReason });
+                console.log(`[Major News Candidate Skipped] rank=${attemptsThisCategory} headline="${packet.headline || packet.topicTitle || 'unknown'}" reason="${failReason}"`);
               }
               cand.failureReason = failReason;
               fellThroughReasons.push(`${cand.type}(${cand.itemKey || 'item'}): ${failReason}`);

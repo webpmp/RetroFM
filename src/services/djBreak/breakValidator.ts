@@ -745,19 +745,38 @@ export function validateSegmentBreakOutput(
   }
 
   // 3f. Check invented station frequency or format (only "RetroFM" is permitted).
-  // Fix 5e: Catch real frequencies ("101.5 FM", "98.7 FM"), 4-letter all-caps K/W call signs (e.g. WABC, KROQ),
+  // Fix 5e & Item 4: Catch real frequencies ("101.5 FM", "98.7 FM"), 4-letter all-caps K/W call signs (e.g. WABC, KROQ),
   // and format names ("Top 40", "FM radio").
   // Exclude common English 4-letter words starting with W (e.g. WITH, WERE, WHAT, WEEK, WHEN, WILL, WENT, WIDE, WEST).
+  // Generic station call-letter rule: if a 4-letter all-caps token appears in packet text (e.g. "KENT"), it is not a station call sign.
   const COMMON_W_WORDS = new Set(['WITH', 'WERE', 'WHAT', 'WEEK', 'WHEN', 'WILL', 'WENT', 'WIDE', 'WEST', 'WINS', 'WAVE', 'WISH', 'WIFE', 'WORD', 'WORK', 'WARN']);
-  const STATION_INVENTED_REGEX = /\b(?:\d{2,3}(?:\.\d)?\s*FM|[KW][A-Z]{3}\b|Top\s*40|FM\s*radio)\b/;
-  const stationMatch = trimmed.match(STATION_INVENTED_REGEX);
-  if (stationMatch && !COMMON_W_WORDS.has(stationMatch[0])) {
-    console.log(`[Validator Station Ban Matched] matchedText="${stationMatch[0]}" script="${trimmed}"`);
-    return {
-      valid: false,
-      rejectedReason: `Contains invented station frequency, call letters, or format ("${stationMatch[0]}", only "RetroFM" is permitted)`,
-      sanitizedText: '',
-    };
+  const STATION_INVENTED_REGEX = /\b(?:\d{2,3}(?:\.\d)?\s*FM|[KW][A-Z]{3}\b|Top\s*40|FM\s*radio)\b/g;
+  const stationMatches = trimmed.match(STATION_INVENTED_REGEX);
+  if (stationMatches) {
+    const rawPacketText = [
+      context.factPacket.headline || '',
+      context.factPacket.topicTitle || '',
+      context.factPacket.abstract || '',
+      context.factPacket.leadParagraph || '',
+      ...(context.factPacket.facts || []).map((f: any) => (typeof f === 'string' ? f : (f.text || ''))),
+    ].join(' ');
+
+    for (const sm of stationMatches) {
+      if (COMMON_W_WORDS.has(sm)) continue;
+      // If 4-letter all-caps token appears anywhere in packet text (case-insensitive or exact), exempt it
+      if (/^[KW][A-Z]{3}$/.test(sm)) {
+        const tokenRegex = new RegExp(`\\b${sm}\\b`, 'i');
+        if (tokenRegex.test(rawPacketText)) {
+          continue;
+        }
+      }
+      console.log(`[Validator Station Ban Matched] matchedText="${sm}" script="${trimmed}"`);
+      return {
+        valid: false,
+        rejectedReason: `Contains invented station frequency, call letters, or format ("${sm}", only "RetroFM" is permitted)`,
+        sanitizedText: '',
+      };
+    }
   }
 
   // 3g. Check wholesale copying from source sentences
@@ -1880,6 +1899,69 @@ export function validateBreakOutput(
           sanitizedText: '',
         };
       }
+    }
+  }
+
+  return {
+    valid: true,
+    sanitizedText: trimmed,
+  };
+}
+
+/**
+ * Item 2: Validates a code-generated handoff separately against its own rules.
+ * Checks for basic sanity, no banned hype/transitions, and artist/song match,
+ * WITHOUT checking against the news fact packet.
+ */
+export function validateHandoffText(
+  handoffText: string,
+  targetSongTitle?: string,
+  targetSongArtist?: string
+): ValidationResult {
+  const trimmed = (handoffText || '').trim();
+  if (!trimmed) {
+    return { valid: true, sanitizedText: '' };
+  }
+
+  // Must not contain exclamation marks
+  if (trimmed.includes('!')) {
+    // Exempt artist/song names that genuinely contain exclamation marks
+    const stripped = trimmed.replace(/\bP!nk\b/g, '').replace(/\bWham!/g, '').replace(/\bPanic!\s+at\s+the\s+Disco\b/gi, '');
+    if (stripped.includes('!')) {
+      return {
+        valid: false,
+        rejectedReason: 'Handoff contains exclamation mark (!)',
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // Banned excessive hype in handoff
+  const BANNED_HANDOFF_HYPE = [
+    /\b(?:absolute banger|banger|total bop)\b/i,
+    /\b(?:epic|insane|mind-blowing)\b/i,
+    /\b(?:jaw-dropping)\b/i,
+  ];
+  for (const pat of BANNED_HANDOFF_HYPE) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Handoff contains banned hype: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
+  // If target song title is specified, it should not appear multiple times in the handoff
+  if (targetSongTitle) {
+    const titleRegex = new RegExp(escapeRegex(targetSongTitle), 'gi');
+    const matches = trimmed.match(titleRegex) || [];
+    if (matches.length > 1) {
+      return {
+        valid: false,
+        rejectedReason: `Target song title appears ${matches.length} times in handoff`,
+        sanitizedText: '',
+      };
     }
   }
 
