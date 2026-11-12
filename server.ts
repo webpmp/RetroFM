@@ -39,6 +39,7 @@ import {
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
+import { getProminentStoryPackets } from './src/services/news/prominenceStoryService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput, computeNewsWordBudget } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
@@ -900,6 +901,21 @@ async function startServer() {
         ? await getOrBuildSongStoryCard(nextSong, selectedDate, undefined, { runLLMCheck: false })
         : null;
 
+      // Prominence Story Pipeline (Part 1, 2, 3): Gather, cluster, rank major stories for selectedDate
+      let prominentStoryPackets: import('./src/services/news/prominenceStoryService.js').StoryPacket[] = [];
+      try {
+        const promRes = await getProminentStoryPackets(selectedDate);
+        prominentStoryPackets = promRes.selectedPackets;
+        if (promRes.allRankedStories.length > 0) {
+          console.log(`[Prominence Ranking] Selected date: ${selectedDate}. Evaluated ${promRes.allRankedStories.length} story clusters:`);
+          promRes.allRankedStories.slice(0, 10).forEach((st, idx) => {
+            console.log(`  ${idx + 1}. [Score ${st.prominenceScore}] "${st.topicTitle}" (Articles: ${st.articles.length}, Days: ${st.dayCount} [${st.dates.join(', ')}], Front Page: ${st.frontPageCount})`);
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[Prominence Ranking] Warning during prominent story evaluation for ${selectedDate}:`, err?.message);
+      }
+
       // Setup ScriptWriterProvider (per-candidate timeout of 18s so one slow candidate never starves later categories)
       const resolvedEndpoint = resolveProviderEndpoint(provider, endpoint);
       let writer: any;
@@ -1279,44 +1295,93 @@ async function startServer() {
 
       // 3. Major News Candidates
       const majorNewsCandidates: CandidateEval[] = [];
-      for (const { entry, tierInfo } of selectTieredNewsEntries('major_news')) {
-        const itemKey = `almanac:${entry.id}`;
-        const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
-        if (majorMaterial.budget.tooThin) {
-          console.log(`[News Candidate Skipped] type=major_news key=${itemKey} reason="too little verified material (${majorMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
-          continue;
-        }
-        const subFacts = majorMaterial.facts;
+
+      // Prefer prominence-ranked major stories (Parts 1-3) over routine single articles
+      for (const storyPkt of prominentStoryPackets) {
+        const itemKey = `prominence:${storyPkt.id}`;
+        if (isKeyBlocked(itemKey)) continue;
+        if (serverRotationState.airedArticleIds.has(storyPkt.id)) continue;
+        const normH = (storyPkt.headline || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normH && serverRotationState.airedHeadlinesNorm.has(normH)) continue;
+
+        if (storyPkt.facts.length === 0) continue;
+
         majorNewsCandidates.push({
           type: 'major_news',
           category: 'major_news',
           itemKey,
-          score: entry.interestScore || 70,
+          score: storyPkt.prominenceScore || 90,
           ready: true,
           packet: {
             topic: 'major_news',
-            topicTitle: entry.headline,
-            headline: entry.headline,
-            abstract: entry.abstract,
-            leadParagraph: entry.leadParagraph,
-            snippet: entry.snippet,
-            section: entry.section,
-            printDate: entry.printDate,
-            diffDays: tierInfo.diffDays,
-            timePhrase: tierInfo.timePhrase,
-            isFrontPage: Boolean(entry.isFrontPage),
-            printPage: entry.printPage,
-            printSection: entry.printSection,
-            newsDesk: entry.newsDesk,
-            sectionName: entry.sectionName,
-            typeOfMaterial: entry.typeOfMaterial,
+            topicTitle: storyPkt.topicTitle,
+            headline: storyPkt.headline,
+            abstract: storyPkt.leadArticle?.abstract,
+            leadParagraph: storyPkt.leadArticle?.leadParagraph,
+            snippet: storyPkt.leadArticle?.snippet,
+            section: storyPkt.section || 'National',
+            printDate: storyPkt.leadArticle?.pubDate || selectedDate,
+            diffDays: 0,
+            timePhrase: storyPkt.timePhrase || "in today's Times",
+            isFrontPage: storyPkt.isFrontPage,
+            printPage: storyPkt.leadArticle?.printPage,
+            printSection: storyPkt.leadArticle?.printSection,
+            newsDesk: storyPkt.leadArticle?.desk,
+            sectionName: storyPkt.leadArticle?.section,
+            typeOfMaterial: storyPkt.leadArticle?.typeOfMaterial,
+            storyStatus: storyPkt.status,
+            unresolved: storyPkt.unresolved,
+            prominenceScore: storyPkt.prominenceScore,
             targetSongTitle: undefined,
             targetSongArtist: undefined,
-            facts: subFacts,
+            facts: storyPkt.facts,
             factKeys: [itemKey],
           },
         });
-        if (majorNewsCandidates.length >= 8) break;
+        if (majorNewsCandidates.length >= 3) break;
+      }
+
+      // If no prominent story candidates available, fall back to tiered almanac major news entries
+      if (majorNewsCandidates.length === 0) {
+        for (const { entry, tierInfo } of selectTieredNewsEntries('major_news')) {
+          const itemKey = `almanac:${entry.id}`;
+          const majorMaterial = buildNewsFacts(entry, splitEntryIntoFacts(entry));
+          if (majorMaterial.budget.tooThin) {
+            console.log(`[News Candidate Skipped] type=major_news key=${itemKey} reason="too little verified material (${majorMaterial.budget.materialWords} words)" headline="${entry.headline}"`);
+            continue;
+          }
+          const subFacts = majorMaterial.facts;
+          majorNewsCandidates.push({
+            type: 'major_news',
+            category: 'major_news',
+            itemKey,
+            score: entry.interestScore || 70,
+            ready: true,
+            packet: {
+              topic: 'major_news',
+              topicTitle: entry.headline,
+              headline: entry.headline,
+              abstract: entry.abstract,
+              leadParagraph: entry.leadParagraph,
+              snippet: entry.snippet,
+              section: entry.section,
+              printDate: entry.printDate,
+              diffDays: tierInfo.diffDays,
+              timePhrase: tierInfo.timePhrase,
+              isFrontPage: Boolean(entry.isFrontPage),
+              printPage: entry.printPage,
+              printSection: entry.printSection,
+              newsDesk: entry.newsDesk,
+              sectionName: entry.sectionName,
+              typeOfMaterial: entry.typeOfMaterial,
+              targetSongTitle: undefined,
+              targetSongArtist: undefined,
+              facts: subFacts,
+              factKeys: [itemKey],
+            },
+          });
+          if (majorNewsCandidates.length >= 8) break;
+        }
       }
 
       // 4. Short Fallback Candidates: chart status or credits (1-2 facts short fallback)
@@ -1558,6 +1623,8 @@ async function startServer() {
           headline: packet.headline,
           section: packet.section,
           articleDate: packet.printDate,
+          storyStatus: packet.storyStatus,
+          unresolved: packet.unresolved,
           failureReason,
           allowRetroFm,
         };

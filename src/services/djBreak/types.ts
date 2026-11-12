@@ -196,6 +196,10 @@ export interface SegmentBreakScriptInput {
   headline?: string;
   section?: string;
   articleDate?: string;
+  /** Major news break: status of the story (breaking, developing, ongoing) */
+  storyStatus?: 'breaking' | 'developing' | 'ongoing';
+  /** Major news break: what is unresolved/unknown as of the broadcast date */
+  unresolved?: string;
 }
 
 export interface DJBreakSessionStats {

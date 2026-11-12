@@ -911,6 +911,8 @@ Respond strictly with JSON schema:
     // 4d: news breaks also get the NYT section as context (headline is Fact [1]).
     const newsSectionLine = (input.topic === 'major_news' || input.topic === 'music_news') && input.section ? `\nSECTION: ${input.section}` : '';
     const timePhraseLine = input.timePhrase ? `\nTIME OF EVENT: ${input.timePhrase} (use this exact phrase if mentioning when it happened; do not use any other relative-time words)` : '';
+    const storyStatusLine = input.storyStatus ? `\nSTORY STATUS: ${input.storyStatus.toUpperCase()} (use developing-story language like "details are still coming in" or "officials haven't said" if unresolved)` : '';
+    const unresolvedLine = input.unresolved ? `\nUNRESOLVED / DEVELOPING AS OF TODAY: ${input.unresolved}` : '';
 
     // Code-chosen hook matched strictly to content type (at least 50% have NO opener)
     // Requirement 3: 15+ natural variants, many of them none at all. Deleted invented framing phrases like "music ledger".
@@ -973,21 +975,28 @@ STRICT RULES (Must follow all):
 2. NO SONG INTRO / NO HANDOFF: Never name the upcoming song or artist. Never write handoff phrases like "next up", "coming up", "here is", "let's hear". Station automation handles the handoff.
 3. STATION IDENTITY: Never mention radio formats, "Top 40", "FM radio", frequencies, dial numbers, or call letters. Never say "on FM radio". Only "RetroFM" is permitted.
 4. BANNED HYPE WORDS: Never use astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, banger, epic, smash hit, or legendary.
-5. NO OUTSIDE FACTS: Use ONLY what is in the Fact Sheet. Never invent facts, people, or background.
-6. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
-7. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
-8. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
-9. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
-10. NO PUBLICATION OR TIME OPENERS: In news breaks, NEVER mention when or where the story was published. Never say "The Times", "today's Times", "yesterday's Times", "in the headlines", "in today's", or "reported that". The station lead-in already handles the publication and timing.
-11. NO EXCLAMATION MARKS: Never use exclamation marks (!). Always use periods.
-12. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.`;
+5. NO OUTSIDE FACTS: Use ONLY what is in the Fact Sheet. Never invent facts, people, background, or later outcomes.
+6. BROADCAST-TIME AWARENESS (Part 4 Rules):
+   - Speak as if today is ${fullDateSpoken}. You live in this exact moment with no hindsight and no knowledge of what happens next.
+   - Never mention outcomes, later events, historical significance, or later names or terms that did not exist yet.
+   - Use present tense for what is happening now and past tense for what has already happened. Use developing-story language ("details are still coming in", "officials haven't said") when unresolved.
+   - Never use phrases like "looking back", "we now know", "history will", or "I remember".
+   - Don't exaggerate or manufacture controversy. Keep a neutral, newsreader tone, adding personality only in word choice and delivery.
+   - One story per break. Keep it conversational, scaled to the facts available (don't pad thin packets).
+7. NAME SUBJECT FIRST: In news breaks, name the person or event in the very first sentence.
+8. LOCKED CHART FACTS: If a chart sentence is present, keep it verbatim or omit it.
+9. NO CONNECTORS: Never use "Furthermore", "Meanwhile", "In addition", "On that note", or "Beyond that".
+10. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
+11. NO PUBLICATION OR TIME OPENERS: In news breaks, NEVER mention when or where the story was published. Never say "The Times", "today's Times", "yesterday's Times", "in the headlines", "in today's", or "reported that". The station lead-in already handles the publication and timing.
+12. NO EXCLAMATION MARKS: Never use exclamation marks (!). Always use periods.
+13. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.`;
 
     const failureCorrection = input.failureReason
       ? `\n\nCRITICAL FIX REQUIRED FROM PREVIOUS ATTEMPT: Your previous draft was rejected for the following exact reason: "${input.failureReason}". You MUST avoid this completely and adhere strictly to the rules.`
       : '';
 
     const userPromptStep1 = `FACT SHEET:
-${factLines}${newsSectionLine}${timePhraseLine}
+${factLines}${newsSectionLine}${timePhraseLine}${storyStatusLine}${unresolvedLine}
 OPENING: Start immediately with the first fact. Do not write any opener; the station adds it.${failureCorrection}
 
 TASK:

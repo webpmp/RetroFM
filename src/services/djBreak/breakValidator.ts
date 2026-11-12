@@ -462,6 +462,45 @@ export function validateSegmentBreakOutput(
     }
   }
 
+  // 2b. Part 4 & Part 5 Hindsight and Outcome Checking:
+  // Reject: "looking back", "we now know", "history will", "I remember", outcomes, later events,
+  // historical significance, or later names / terms.
+  const HINDSIGHT_PHRASES = [
+    /\blooking back\b/i,
+    /\bwe now know\b/i,
+    /\bhistory will\b/i,
+    /\bhistory would\b/i,
+    /\bhistorians? (?:would|will|now|later)\b/i,
+    /\bi remember\b/i,
+    /\bas it turned out\b/i,
+    /\bturned out to be\b/i,
+    /\bwould later\b/i,
+    /\byears later\b/i,
+    /\bin hindsight\b/i,
+    /\bwent on to\b/i,
+    /\bwould go on\b/i,
+    /\bremembered as\b/i,
+    /\bhistory books\b/i,
+    /\blittle did (?:they|we|anyone) know\b/i,
+    /\bwho knew then\b/i,
+    /\bin retrospect\b/i,
+    /\bwith the benefit of hindsight\b/i,
+    /\blater became\b/i,
+    /\blater proved\b/i,
+    /\bwould become\b/i,
+    /\bwould eventually\b/i,
+    /\beventually become\b/i,
+  ];
+  for (const pat of HINDSIGHT_PHRASES) {
+    if (pat.test(trimmed)) {
+      return {
+        valid: false,
+        rejectedReason: `Contains hindsight phrase: ${pat}`,
+        sanitizedText: '',
+      };
+    }
+  }
+
   // 3. Check banned hype words, cliches, and intensifiers
   // Reject: astonishing, amazing, incredible, unique, remarkable, stunning, surprising, fresh, pretty unique
   const BANNED_HYPE = [
