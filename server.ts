@@ -1306,6 +1306,14 @@ async function startServer() {
 
         if (storyPkt.facts.length === 0) continue;
 
+        const leadPubDate = storyPkt.leadArticle?.pubDate || selectedDate;
+        const diffMs = new Date(selectedDate).getTime() - new Date(leadPubDate).getTime();
+        const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        let timePhrase = "in today's paper";
+        if (diffDays === 1) timePhrase = "in yesterday's paper";
+        else if (diffDays <= 3 && diffDays > 1) timePhrase = 'a few days ago';
+        else if (diffDays > 3) timePhrase = 'earlier this week';
+
         majorNewsCandidates.push({
           type: 'major_news',
           category: 'major_news',
@@ -1320,9 +1328,9 @@ async function startServer() {
             leadParagraph: storyPkt.leadArticle?.leadParagraph,
             snippet: storyPkt.leadArticle?.snippet,
             section: storyPkt.section || 'National',
-            printDate: storyPkt.leadArticle?.pubDate || selectedDate,
-            diffDays: 0,
-            timePhrase: storyPkt.timePhrase || "in today's Times",
+            printDate: leadPubDate,
+            diffDays,
+            timePhrase,
             isFrontPage: storyPkt.isFrontPage,
             printPage: storyPkt.leadArticle?.printPage,
             printSection: storyPkt.leadArticle?.printSection,
@@ -1494,13 +1502,15 @@ async function startServer() {
       const shortFallbackQueue = fallbackCandidates.slice(0, 3);
 
       // Order the two news queues by alternating slot, avoiding repeating effectiveLastCategory
-      let primaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? majorQueue : musicQueue;
-      let secondaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? musicQueue : majorQueue;
+      // Keep all candidates in the primary and secondary news queues so all prominent major news candidates
+      // are exhausted before falling back to music_news or song stories.
+      let primaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? majorNewsCandidates : musicQueue;
+      let secondaryNewsQueue = serverRotationState.nextNewsSlot === 'major_news' ? musicQueue : majorNewsCandidates;
       if (effectiveLastCategory === 'major_news' && musicQueue.length > 0) {
         primaryNewsQueue = musicQueue;
-        secondaryNewsQueue = majorQueue;
-      } else if (effectiveLastCategory === 'music_news' && majorQueue.length > 0) {
-        primaryNewsQueue = majorQueue;
+        secondaryNewsQueue = majorNewsCandidates;
+      } else if (effectiveLastCategory === 'music_news' && majorNewsCandidates.length > 0) {
+        primaryNewsQueue = majorNewsCandidates;
         secondaryNewsQueue = musicQueue;
       }
 
@@ -1538,10 +1548,12 @@ async function startServer() {
       // - If news is not due but song story has < 3 facts and rotation constraints are satisfied (10c):
       //   try song story -> news queues -> short fallback.
       // - Otherwise: try song story -> short fallback.
+      // Never fall back to music/cultural news when prominent major news stories are available;
+      // try all available primary news candidates before secondary.
       const candidateQueues: CandidateEval[][] = newsIsDue
-        ? [primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), songStoryQueue, shortFallbackQueue]
+        ? [primaryNewsQueue, secondaryNewsQueue, songStoryQueue, shortFallbackQueue]
         : allowNewsFillSlot
-        ? [songStoryQueue, primaryNewsQueue.slice(0, 2), secondaryNewsQueue.slice(0, 2), shortFallbackQueue]
+        ? [songStoryQueue, primaryNewsQueue, secondaryNewsQueue, shortFallbackQueue]
         : [songStoryQueue, shortFallbackQueue];
 
       // Summary list for logging

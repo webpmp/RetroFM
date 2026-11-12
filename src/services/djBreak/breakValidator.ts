@@ -20,6 +20,7 @@
  */
 
 import { splitVerbatimSentences } from '../news/almanacService.js';
+import { stripModelPublicationPhrases } from './newsHooks.js';
 
 export function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -102,21 +103,35 @@ export function validateSegmentBreakOutput(
 
   let trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
 
+  // Reject non-Latin/non-ASCII characters (e.g. Chinese characters from multilingual LLMs)
+  if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(trimmed)) {
+    return {
+      valid: false,
+      rejectedReason: 'Contains non-English characters',
+      sanitizedText: '',
+    };
+  }
+
   // 1. Length check.
   // News breaks (4k): Fixed cap of 70 words.
   // Deterministic trim before rejecting: if draft is over 70 words, drop trailing whole sentences
   // until it fits, as long as at least 2 complete sentences remain, then validate the trimmed version.
   const factCount = Math.max(1, (context.factPacket.facts || []).length);
   const isNewsTopic = context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news';
+  if (isNewsTopic && context.isModelDraft) {
+    trimmed = stripModelPublicationPhrases(trimmed);
+  }
   let words = trimmed.split(/\s+/).filter(Boolean);
 
   if (isNewsTopic) {
     if (context.isModelDraft) {
-      // Fix 8e / C4: News drafts need at least 30 words and at least 2 complete sentences
-      if (words.length < 30) {
+      // Fix 4: For prominence-ranked stories, lower word-count minimum to 20 words
+      const isProminentStory = Boolean((context.factPacket as any).prominenceScore);
+      const minNewsWords = isProminentStory ? 20 : 30;
+      if (words.length < minNewsWords) {
         return {
           valid: false,
-          rejectedReason: `News draft too short: ${words.length} words (minimum required: 30 words)`,
+          rejectedReason: `News draft too short: ${words.length} words (minimum required: ${minNewsWords} words)`,
           sanitizedText: '',
         };
       }
@@ -279,14 +294,11 @@ export function validateSegmentBreakOutput(
       }
     }
 
-    // 7a: Reject news drafts containing "Times", "in the headlines", "today's", "yesterday's" or other time/publication phrases (the code adds them)
+    // 7a: After stripping publication phrases, check remaining text for raw "Times" or explicit lead-in leaks
     if (context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news') {
       const BANNED_NEWS_DRAFT_PHRASES = [
         /\b(?:the\s+)?times\b/i,
         /\bin\s+the\s+headlines\b/i,
-        /\btoday['’]s\b/i,
-        /\byesterday['’]s\b/i,
-        /\breported\s+that\b/i,
         /\bfrom\s+today['’]s\b/i,
         /\bfrom\s+yesterday['’]s\b/i,
         /\bon\s+the\s+front\s+page\b/i,

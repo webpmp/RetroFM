@@ -989,7 +989,8 @@ STRICT RULES (Must follow all):
 10. START IMMEDIATELY: Begin with the first fact. Do NOT write an opener or greeting.
 11. NO PUBLICATION OR TIME OPENERS: In news breaks, NEVER mention when or where the story was published. Never say "The Times", "today's Times", "yesterday's Times", "in the headlines", "in today's", or "reported that". The station lead-in already handles the publication and timing.
 12. NO EXCLAMATION MARKS: Never use exclamation marks (!). Always use periods.
-13. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.`;
+13. PARAPHRASE IN YOUR OWN WORDS: Never read the headline aloud. Paraphrase the story from the abstract and the headline's content in your own words.
+14. ENGLISH ONLY: Write strictly in standard American English. Never output Chinese or non-English characters.`;
 
     const failureCorrection = input.failureReason
       ? `\n\nCRITICAL FIX REQUIRED FROM PREVIOUS ATTEMPT: Your previous draft was rejected for the following exact reason: "${input.failureReason}". You MUST avoid this completely and adhere strictly to the rules.`

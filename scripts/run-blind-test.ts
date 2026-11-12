@@ -59,10 +59,8 @@ async function runBlindTest() {
         timePhrase: topStory.timePhrase,
         storyStatus: topStory.status,
         unresolved: topStory.unresolved,
-        currentDate: date,
         targetDate: date,
         personality: 'mike',
-        budgetWords: 50,
       });
 
       console.log(`\nGENERATED DJ SCRIPT:`);

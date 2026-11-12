@@ -43,19 +43,28 @@ export function stripModelPublicationPhrases(text: string): string {
 
   // Pattern matching lead-in phrases at the beginning of the text or sentence
   const LEAD_IN_PATTERNS = [
-    /^(?:on\s+the\s+front\s+pages?\s+of\s+(?:the\s+times|today['’]s\s+times)[,:\s]*)/i,
-    /^(?:from\s+the\s+front\s+pages?\s+of\s+(?:the\s+times|today['’]s\s+times)[,:\s]*)/i,
+    /^(?:on\s+the\s+front\s+pages?\s+of\s+(?:the\s+times|today['’]s\s+times|yesterday['’]s\s+times)[,:\s]*)/i,
+    /^(?:from\s+the\s+front\s+pages?\s+of\s+(?:the\s+times|today['’]s\s+times|yesterday['’]s\s+times)[,:\s]*)/i,
+    /^(?:on\s+the\s+front\s+page[,:\s]*)/i,
+    /^(?:from\s+the\s+front\s+page[,:\s]*)/i,
     /^(?:from\s+today['’]s\s+times[,:\s]*)/i,
     /^(?:from\s+yesterday['’]s\s+times[,:\s]*)/i,
     /^(?:in\s+today['’]s\s+times[,:\s]*)/i,
     /^(?:in\s+yesterday['’]s\s+times[,:\s]*)/i,
+    /^(?:in\s+today['’]s\s+paper[,:\s]*)/i,
+    /^(?:in\s+yesterday['’]s\s+paper[,:\s]*)/i,
     /^(?:in\s+the\s+headlines[,:\s]*)/i,
     /^(?:in\s+the\s+news[,:\s]*)/i,
+    /^(?:today['’]s\s+headlines?[,:\s]*)/i,
+    /^(?:today['’]s\s+news[,:\s]*)/i,
+    /^(?:in\s+today['’]s\s+top\s+story[,:\s]*)/i,
     /^(?:a\s+couple\s+of\s+days\s+ago(?:\s+in\s+the\s+times|\s*,\s*the\s+times\s+reported)?[,:\s]*)/i,
     /^(?:last\s+week(?:\s+in\s+the\s+times|\s*,\s*the\s+times\s+reported)?[,:\s]*)/i,
     /^(?:earlier\s+this\s+week(?:\s+in\s+the\s+times|\s*,\s*the\s+times\s+reported)?[,:\s]*)/i,
     /^(?:according\s+to\s+(?:the\s+times|today['’]s\s+times)[,:\s]*)/i,
     /^(?:the\s+times\s+reports?(?:\s+this\s+week)?[,:\s]*)/i,
+    /^(?:it\s+is\s+reported\s+that[,:\s]*)/i,
+    /^(?:reported\s+that[,:\s]*)/i,
   ];
 
   let changed = true;
