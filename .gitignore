@@ -26,3 +26,4 @@ song_facts_50_sample.json
 song_credits_60_sample.json
 
 docker-compose.override.yml
+results/
