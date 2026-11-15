@@ -402,6 +402,19 @@ export function resolveRelativeTimeWords(text: string, printDate: string, broadc
 
   const isSameDayPaper = Boolean(broadcastDate && broadcastDate === printDate);
 
+  // Round 7 P3: "this election day" / "today, Election Day" in a source or draft refers to the filing day,
+  // which is never the broadcast day for a morning paper -> "on Election Day".
+  if (/\b(?:this|today['’]?s?)\s*,?\s*election\s+day\b/i.test(updated)) {
+    updated = updated.replace(/\b(?:this|today['’]?s?)\s*,?\s*election\s+day\b/gi, 'on Election Day').replace(/\bon\s+on Election Day\b/gi, 'on Election Day');
+    eventDate = filingDateStr;
+    converted = true;
+  }
+  // Round 7 P3: never speak the paper itself as a time reference ("announced yesterday's paper")
+  if (/\b(?:in\s+|from\s+)?(?:today|yesterday)['’]s\s+paper\b/i.test(updated)) {
+    updated = updated.replace(/\s*,?\s*\b(?:in\s+|from\s+)?(?:today|yesterday)['’]s\s+paper\b\s*,?/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+    converted = true;
+  }
+
   // Convert original "yesterday" FIRST before converting "this morning"/"this afternoon"/"today" into "yesterday ..."
   if (/\byesterday\b/i.test(updated)) {
     updated = updated.replace(/\byesterday\b/gi, dayBeforeFilingDay);

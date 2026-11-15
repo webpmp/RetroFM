@@ -86,6 +86,9 @@ export function stripModelPublicationPhrases(text: string): string {
   // Strip awkward "over a couple of days ago" -> "a couple of days ago" or remove "over"
   cleaned = cleaned.replace(/\bover\s+(a\s+couple\s+of\s+days\s+ago)\b/gi, '$1');
 
+  // Round 7 P3: strip any remaining inline publication phrase, e.g. "Fitzhugh announced yesterday's paper the membership"
+  cleaned = cleaned.replace(/\s*,?\s*\b(?:(?:in|from|according\s+to)\s+)?(?:today|yesterday)['’]s\s+paper\b\s*,?/gi, ' ');
+
   // Capitalize the first letter if needed
   if (cleaned.length > 0) {
     cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);

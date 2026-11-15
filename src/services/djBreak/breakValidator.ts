@@ -21,6 +21,7 @@
 
 import { splitVerbatimSentences } from '../news/almanacService.js';
 import { stripModelPublicationPhrases } from './newsHooks.js';
+import { normalizeLoneAllCapsWords, KNOWN_ACRONYMS } from '../news/textNormalize.js';
 
 export function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -127,6 +128,18 @@ export function lintReadAloudScript(text: string): { valid: boolean; reason?: st
   }
 
   // 2. Check semicolon chains (2+ semicolons)
+  // Round 7 P3: lone ALL-CAPS non-acronym word (outside quoted titles), e.g. "no FOREIGNERS would".
+  // News paths lowercase 2+ letter caps words first (normalizeLoneAllCapsWords); the lint backstop uses a
+  // 5-letter floor so short all-caps artist names in handoffs (ABBA, INXS, KISS) are not rejected.
+  {
+    const unquoted = trimmed.replace(/"[^"]*"|“[^”]*”/g, ' ');
+    for (const tok of unquoted.split(/\s+/)) {
+      const bare = tok.replace(/[^A-Za-z]/g, '');
+      if (bare.length >= 5 && bare === bare.toUpperCase() && !/\./.test(tok) && !KNOWN_ACRONYMS.has(bare)) {
+        return fail(`Read-aloud lint: contains lone all-caps non-acronym word ("${bare}")`);
+      }
+    }
+  }
   const semiCount = (trimmed.match(/;/g) || []).length;
   if (semiCount >= 2) {
     return fail(`Read-aloud lint: contains semicolon chain (${semiCount} semicolons)`);
@@ -202,6 +215,130 @@ export function lintReadAloudScript(text: string): { valid: boolean; reason?: st
   return { valid: true };
 }
 
+/**
+ * Round 7 P3: Unsupported connective/framing qualifiers. Each entry is allowed only if its root
+ * appears in the packet fact text.
+ */
+const ROUND7_CONNECTIVES: Array<{ re: RegExp; root: RegExp }> = [
+  { re: /\bas promised\b/i, root: /\bpromis/i },
+  { re: /\bas expected\b/i, root: /\bexpect/i },
+  { re: /\bas feared\b/i, root: /\bfear/i },
+  { re: /\bas predicted\b/i, root: /\bpredict/i },
+  { re: /\bas scheduled\b/i, root: /\bschedul/i },
+  { re: /\bas planned\b/i, root: /\bplan/i },
+  { re: /\bas vowed\b/i, root: /\bvow/i },
+  { re: /\bas pledged\b/i, root: /\bpledg/i },
+  { re: /\bonce again\b/i, root: /\bagain\b/i },
+  { re: /\bfor the first time\b/i, root: /\bfirst time\b/i },
+  { re: /\b(?:in a )?surprise move\b|\bunexpected(?:ly)?\b/i, root: /\b(?:surpris|unexpect)/i },
+  { re: /\bbreakthrough\b/i, root: /\bbreakthrough/i },
+  { re: /\bmilestone\b/i, root: /\bmilestone/i },
+  { re: /\bpivotal\b/i, root: /\bpivotal/i },
+  { re: /\blandmark\b/i, root: /\blandmark/i },
+  { re: /\bhistoric\b/i, root: /\bhistor/i },
+];
+
+const ROUND7_TITLE_WORDS = new Set([
+  'the', 'a', 'an', 'president', 'vice', 'secretary', 'senator', 'sen', 'governor', 'gov', 'chairman', 'premier',
+  'prime', 'minister', 'general', 'gen', 'admiral', 'mayor', 'judge', 'justice', 'representative', 'rep',
+  'ambassador', 'pope', 'king', 'queen', 'prince', 'princess', 'dr', 'mr', 'mrs', 'ms', 'chief', 'commander',
+  'attorney', 'director', 'speaker', 'leader', 'colonel', 'captain', 'lieutenant', 'sergeant', 'former', 'new',
+  'democratic', 'republican', 'mrs.', 'mr.', 'dr.',
+]);
+
+/**
+ * Round 7 P3: Extra grounding checks for news drafts. Returns a rejection reason or null.
+ *  (a) connective/framing qualifiers not grounded in packet facts ("as promised", "breakthrough")
+ *  (b) multi-word capitalized descriptive phrases absent from the packet corpus ("Western Pacific Territory")
+ *  (c) a sentence blending distinctive proper names that occur only in facts from DIFFERENT dates
+ *  (d) publication/time phrases that cannot be spoken on the broadcast date ("this election day", "yesterday's paper")
+ */
+export function checkRound7NewsGrounding(
+  text: string,
+  facts: Array<{ text: string; date?: string; printDate?: string }>,
+  corpusLower: string,
+  isModelDraft: boolean
+): string | null {
+  const factText = facts.map((f) => f.text || '').join(' ');
+  const normHyphen = (s: string) => s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, '-').replace(/[’]/g, "'");
+  const corpus = normHyphen(corpusLower).replace(/\b[a-z]\.\s+/g, '');
+  // Only check the news body: skip sentences that contain a quoted song title (the code/model handoff)
+  const sentences = splitVerbatimSentences(text).map((s) => s.trim()).filter((s) => s && !/"[^"]+"|“[^”]+”/.test(s));
+  const body = sentences.join(' ');
+
+  // (a) connectives
+  for (const { re, root } of ROUND7_CONNECTIVES) {
+    const m = body.match(re);
+    if (m && !root.test(factText)) {
+      return `Unsupported connective/framing claim "${m[0]}" not grounded in packet facts`;
+    }
+  }
+
+  // (b) multi-word capitalized phrases
+  for (const sent of sentences) {
+    const s = normHyphen(sent);
+    const re = /\b[A-Z][a-z'\-]+(?:\s+[A-Z][a-z'\-]+)+/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s)) !== null) {
+      let words = m[0].split(/\s+/);
+      if (m.index === s.search(/[A-Za-z]/)) words = words.slice(1); // sentence-initial word is capitalized anyway
+      while (words.length && ROUND7_TITLE_WORDS.has(words[0].toLowerCase())) words = words.slice(1);
+      if (words.length < 2) continue;
+      const phrase = words.join(' ').toLowerCase().replace(/'s$/, '');
+      if (!corpus.includes(phrase)) {
+        return `Unsupported descriptive phrase "${words.join(' ')}" not found in packet facts`;
+      }
+    }
+  }
+
+  // (c) blended facts from different dates/articles
+  const byDate = new Map<string, string>();
+  for (const f of facts) {
+    const d = f.date || f.printDate || '';
+    byDate.set(d, `${byDate.get(d) || ''} ${f.text || ''}`);
+  }
+  if (byDate.size >= 2) {
+    const groupNames = new Map<string, Set<string>>();
+    for (const [d, t] of byDate) {
+      groupNames.set(d, new Set(extractProperNames(t).map((n) => n.toLowerCase()).filter((n) => n.length >= 4)));
+    }
+    const unique = new Map<string, Set<string>>();
+    for (const [d, names] of groupNames) {
+      const u = new Set<string>();
+      for (const n of names) {
+        let elsewhere = false;
+        for (const [d2, n2] of groupNames) if (d2 !== d && n2.has(n)) elsewhere = true;
+        if (!elsewhere) u.add(n);
+      }
+      unique.set(d, u);
+    }
+    for (const sent of sentences) {
+      const sentNames = new Set(extractProperNames(sent).map((n) => n.toLowerCase()));
+      const hitDates: string[] = [];
+      for (const [d, u] of unique) {
+        for (const n of u) {
+          if (sentNames.has(n)) {
+            hitDates.push(d);
+            break;
+          }
+        }
+      }
+      if (hitDates.length >= 2) {
+        return `Sentence blends facts from different dates (${hitDates.join(', ')}): "${sent}"`;
+      }
+    }
+  }
+
+  // (d) time/publication phrases
+  if (isModelDraft) {
+    const t = body.match(/\bthis\s+election\s+day\b|\b(?:today|yesterday)['’]s\s+paper\b/i);
+    if (t) {
+      return `Model news draft contains publication/relative-time phrase "${t[0]}"`;
+    }
+  }
+  return null;
+}
+
 export function validateSegmentBreakOutput(
   scriptText: string,
   context: SegmentValidationContext
@@ -215,6 +352,16 @@ export function validateSegmentBreakOutput(
   }
 
   let trimmed = scriptText.trim().replace(/^["']|["']$/g, '');
+
+  // Round 7 P3: lowercase lone ALL-CAPS words in news prose (e.g. "no FOREIGNERS would") before lint,
+  // exempting quoted song titles and the target song/artist names.
+  {
+    const isNewsTopicEarly = context.factPacket.topic === 'major_news' || context.factPacket.topic === 'music_news';
+    if (isNewsTopicEarly) {
+      const exempt = `${context.factPacket.targetSongTitle || ''} ${context.factPacket.targetSongArtist || ''}`.split(/\s+/);
+      trimmed = normalizeLoneAllCapsWords(trimmed, exempt);
+    }
+  }
 
   // Reject non-Latin/non-ASCII characters (e.g. Chinese characters from multilingual LLMs)
   if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(trimmed)) {
@@ -1227,6 +1374,14 @@ export function validateSegmentBreakOutput(
         rejectedReason: `Unverified proper name "${name}" not found in fact packet`,
         sanitizedText: '',
       };
+    }
+  }
+
+  // Round 7 P3: news-draft grounding checks for connectives, invented descriptive phrases, blended facts, and time phrasing
+  if (isNewsTopic) {
+    const r7 = checkRound7NewsGrounding(trimmed, context.factPacket.facts || [], corpus, Boolean(context.isModelDraft));
+    if (r7) {
+      return { valid: false, rejectedReason: r7, sanitizedText: '' };
     }
   }
 

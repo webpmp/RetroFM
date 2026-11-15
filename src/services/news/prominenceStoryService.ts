@@ -35,7 +35,7 @@ export interface StoryPacket {
   headline: string;
   sourceArticleDates: string[];
   publicationDates: string[];
-  facts: Array<{ text: string; source: string; date: string; printDate?: string; sourceHeadline?: string }>;
+  facts: Array<{ text: string; source: string; date: string; printDate?: string; sourceHeadline?: string; factSource?: 'body' | 'index_abstract' | 'headline' }>;
   status: StoryStatus;
   unresolved: string;
   prominenceScore: number;
@@ -52,6 +52,8 @@ export interface StoryFactWithSource {
   text: string;
   sourceHeadline: string;
   sourceDate: string;
+  /** Round 7: where the fact text came from */
+  factSource?: 'body' | 'index_abstract' | 'headline';
 }
 
 export interface ScoreBreakdown {
@@ -63,6 +65,10 @@ export interface ScoreBreakdown {
   magnitudeScore: number;
   bannerScore: number;
   sameDayFpScore: number;
+  /** Round 7 P4: first-day page-1 breaking-event boost */
+  breakingScore?: number;
+  /** Round 7 P4: regional/tri-state roundup lead penalty (negative) */
+  regionalPenalty?: number;
   penalties: number;
   total: number;
 }
@@ -147,6 +153,250 @@ export function cleanKnownAbbreviations(text: string): string {
     .replace(/\bN\.?Y\.?\b/g, 'New York');
 }
 
+export { KNOWN_ACRONYMS, normalizeLoneAllCapsWords } from './textNormalize.js';
+import { KNOWN_ACRONYMS, normalizeLoneAllCapsWords } from './textNormalize.js';
+
+/**
+ * Round 7 P1: Expands NYT Index abbreviations (pre-1980 abstracts) into full words.
+ * Order matters: multi-word and context-dependent forms first.
+ */
+export function expandIndexAbbreviations(text: string): string {
+  if (!text) return '';
+  let t = text;
+  const rules: Array<[RegExp, string]> = [
+    [/\bS Vietnamese\b/g, 'South Vietnamese'],
+    [/\bN Vietnamese\b/g, 'North Vietnamese'],
+    [/\bS Vietnam\b/g, 'South Vietnam'],
+    [/\bN Vietnam\b/g, 'North Vietnam'],
+    [/\bS Korea(n?)\b/g, 'South Korea$1'],
+    [/\bN Korea(n?)\b/g, 'North Korea$1'],
+    [/\bS Amer\b/g, 'South American'],
+    [/\bS Africa(n?)\b/g, 'South Africa$1'],
+    [/\bW Ger(?:many)?\b/g, 'West Germany'],
+    [/\bE Ger(?:many)?\b/g, 'East Germany'],
+    [/\bUSSR(?=\s+[a-z])/g, 'Soviet'],
+    [/\bUSSR\b/g, 'the Soviet Union'],
+    [/\bUS(?=\s+[a-z])/g, 'U.S.'],
+    [/\bUS\b/g, 'the United States'],
+    [/\bUN\b/g, 'U.N.'],
+    [/\bNYC\b/g, 'New York City'],
+    [/\bNYS\b/g, 'New York State'],
+    [/\bSen (?=[A-Z])/g, 'Senator '],
+    [/\bSens (?=[A-Z])/g, 'Senators '],
+    [/\bSen\b/g, 'Senate'],
+    [/\bRepr (?=[A-Z])/g, 'Representative '],
+    [/\bReprs (?=[A-Z])/g, 'Representatives '],
+    [/\bPres (?=[A-Z])/g, 'President '],
+    [/\bPres\b/g, 'President'],
+    [/\bVice President\b/g, 'Vice President'],
+    [/\bGov (?=[A-Z])/g, 'Governor '],
+    [/\bGen (?=[A-Z])/g, 'General '],
+    [/\bAdm (?=[A-Z][a-z])/g, 'Admiral '],
+    [/\bAdm\b/g, 'Administration'],
+    [/\badm\b/g, 'administration'],
+    [/\bSec (?=[A-Z])/g, 'Secretary '],
+    [/\bAmb (?=[A-Z])/g, 'Ambassador '],
+    [/\bMin (?=[A-Z])/g, 'Minister '],
+    [/\bComr (?=[A-Z])/g, 'Commissioner '],
+    [/\bAtty Gen\b/g, 'Attorney General'],
+    [/\bDr (?=[A-Z])/g, 'Dr. '],
+    [/\bDem\b/g, 'Democrat'],
+    [/\bDems\b/g, 'Democrats'],
+    [/\bRepub\b/g, 'Republican'],
+    [/\bRepubs\b/g, 'Republicans'],
+    [/\bAmers\b/g, 'Americans'],
+    [/\bAmer\b/g, 'American'],
+    [/\bBrit\b/g, 'British'],
+    [/\bEur\b/g, 'European'],
+    [/\bSov\b/g, 'Soviet'],
+    [/\bNatl\b/g, 'National'],
+    [/\bnatl\b/g, 'national'],
+    [/\binternatl\b/gi, 'international'],
+    [/\bUniv\b/g, 'University'],
+    [/\bColl\b/g, 'College'],
+    [/\bcoll\b/g, 'college'],
+    [/\bAssn\b/g, 'Association'],
+    [/\bassn\b/g, 'association'],
+    [/\b[Oo]rgn\b/g, 'organization'],
+    [/\bFed\b/g, 'Federal'],
+    [/\b[Gg]ovt\b/g, 'government'],
+    [/\b[Dd]ept\b/g, 'department'],
+    [/\bsubcom\b/gi, 'subcommittee'],
+    [/\b[Cc]om\b/g, 'committee'],
+    [/\b[Cc]omm\b/g, 'commission'],
+    [/\b[Cc]onf\b/g, 'conference'],
+    [/\b[Bb]d\b/g, 'board'],
+    [/\bcts\b/g, 'courts'],
+    [/\b[Cc]t\b/g, 'court'],
+    [/\bSup Ct\b/g, 'Supreme Court'],
+    [/\b[Ll]egis\b/g, 'legislative'],
+    [/\b[Mm]unic\b/g, 'municipal'],
+    [/\b[Ii]ndus\b/g, 'industrial'],
+    [/\b[Ee]con\b/g, 'economic'],
+    [/\bpol\b/g, 'political'],
+    [/\bpub\b/g, 'public'],
+    [/\b[Bb]ldg\b/g, 'building'],
+    [/\bmgrs\b/g, 'managers'],
+    [/\bmgr\b/g, 'manager'],
+    [/\bchmn\b/gi, 'chairman'],
+    [/\bpres\b/g, 'president'],
+    [/\bdir\b/g, 'director'],
+    [/\bsec\b/g, 'secretary'],
+    [/\bcos\b/g, 'companies'],
+    [/\bcorps\b/g, 'corporations'],
+    [/\bmil\b/g, 'military'],
+    [/\brepts\b/g, 'reports'],
+    [/\brept\b/g, 'report'],
+    [/\breptdly\b/g, 'reportedly'],
+    [/\breptd\b/g, 'reported'],
+    [/\bexchs\b/g, 'exchanges'],
+    [/\bexch\b/g, 'exchange'],
+    [/\brecd\b/g, 'received'],
+    [/\brevd\b/g, 'reviewed'],
+    [/\brevs\b/g, 'reviews'],
+    [/\banon\b/g, 'anonymous'],
+    [/\banniv\b/g, 'anniversary'],
+    [/\blrs\b/g, 'letters'],
+    [/\blr\b/g, 'letter'],
+    [/\bhrs\b/g, 'hours'],
+    [/\bhr\b/g, 'hour'],
+    [/\bwks\b/g, 'weeks'],
+    [/\bwk\b/g, 'week'],
+    [/\byrs\b/g, 'years'],
+    [/\byr\b/g, 'year'],
+    [/\bmi\b/g, 'miles'],
+    [/\bsts\b/g, 'streets'],
+    [/\bst\b/g, 'street'],
+    [/\bpk\b/g, 'park'],
+    [/\bhwys\b/g, 'highways'],
+    [/\bemployes\b/g, 'employees'],
+    [/\b1st\b/g, 'first'],
+    [/\b2d\b/g, 'second'],
+    [/\b3d\b/g, 'third'],
+    [/\bint\b/g, 'interview'],
+  ];
+  for (const [re, rep] of rules) t = t.replace(re, rep);
+  return t;
+}
+
+const MONTH_ABBR_FULL: Record<string, string> = {
+  Jan: 'January', Feb: 'February', Mar: 'March', Apr: 'April', Jun: 'June', Jul: 'July',
+  Aug: 'August', Sep: 'September', Sept: 'September', Oct: 'October', Nov: 'November', Dec: 'December',
+};
+
+/** Clause openers that describe a document rather than state a fact (index "article on", "text of", etc.) */
+const INDEX_DESCRIPTOR_OPENER = /^(?:transcript|text|texts|excerpts?|article|articles|ed|eds|editorial|comment|comments|illus|illustration|photo|photos|map|maps|chart|table|poem|drawing|cartoon|rev|review|lr|letter|letters|series|summary|list|sidelights|int|interview|biog|biography|profile|por|portrait|corrected text|correction)\b/i;
+
+/**
+ * Round 7 P1: Converts an NYT Index-style abstract into clean, speakable sentences.
+ *  - strips trailing (S)/(M)/(L) and citation tags (; illus / ; text / ; map / , Calif)
+ *  - drops leading date prefixes ("July 4:") and bare date fragments ("on Apr 29")
+ *  - splits on semicolons into separate clauses
+ *  - expands index abbreviations and removes personal initials ("N A Armstrong" -> "Armstrong")
+ *  - drops document-descriptor clauses ("transcript of ...", "article on ...") and subjectless verb clauses
+ *  - normalizes relative time words against pubDate/broadcastDate
+ */
+export function expandIndexAbstractToSentences(rawAbstract: string, pubDate: string, broadcastDate: string): string[] {
+  if (!rawAbstract || rawAbstract.trim().length < 15) return [];
+  let t = rawAbstract
+    .replace(/&#8212;|&#8211;|&mdash;|&ndash;/g, ' - ')
+    .replace(/&#8208;|‐/g, '-')
+    .replace(/&amp;/g, '&')
+    .replace(/\s*\((?:S|M|L)\)\s*$/, '')
+    .replace(/^\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}\s*[:;,]\s*/i, '')
+    .trim();
+
+  const out: string[] = [];
+  const clauses = t.split(/\s*;\s*/);
+  for (let clause of clauses) {
+    clause = clause.trim().replace(/[,.]+$/, '');
+    if (!clause) continue;
+    // Drop citation-only clauses ("illus", "text", "map", "por", "int")
+    if (/^(?:illus|text|map|maps|chart|table|photo|photos|por|int|drawing|graph)$/i.test(clause)) continue;
+    if (INDEX_DESCRIPTOR_OPENER.test(clause)) continue;
+    // Subjectless index verb clause: "holds news conf...", "says probe was...", "warns econ mgrs..."
+    const firstWord = clause.split(/\s+/)[0];
+    if (/^[a-z]+s$/.test(firstWord) && !/^(?:officials|leaders|students|troops|forces|police|workers|astronauts|informants|demonstrators|guerrillas|rebels|negroes|voters|critics|sources|scientists|delegates|americans|soviets|israelis|arabs|allies)$/i.test(firstWord)) continue;
+    // Trailing location/citation tags: ", Houston", ", Calif", "; text"
+    clause = clause
+      .replace(/,\s*(?:Calif|NYC|NYS|Wis|Md|Mass|Conn|NJ|Pa|Tex|Fla|Ill|Mich|Va|Ga|Washington|Houston|statement|news conf|int|illus)\.?$/i, '')
+      .replace(/\s*\((?:S|M|L)\)$/, '');
+    // Drop bare date fragments: "on Apr 29", "Apr 29", "July 4" (without year) unless spelled-out month mid-sentence
+    clause = clause
+      .replace(/,?\s*\bon\s+(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}\b/g, '')
+      .replace(/\b(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{1,2})\b/g, (_m, mon: string, day: string) => `${MONTH_ABBR_FULL[mon] || mon} ${day}`);
+    // Expand abbreviations, then drop personal initials before a surname ("N A Armstrong" -> "Armstrong")
+    clause = expandIndexAbbreviations(clause);
+    clause = clause
+      .replace(/\b(?:[A-Z]\s+){2,3}(?=[A-Z][a-z])/g, '')
+      .replace(/(^|[\s(,])(?![AI]\s)[A-Z]\s+(?=[A-Z][a-z]{2,})/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    clause = cleanKnownAbbreviations(clause);
+    const { text: timed } = resolveRelativeTimeWords(clause, pubDate, broadcastDate);
+    let s = normalizeLoneAllCapsWords(timed.trim());
+    if (!s) continue;
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+    if (!/[.!?]$/.test(s)) s += '.';
+    if (s.split(/\s+/).length < 5) continue;
+    if (!isCleanBodySentence(s)) continue;
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Round 7 P1: Converts the MAIN banner clause of a headline (text before the first ';') into a clean
+ * sentence-cased fact. Proper-noun casing is recovered from mixed-case words in the article's own
+ * abstract/headline decks; known acronyms are preserved. Returns '' if the clause is too short.
+ * Example: "ASTRONAUTS LAND ON PLAIN; COLLECT ROCKS..." -> "Astronauts land on plain."
+ */
+export function buildHeadlineDerivedFact(article: ReducedNYTArticle): string {
+  const h = (article.headline || '').replace(/&#8208;|‐/g, '-').trim();
+  if (!h) return '';
+  let main = h.split(';')[0].trim();
+  // If the main deck is mixed case and followed by an embedded ALL-CAPS repeat, keep only the mixed-case part
+  main = main.replace(/\s+[A-Z][A-Z\s,'’.\-]{12,}$/, (m) => (main.length - m.length > 15 ? '' : m)).trim();
+  if (!main) return '';
+  const casingSource = `${h} ${article.abstract || ''} ${article.leadParagraph || ''}`;
+  const properForms = new Map<string, string>();
+  for (const w of casingSource.match(/\b[A-Z][a-z][A-Za-z'’\-]*\b/g) || []) {
+    properForms.set(w.toLowerCase(), w);
+  }
+  const isAllCaps = main === main.toUpperCase();
+  let sentence = main;
+  if (isAllCaps) {
+    const words = main.split(/\s+/);
+    sentence = words
+      .map((w, i) => {
+        const bare = w.replace(/[^A-Za-z.]/g, '');
+        const bareNoDots = bare.replace(/\./g, '');
+        if (/^(?:[A-Z]\.){2,}$/.test(bare) || KNOWN_ACRONYMS.has(bareNoDots)) return w;
+        const lower = w.toLowerCase();
+        const core = lower.replace(/[^a-z'’\-]/g, '');
+        const proper = properForms.get(core);
+        // Use the proper-noun casing only if it appears mid-sentence in the casing source (not just sentence-initial)
+        if (proper && new RegExp(`[a-z,]\\s+${proper.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(casingSource)) {
+          return lower.replace(core, proper);
+        }
+        return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+      })
+      .join(' ');
+  }
+  sentence = sentence.replace(/[,:\-]+$/, '').trim();
+  sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  if (!/[.!?]$/.test(sentence)) sentence += '.';
+  if (sentence.split(/\s+/).length < 4) return '';
+  if (/[A-Z]{2,}\s+[A-Z]{2,}\s+[A-Z]{2,}\s+[A-Z]{2,}/.test(sentence)) return '';
+  return sentence;
+}
+
+/** Round 7 P4: Regional/tri-state roundup or NYC-borough framing in a headline (no national scope). */
+export const REGIONAL_ROUNDUP_REGEX = /\b(?:tristate|tri-state|metropolitan area|metro area|in jersey|in connecticut|on long island|westchester|bronx|brooklyn|queens|staten island|nassau|suffolk|city council|board of estimate)\b/i;
+
+/** Round 7 P4: First-day breaking events (crimes/arrests in addition to HIGH_MAGNITUDE_REGEX). */
+export const BREAKING_EVENT_REGEX = /\b(?:arrested|charged|chased|seized|captured|indicted|freed|escape[sd]?|hijack\w*|kidnap\w*)\b/i;
+
 export function isFrontPageArticle(a: ReducedNYTArticle): boolean {
   const p = String(a.printPage || '').trim();
   const sec = String(a.printSection || '').trim().toUpperCase();
@@ -175,7 +425,16 @@ export const HIGH_MAGNITUDE_REGEX = /\b(?:dead|killed|assassin\w*|murder\w*|slay
 
 export function isAllCapsHeadlineBanner(headline: string): boolean {
   const deck = (headline || '').split(';')[0].trim();
-  return deck.length >= 15 && /^[A-Z0-9\s,;:'"—\-]+$/.test(deck) && /[A-Z]{3,}/.test(deck);
+  // Round 7 P4: a banner needs a full clause (4+ words, 20+ chars). Short all-caps kickers/sub-decks such as
+  // "SHIFT IN SCHEDULE" or "8 BELIEVED DEAD" are column sub-heads, not the main banner.
+  const wordCount = deck.split(/\s+/).filter(Boolean).length;
+  return deck.length >= 20 && wordCount >= 4 && /^[A-Z0-9\s,;:'"—\-.’]+$/.test(deck) && /[A-Z]{3,}/.test(deck);
+}
+
+/** Round 7 P4: Short sub-heads (< 4 words in the main deck) should not be chosen as the cluster lead. */
+export function isShortSubhead(headline: string): boolean {
+  const deck = (headline || '').split(';')[0].trim();
+  return deck.split(/\s+/).filter(Boolean).length < 4;
 }
 
 /**
@@ -757,6 +1016,14 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     const fpB = isFrontPageArticle(b) ? 1 : 0;
     if (fpB !== fpA) return fpB - fpA;
 
+    // Round 7 P4: prefer national-scope headlines over regional/tri-state roundups, and full headlines over short sub-heads
+    const regA = REGIONAL_ROUNDUP_REGEX.test(a.headline || '') ? 1 : 0;
+    const regB = REGIONAL_ROUNDUP_REGEX.test(b.headline || '') ? 1 : 0;
+    if (regA !== regB) return regA - regB;
+    const shortA = isShortSubhead(a.headline || '') ? 1 : 0;
+    const shortB = isShortSubhead(b.headline || '') ? 1 : 0;
+    if (shortA !== shortB) return shortA - shortB;
+
     const banA = isAllCapsHeadlineBanner(a.headline || '') ? 1 : 0;
     const banB = isAllCapsHeadlineBanner(b.headline || '') ? 1 : 0;
     if (banB !== banA) return banB - banA;
@@ -799,6 +1066,23 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     penalties -= 45;
   }
 
+  // Round 7 P4 (general principle): a story that broke on page 1 of the broadcast-date paper with a
+  // high-magnitude or breaking-event headline is the day's news even with only one day of coverage.
+  let breakingScore = 0;
+  if (
+    lead && isFrontPageArticle(lead) && lead.pubDate === broadcastDate &&
+    (HIGH_MAGNITUDE_REGEX.test(leadHeadline) || BREAKING_EVENT_REGEX.test(leadHeadline))
+  ) {
+    breakingScore = 35;
+  }
+
+  // Round 7 P4 (general principle): a lead framed as a regional/tri-state or NYC-borough roundup has no national scope.
+  // (Lead selection already prefers a national-scope article from the same cluster when one exists.)
+  let regionalPenalty = 0;
+  if (REGIONAL_ROUNDUP_REGEX.test(leadHeadline)) {
+    regionalPenalty = -40;
+  }
+
   // 6. Penalties for back-page only and single-article items
   if (fpCount === 0) {
     penalties -= 30;
@@ -814,7 +1098,7 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     penalties -= 35;
   }
 
-  const score = fpScore + freshnessScore + persistenceScore + volumeScore + broadImpactScore + magnitudeScore + bannerScore + sameDayFpScore + penalties;
+  const score = fpScore + freshnessScore + persistenceScore + volumeScore + broadImpactScore + magnitudeScore + bannerScore + sameDayFpScore + breakingScore + regionalPenalty + penalties;
   const roundedScore = Math.round(score * 10) / 10;
   const scoreBreakdown: ScoreBreakdown = {
     fpScore,
@@ -825,6 +1109,8 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     magnitudeScore,
     bannerScore,
     sameDayFpScore,
+    breakingScore,
+    regionalPenalty,
     penalties,
     total: roundedScore,
   };
@@ -903,7 +1189,7 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     const expanded = cleanKnownAbbreviations(resolved);
     const rawSents = splitVerbatimSentences(expanded);
     return rawSents
-      .map((s) => s.trim())
+      .map((s) => normalizeLoneAllCapsWords(s.trim()))
       .filter((s) => isCleanBodySentence(s, lead.headline));
   };
 
@@ -970,7 +1256,61 @@ export function scoreStory(articles: ReducedNYTArticle[], broadcastDate: string)
     if (facts.length >= 5) break;
   }
 
-  // Requirement 5: Unresolved field MUST come strictly from fetched articles.
+  // Round 7 P1: Pre-1970 records usually have no leadParagraph/snippet, only an NYT Index abstract.
+  // Instead of rejecting the candidate, expand index abstracts into clean sentences (lead first, then
+  // cluster articles that pass the same lead-noun / similarity gate used for body text).
+  const pushFact = (text: string, art: ReducedNYTArticle, factSource: StoryFactWithSource['factSource']) => {
+    const norm = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!norm || norm.length < 15 || seenFacts.has(norm)) return;
+    seenFacts.add(norm);
+    facts.push(text);
+    factDetails.push({ text, sourceHeadline: art.headline || '', sourceDate: art.pubDate, factSource });
+  };
+  const artIsOnLeadStory = (art: ReducedNYTArticle): boolean => {
+    if (art === lead) return true;
+    const artWords = `${art.headline || ''} ${art.abstract || ''}`.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
+    let shared = 0;
+    for (const w of new Set(artWords)) if (leadKeyNouns.has(w)) shared++;
+    return shared >= minSharedLeadNouns || pairSimilarity(art, lead) >= 0.7;
+  };
+  if (facts.length < 2) {
+    for (const art of sortedArticles) {
+      if (!art.abstract || !isIndexStyleText(art.abstract)) continue;
+      if (!artIsOnLeadStory(art)) continue;
+      for (const s of expandIndexAbstractToSentences(art.abstract, art.pubDate, broadcastDate)) {
+        pushFact(s, art, 'index_abstract');
+        if (facts.length >= 4) break;
+      }
+      if (facts.length >= 4) break;
+    }
+  }
+  // Round 7 P1: still < 2 facts -> clean-cased main banner clause of the lead and other page-1 articles on the lead story
+  if (facts.length < 2) {
+    for (const art of sortedArticles) {
+      if (!isFrontPageArticle(art) && art !== lead) continue;
+      if (!artIsOnLeadStory(art)) continue;
+      const hf = buildHeadlineDerivedFact(art);
+      if (hf) pushFact(hf, art, 'headline');
+      if (facts.length >= 3) break;
+    }
+  }
+
+  // Round 7 P3: single-event cohesion. If the lead's own day (or the day before) supplies >= 2 facts,
+  // drop facts from earlier days so e.g. a stopover reported 3 days earlier is not blended into the lead event.
+  {
+    const nearLead = factDetails.filter((fd) => dateDiffDays(fd.sourceDate, lead.pubDate) <= 1);
+    if (nearLead.length >= 2 && nearLead.length < factDetails.length) {
+      const keep = new Set(nearLead.map((fd) => fd.text));
+      for (let i = factDetails.length - 1; i >= 0; i--) {
+        if (!keep.has(factDetails[i].text)) {
+          factDetails.splice(i, 1);
+        }
+      }
+      for (let i = facts.length - 1; i >= 0; i--) {
+        if (!keep.has(facts[i])) facts.splice(i, 1);
+      }
+    }
+  }
   let unresolved = '';
   for (const art of sortedArticles) {
     const rawContent = `${art.leadParagraph || ''}. ${art.snippet || ''}`;
@@ -1155,6 +1495,7 @@ export async function getProminentStoryPackets(broadcastDate: string): Promise<{
           date: fd.sourceDate || lead.pubDate,
           printDate: fd.sourceDate || lead.pubDate,
           sourceHeadline: fd.sourceHeadline,
+          factSource: fd.factSource || 'body',
         }))
       : st.facts.map((fText) => ({
           text: fText,

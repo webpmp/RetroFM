@@ -39,7 +39,7 @@ import {
 } from './src/services/djBreak/chartFacts.js';
 import { BreakSelectionSessionState } from './src/services/djBreak/breakDecisionTypes.js';
 import { getOrBuildAlmanac, resolveRelativeTimeWords, getNYTFunnelDiagnostics, prefetchAlmanacForDate, purgeInvalidCachedAlmanacs, splitVerbatimSentences } from './src/services/news/almanacService.js';
-import { getProminentStoryPackets, isIndexStyleText, isCleanBodySentence, cleanKnownAbbreviations, repairOcrBrokenWords } from './src/services/news/prominenceStoryService.js';
+import { getProminentStoryPackets, isIndexStyleText, isCleanBodySentence, cleanKnownAbbreviations, repairOcrBrokenWords, normalizeLoneAllCapsWords } from './src/services/news/prominenceStoryService.js';
 import { getOrBuildSongStoryCard } from './src/services/music/songStoryCardService.js';
 import { validateSegmentBreakOutput, validateHandoffText, computeNewsWordBudget, lintReadAloudScript } from './src/services/djBreak/breakValidator.js';
 import { splitEntryIntoFacts } from './src/services/djBreak/segmentPlanner.js';
@@ -853,7 +853,7 @@ async function startServer() {
 
         // Relative time words adjustment relative to candidate.pubDate and broadcastDate
         const resolved = resolveRelativeTimeWords(s, candidate.pubDate, broadcastDate);
-        s = cleanKnownAbbreviations(resolved.text).replace(/\s+/g, ' ').trim();
+        s = normalizeLoneAllCapsWords(cleanKnownAbbreviations(resolved.text)).replace(/\s+/g, ' ').trim();
 
         // Ensure ending with period
         if (!/[.!?]$/.test(s)) s += '.';
